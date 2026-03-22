@@ -3,32 +3,48 @@ package com.rehabassist.rehabassist.actions
 import android.os.SystemClock
 import com.google.mediapipe.tasks.components.containers.NormalizedLandmark
 
-class TurnPalmAction(callback: RehabActionCallback) : BaseRehabAction(callback) {
+class TurnPalmAction(
+    callback: RehabActionCallback,
+    private val startingLevel: Int = 1 // ✨ 這裡加上了起始關卡的接收器！預設為 1
+) : BaseRehabAction(callback) {
 
-    // 狀態與階段控制
+    private var currentLevel = 1
+
     private var currentStage = 1
     private var isTransitioning = false
     private var transitionStartTime = 0L
     private var lastCountdownSec = -1
 
-    // 階段一：穩定度專用變數
     private var smoothedAngleStage1 = 0.0
     private var holdStartTime = 0L
     private var isCurrentlyStable = false
 
-    // 階段二：翻掌專用變數
-    private var smoothedAngleStage2 = 0.0
     private var palmStateBuffer = mutableListOf<String>()
     private var lastConfirmedState = ""
 
     init {
-        // 卡匣一插上，立刻設定階段一的畫面
+        // ✨ 這裡改成讀取外面傳進來的指定關卡！
+        startLevel(startingLevel)
+    }
+
+    private fun startLevel(level: Int) {
+        currentLevel = level
+        repCount = 0
+        repScores.clear()
+        palmStateBuffer.clear()
+        lastConfirmedState = ""
+        currentStage = 1
+
+        val difficultyText = if (level == 1) "初階" else "中階 (幅度加大)"
         callback.updateUI(
-            title = "初階翻掌訓練 - 階段一：穩定度",
-            instruction = "請握住棍子保持直立 5 秒",
+            title = "$difficultyText 翻掌 - 階段一：穩定棍子",
+            instruction = "請握住短棍，保持直立不要倒 5 秒",
             repCount = "0.0s / 5.0s",
             accuracy = "--"
         )
+        // 🎙️ 語音同步：關卡開始
+        val levelSpeech = if (level == 1) "第一關，請拿穩短棍" else "第二關，難度提升，請拿穩"
+        callback.speak(levelSpeech, isUrgent = true)
     }
 
     override fun processLandmarks(landmarks: List<NormalizedLandmark>) {
@@ -36,7 +52,6 @@ class TurnPalmAction(callback: RehabActionCallback) : BaseRehabAction(callback) 
             handleTransition()
             return
         }
-
         when (currentStage) {
             1 -> detectStage1(landmarks)
             2 -> detectStage2(landmarks)
@@ -49,30 +64,25 @@ class TurnPalmAction(callback: RehabActionCallback) : BaseRehabAction(callback) 
             val remain = 3 - (elapsed / 1000).toInt()
             callback.updateUI(
                 feedback = "⏳ 準備進入階段二",
-                instruction = "請在 $remain 秒後開始上下翻掌"
+                instruction = "請在 $remain 秒後開始練習內外轉"
             )
-
-            // 倒數語音
+            // 🎙️ 語音同步：倒數計時 3, 2, 1
             if (remain != lastCountdownSec && remain > 0) {
                 callback.speak(remain.toString(), isUrgent = true)
                 lastCountdownSec = remain
             }
         } else {
-            // 轉場結束，進入階段二
             isTransitioning = false
             currentStage = 2
-            repCount = 0
             lastRepTime = SystemClock.uptimeMillis()
-            palmStateBuffer.clear()
-            lastConfirmedState = ""
-            lastCountdownSec = -1
 
             callback.updateUI(
-                title = "初階翻掌訓練 - 階段二：翻掌",
+                title = "翻掌 Lv.$currentLevel - 階段二：內外翻轉",
                 repCount = "0 / 10",
-                instruction = "請將掌心朝上作為起點"
+                instruction = "請握住圓圈，輕輕向內轉"
             )
-            callback.speak("開始翻掌", isUrgent = true)
+            // 🎙️ 語音同步：開始指令
+            callback.speak("開始轉動", isUrgent = true)
         }
     }
 
@@ -88,102 +98,119 @@ class TurnPalmAction(callback: RehabActionCallback) : BaseRehabAction(callback) 
         smoothedAngleStage1 = (smoothingFactor * rawDev) + ((1 - smoothingFactor) * smoothedAngleStage1)
         val displayAngle = smoothedAngleStage1.toInt()
 
-        callback.updateUI(accuracy = "${displayAngle}°")
+        callback.updateUI(accuracy = "傾斜: ${displayAngle}°")
 
-        val targetHoldTime = 5000L
+        val wobbleTolerance = if (currentLevel == 1) 25 else 15
 
-        if (displayAngle < 20) {
+        if (displayAngle < wobbleTolerance) {
             if (!isCurrentlyStable) {
                 isCurrentlyStable = true
                 holdStartTime = SystemClock.uptimeMillis()
-                callback.updateUI(feedback = "✅ 很好！保持住")
+                callback.updateUI(feedback = "✅ 很好！穩住棍子")
             } else {
                 val duration = SystemClock.uptimeMillis() - holdStartTime
-                val seconds = duration / 1000.0
                 callback.updateUI(
-                    instruction = "請保持直立不要晃動",
-                    repCount = String.format("%.1fs / 5.0s", seconds)
+                    instruction = "請出點力，保持直立不要晃動",
+                    repCount = String.format("%.1fs / 5.0s", duration / 1000.0)
                 )
-
-                if (duration >= targetHoldTime) {
+                if (duration >= 5000L) {
                     isCurrentlyStable = false
                     isTransitioning = true
                     transitionStartTime = SystemClock.uptimeMillis()
-
-                    callback.updateUI(
-                        title = "初階翻掌訓練 - 階段一完成",
-                        feedback = "🎉 穩定度測試通過！",
-                        repCount = ""
-                    )
-                    callback.speak("穩定度通過，準備轉場", isUrgent = true)
+                    callback.updateUI(title = "階段一完成", feedback = "🎉 穩定度測試通過！", repCount = "")
+                    // 🎙️ 語音同步：穩定過關
+                    callback.speak("穩定通過，準備轉場", isUrgent = true)
                 }
             }
         } else {
             isCurrentlyStable = false
-            val direction = if (dx > 0) "往右倒了" else "往左倒了"
-            callback.updateUI(
-                feedback = "⚠️ $direction",
-                instruction = "請拉正以恢復計時",
-                repCount = "0.0s / 5.0s"
-            )
-            callback.speak("請拿正", isUrgent = true)
+            val direction = if (dx > 0) "棍子往右倒了！" else "棍子往左倒了！"
+            callback.updateUI(feedback = "⚠️ $direction", instruction = "請往反方向出力拉正", repCount = "0.0s / 5.0s")
+            // 🎙️ 語音同步：歪掉警告
+            callback.speak("請拉正", isUrgent = true)
         }
     }
 
     private fun detectStage2(landmarks: List<NormalizedLandmark>) {
+        val wrist = landmarks[0]
+        val middleMcp = landmarks[9]
         val indexMcp = landmarks[5]
         val pinkyMcp = landmarks[17]
-        val dx = (pinkyMcp.x() - indexMcp.x()).toDouble()
-        val dy = (pinkyMcp.y() - indexMcp.y()).toDouble()
-        val rawAngle = Math.toDegrees(Math.atan2(dy, dx))
-        val normAngle = (rawAngle + 360) % 360
 
-        smoothedAngleStage2 = (smoothingFactor * normAngle) + ((1 - smoothingFactor) * smoothedAngleStage2)
-        callback.updateUI(accuracy = "${smoothedAngleStage2.toInt()}°")
+        val wobbleDx = (middleMcp.x() - wrist.x()).toDouble()
+        val wobbleDy = (middleMcp.y() - wrist.y()).toDouble()
+        val currentWobbleAngle = Math.abs(Math.toDegrees(Math.atan2(wobbleDy, wobbleDx)) - (-90.0))
+        val rawWobble = if (currentWobbleAngle > 180) 360 - currentWobbleAngle else currentWobbleAngle
+        if (rawWobble > currentRepMaxWobble) currentRepMaxWobble = rawWobble
 
+        val targetDx = if (currentLevel == 1) 0.04 else 0.08
+
+        val dx = pinkyMcp.x() - indexMcp.x()
         val state = when {
-            smoothedAngleStage2 in 140.0..220.0 -> "UP"
-            smoothedAngleStage2 < 40.0 || smoothedAngleStage2 > 320.0 -> "DOWN"
-            else -> "MID"
+            dx > targetDx -> "OUTWARD"
+            dx < -targetDx -> "INWARD"
+            else -> "NEUTRAL"
         }
 
         palmStateBuffer.add(state)
         if (palmStateBuffer.size > 8) palmStateBuffer.removeAt(0)
 
-        // 核心邏輯：DOWN -> UP 算 1 個循環
-        if (palmStateBuffer.count { it == "UP" } >= 6 && lastConfirmedState != "UP") {
-            if (lastConfirmedState == "DOWN") {
+        val isStableInward = palmStateBuffer.count { it == "INWARD" } >= 5
+        val isStableOutward = palmStateBuffer.count { it == "OUTWARD" } >= 5
+
+        if (isStableInward && lastConfirmedState != "INWARD") {
+            if (lastConfirmedState == "OUTWARD") {
                 val now = SystemClock.uptimeMillis()
-                if (now - lastRepTime > 1200L) {
+                val duration = now - lastRepTime
+
+                if (duration > 1200L) {
                     repCount++
                     lastRepTime = now
+
+                    var score = 100
+                    if (currentRepMaxWobble > 25.0) score -= 20
+                    else if (currentRepMaxWobble > 15.0) score -= 10
+                    if (duration < 2000L) score -= 10
+
+                    score = maxOf(score, 60)
+                    repScores.add(score)
+                    currentRepMaxWobble = 0.0
+
+                    // 🎙️ 語音同步：完成一圈，直接報數 (一、二...)，不加多餘的台詞以免吞字
                     callback.speakCount(repCount)
-                    callback.updateUI(feedback = "✅ 完成一次！")
+                    callback.updateUI(feedback = "✅ 完成一次！(本次: $score 分)", instruction = "很好，現在請向外轉")
                 } else {
                     lastRepTime = now
+                    // 🎙️ 語音同步：太快警告
                     callback.speak("太快了", isUrgent = true)
-                    callback.updateUI(feedback = "⚠️ 動作太快")
+                    callback.updateUI(feedback = "⚠️ 動作太快", instruction = "請慢慢轉動")
                 }
             } else {
-                callback.updateUI(feedback = "✅ 掌心朝上")
+                callback.updateUI(feedback = "✅ 已向內轉", instruction = "很好，請向外轉")
             }
-            lastConfirmedState = "UP"
-            callback.updateUI(instruction = "請將掌心往下翻")
+            lastConfirmedState = "INWARD"
 
-        } else if (palmStateBuffer.count { it == "DOWN" } >= 6 && lastConfirmedState != "DOWN") {
-            callback.updateUI(feedback = "✅ 掌心朝下", instruction = "很好，請將掌心往上翻")
-            lastConfirmedState = "DOWN"
-
-        } else if (state == "MID") {
-            if (lastConfirmedState == "UP") callback.updateUI(instruction = "往下翻轉中...")
-            else if (lastConfirmedState == "DOWN") callback.updateUI(instruction = "往上翻轉中...")
+        } else if (isStableOutward && lastConfirmedState != "OUTWARD") {
+            callback.updateUI(feedback = "✅ 已向外轉", instruction = "很好，請向內轉")
+            // 🎙️ 語音同步：半圈引導 (此時不會報數，所以講話很安全)
+            callback.speak("向內", isUrgent = true)
+            lastConfirmedState = "OUTWARD"
         }
 
-        callback.updateUI(repCount = "$repCount / 10")
+        callback.updateUI(repCount = "$repCount / 10", accuracy = "扭轉值: ${String.format("%.2f", dx)}")
 
-        // 判斷是否訓練結束
         if (repCount >= 10) {
-            callback.onTrainingComplete()
+            val finalScore = getFinalScore()
+
+            if (currentLevel == 1 && finalScore >= 80) {
+                // 🎙️ 語音同步：晉級提示！
+                callback.speak("恭喜表現優異，進入中階挑戰", isUrgent = true)
+                startLevel(2)
+            } else {
+                callback.updateUI(feedback = "🎉 訓練結束！總平均: $finalScore 分")
+                // 🎙️ 語音同步：交給主機去說「十次動作完成...」
+                callback.onTrainingComplete()
+            }
         }
     }
 }

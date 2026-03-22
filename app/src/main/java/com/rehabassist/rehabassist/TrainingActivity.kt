@@ -80,10 +80,13 @@ class TrainingActivity : AppCompatActivity(), RehabActionCallback {
         // 取得 Intent 傳來的動作類型 (從上一個畫面傳過來的)
         currentActionType = intent.getStringExtra("ACTION_TYPE") ?: "TURN_PALM"
 
+        // ✨ 新增：取得 Intent 傳來的難度等級 (若沒傳，預設為 1)
+        val difficultyLevel = intent.getIntExtra("DIFFICULTY_LEVEL", 1)
+
         // 🌟 終極大解脫：主機不用管邏輯了，直接根據字串插入對應的卡匣！
         currentExercise = when (currentActionType) {
-            "TURN_PALM" -> TurnPalmAction(this)     // 插入翻掌卡匣
-            "SECOND_ACTION" -> SidePinchAction(this) // 插入側捏卡匣
+            "TURN_PALM" -> TurnPalmAction(this, difficultyLevel) // 🌟 把難度傳給翻掌卡匣
+            "SECOND_ACTION" -> SidePinchAction(this)             // 側捏卡匣維持原樣
             else -> null
         }
 
