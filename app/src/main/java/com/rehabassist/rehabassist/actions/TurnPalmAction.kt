@@ -8,6 +8,11 @@ class TurnPalmAction(
     private val startingLevel: Int = 1 // ✨ 這裡加上了起始關卡的接收器！預設為 1
 ) : BaseRehabAction(callback) {
 
+    // ✨ 新增：準備一本專屬的筆記本，用來記錄失誤
+    private val mistakeLogs = mutableListOf<String>()
+    // ✨ 新增：記錄這關開始的時間，用來算總花費秒數
+    private var sessionStartTime = 0L
+
     private var currentLevel = 1
 
     private var currentStage = 1
@@ -34,6 +39,10 @@ class TurnPalmAction(
         palmStateBuffer.clear()
         lastConfirmedState = ""
         currentStage = 1
+
+        // ✨ 新增：每次進入新關卡，就把筆記本翻到新的一頁，並開始計時
+        mistakeLogs.clear()
+        sessionStartTime = System.currentTimeMillis()
 
         val difficultyText = if (level == 1) "初階" else "中階 (幅度加大)"
         callback.updateUI(
@@ -168,9 +177,20 @@ class TurnPalmAction(
                     lastRepTime = now
 
                     var score = 100
-                    if (currentRepMaxWobble > 25.0) score -= 20
-                    else if (currentRepMaxWobble > 15.0) score -= 10
-                    if (duration < 2000L) score -= 10
+
+                    // ✨ 新增紀錄：判斷並抄寫晃動與速度的失誤
+                    if (currentRepMaxWobble > 25.0) {
+                        score -= 20
+                        mistakeLogs.add("第 ${repCount} 次：嚴重晃動 (偏移 ${currentRepMaxWobble.toInt()} 度)")
+                    } else if (currentRepMaxWobble > 15.0) {
+                        score -= 10
+                        mistakeLogs.add("第 ${repCount} 次：輕微晃動")
+                    }
+
+                    if (duration < 2000L) {
+                        score -= 10
+                        mistakeLogs.add("第 ${repCount} 次：動作略快，未達標準復健節奏")
+                    }
 
                     score = maxOf(score, 60)
                     repScores.add(score)
@@ -181,6 +201,10 @@ class TurnPalmAction(
                     callback.updateUI(feedback = "✅ 完成一次！(本次: $score 分)", instruction = "很好，現在請向外轉")
                 } else {
                     lastRepTime = now
+
+                    // ✨ 新增紀錄：快到不被計入次數，視為無效動作
+                    mistakeLogs.add("未計入次數：動作過快 (僅花費 ${duration} 毫秒)")
+
                     // 🎙️ 語音同步：太快警告
                     callback.speak("太快了", isUrgent = true)
                     callback.updateUI(feedback = "⚠️ 動作太快", instruction = "請慢慢轉動")
@@ -205,11 +229,25 @@ class TurnPalmAction(
             if (currentLevel == 1 && finalScore >= 80) {
                 // 🎙️ 語音同步：晉級提示！
                 callback.speak("恭喜表現優異，進入中階挑戰", isUrgent = true)
-                startLevel(2)
+                startLevel(2) // 晉級下一關！
             } else {
                 callback.updateUI(feedback = "🎉 訓練結束！總平均: $finalScore 分")
-                // 🎙️ 語音同步：交給主機去說「十次動作完成...」
-                callback.onTrainingComplete()
+
+                // ✨ 新增：結算總花費秒數
+                val endTime = System.currentTimeMillis()
+                val durationInSeconds = (endTime - sessionStartTime) / 1000
+
+                // ✨ 新增：打包成剛才定義好的 TrainingReport 成績單！
+                val report = TrainingReport(
+                    actionName = "翻掌訓練",
+                    difficulty = currentLevel,
+                    totalReps = repCount,
+                    durationSeconds = durationInSeconds,
+                    mistakeLogs = this.mistakeLogs.toList() // 把筆記本交出去
+                )
+
+                // ✨ 帶著成績單呼叫主機！
+                callback.onTrainingComplete(report)
             }
         }
     }

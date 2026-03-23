@@ -5,6 +5,10 @@ import com.google.mediapipe.tasks.components.containers.NormalizedLandmark
 
 class SidePinchAction(callback: RehabActionCallback) : BaseRehabAction(callback) {
 
+    // ✨ 新增：側捏專屬的筆記本與計時器
+    private val mistakeLogs = mutableListOf<String>()
+    private var sessionStartTime = System.currentTimeMillis()
+
     // 這些變數現在只屬於側捏，不會再弄髒外面的 Activity 啦！
     private var smoothedPinchDistance = 0.0
     private var pinchStateBuffer = mutableListOf<String>()
@@ -69,10 +73,24 @@ class SidePinchAction(callback: RehabActionCallback) : BaseRehabAction(callback)
 
                     // 判斷是否達標
                     if (repCount >= 10) {
-                        callback.onTrainingComplete()
+                        // ✨ 新增：打包側捏的成績單！
+                        val durationInSeconds = (System.currentTimeMillis() - sessionStartTime) / 1000
+                        val report = TrainingReport(
+                            actionName = "手部精細動作 - 側捏",
+                            difficulty = 1, // 側捏目前預設為 Level 1
+                            totalReps = repCount,
+                            durationSeconds = durationInSeconds,
+                            mistakeLogs = mistakeLogs.toList() // 交出筆記本
+                        )
+                        // ✨ 帶著成績單呼叫主機！
+                        callback.onTrainingComplete(report)
                     }
                 } else {
                     lastRepTime = now
+
+                    // ✨ 新增紀錄：側捏動作過快
+                    mistakeLogs.add("未計入次數：開合動作過快，請確實停留")
+
                     callback.speak("太快了", isUrgent = true)
                     callback.updateUI(feedback = "⚠️ 動作太快", instruction = "請放慢速度，重新捏合")
                 }

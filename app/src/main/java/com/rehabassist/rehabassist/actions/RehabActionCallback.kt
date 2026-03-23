@@ -9,6 +9,6 @@ interface RehabActionCallback {
     fun speak(text: String, isUrgent: Boolean = false)
     fun speakCount(count: Int)
 
-    // 通知主機：這個動作的訓練已經全部完成了！
-    fun onTrainingComplete()
+    // ✨ 這裡修改了！通知主機：訓練完成，並且「繳交這回合的訓練紀錄」
+    fun onTrainingComplete(report: TrainingReport)
 }

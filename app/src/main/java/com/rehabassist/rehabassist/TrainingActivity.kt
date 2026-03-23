@@ -199,11 +199,53 @@ class TrainingActivity : AppCompatActivity(), RehabActionCallback {
         }
     }
 
-    override fun onTrainingComplete() {
+    // ✨ 升級版：接收來自 AI 卡匣的成績單！
+    // ✨ 接收來自 AI 卡匣的成績單，並且把它「存檔」！
+    override fun onTrainingComplete(report: TrainingReport) {
         isTrainingComplete = true
         tvFeedback.text = "🎉 訓練圓滿結束！"
         tvInstruction.text = "辛苦了，請按下停止按鈕休息"
         speak("十次動作全部完成，您做得非常棒", isUrgent = true)
+
+        // ==========================================
+        // 💾 ✨ 核心新增：把成績單存進手機的 SharedPreferences
+        // ==========================================
+        try {
+            // 1. 取得儲存庫
+            val sharedPref = getSharedPreferences("RehabRecords", android.content.Context.MODE_PRIVATE)
+            val historyJson = sharedPref.getString("history", "[]") // 拿出舊紀錄，如果沒有就是空陣列 "[]"
+            val jsonArray = org.json.JSONArray(historyJson)
+
+            // 2. 建立這次的新紀錄 (使用內建的 JSONObject)
+            val newRecord = org.json.JSONObject()
+
+            // 產生現在的時間 (例如：03/23 10:50)
+            val sdf = java.text.SimpleDateFormat("MM/dd HH:mm", java.util.Locale.getDefault())
+            val timestamp = sdf.format(java.util.Date())
+
+            newRecord.put("timestamp", timestamp)
+            newRecord.put("actionName", report.actionName)
+            newRecord.put("difficulty", report.difficulty)
+            newRecord.put("durationSeconds", report.durationSeconds)
+
+            // 處理失誤清單
+            val mistakesArray = org.json.JSONArray()
+            report.mistakeLogs.forEach { mistakesArray.put(it) }
+            newRecord.put("mistakeLogs", mistakesArray)
+
+            // 3. 把新紀錄塞進陣列，然後存回手機裡！
+            jsonArray.put(newRecord)
+            sharedPref.edit().putString("history", jsonArray.toString()).apply()
+
+            println("💾 存檔成功！目前共有 ${jsonArray.length()} 筆紀錄")
+        } catch (e: Exception) {
+            e.printStackTrace()
+            println("❌ 存檔失敗")
+        }
+        // ==========================================
+
+        // 顯示完成選單
+        showCompletionDialog()
     }
 
     override fun onDestroy() {
@@ -219,5 +261,70 @@ class TrainingActivity : AppCompatActivity(), RehabActionCallback {
         val matrix = android.graphics.Matrix()
         matrix.postRotate(degrees.toFloat())
         return android.graphics.Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
+    }
+    // ✨ 新增：完成後的「選單列表」邏輯
+    // ✨ 新增：包含「難易度」的完整選單邏輯
+    // ✨ 第一層選單：選擇復健動作
+    private fun showCompletionDialog() {
+        runOnUiThread {
+            val actionOptions = arrayOf(
+                "🔄 再來一組 (維持現狀)",
+                "🖐️ 切換：翻掌訓練",
+                "🤏 切換：手部精細動作 - 側捏",
+                "🏠 結束今日訓練 (回到首頁)"
+            )
+
+            val builder = android.app.AlertDialog.Builder(this)
+            builder.setTitle("🎉 訓練完成！請選擇下一個項目")
+            builder.setCancelable(false) // 防止點擊背景關閉
+
+            builder.setItems(actionOptions) { _, which ->
+                when (which) {
+                    0 -> recreate() // 維持現狀重新開始
+                    1 -> showDifficultyDialog("TURN_PALM")    // 呼叫第二層選單，傳入翻掌暗號
+                    2 -> showDifficultyDialog("SECOND_ACTION") // 呼叫第二層選單，傳入側捏暗號
+                    3 -> finish() // 回到首頁
+                }
+            }
+            builder.show()
+        }
+    }
+
+    // ✨ 第二層選單：選擇對應的難度
+    private fun showDifficultyDialog(actionType: String) {
+        runOnUiThread {
+            // 根據傳進來的動作，決定要顯示哪些難度 (呼應你 MainActivity 的設定)
+            val difficultyOptions = if (actionType == "TURN_PALM") {
+                arrayOf("Level 1 (初階 - 容錯較高)", "Level 2 (中階 - 要求嚴格)")
+            } else {
+                arrayOf("Level 1 (標準側捏)") // 側捏目前只有一個選項
+            }
+
+            val builder = android.app.AlertDialog.Builder(this)
+            builder.setTitle("請選擇難度等級")
+            builder.setCancelable(false)
+
+            // 選擇難度後，正式啟動新的訓練
+            builder.setItems(difficultyOptions) { _, which ->
+                val selectedDifficulty = which + 1 // 因為陣列從 0 開始，+1 就會變成 Level 1, Level 2
+                startNewTraining(actionType, selectedDifficulty)
+            }
+
+            // 加入「返回」按鈕，防呆設計
+            builder.setNegativeButton("返回上一步") { _, _ ->
+                showCompletionDialog() // 重新呼叫第一層選單
+            }
+
+            builder.show()
+        }
+    }
+
+    // ✨ 負責執行跳轉的工具函式
+    private fun startNewTraining(actionType: String, difficulty: Int) {
+        val intent = android.content.Intent(this, TrainingActivity::class.java)
+        intent.putExtra("ACTION_TYPE", actionType)
+        intent.putExtra("DIFFICULTY_LEVEL", difficulty) // 把難度傳遞給下一個訓練
+        startActivity(intent)
+        finish() // 關掉目前的畫面
     }
 }
