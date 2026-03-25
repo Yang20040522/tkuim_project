@@ -86,7 +86,7 @@ class TrainingActivity : AppCompatActivity(), RehabActionCallback {
         // 🌟 終極大解脫：主機不用管邏輯了，直接根據字串插入對應的卡匣！
         currentExercise = when (currentActionType) {
             "TURN_PALM" -> TurnPalmAction(this, difficultyLevel) // 🌟 把難度傳給翻掌卡匣
-            "SECOND_ACTION" -> SidePinchAction(this)             // 側捏卡匣維持原樣
+            "SECOND_ACTION" -> SidePinchAction(this, difficultyLevel) // ✨ 補上難度參數！
             else -> null
         }
 
@@ -297,7 +297,8 @@ class TrainingActivity : AppCompatActivity(), RehabActionCallback {
             val difficultyOptions = if (actionType == "TURN_PALM") {
                 arrayOf("Level 1 (初階 - 容錯較高)", "Level 2 (中階 - 要求嚴格)")
             } else {
-                arrayOf("Level 1 (標準側捏)") // 側捏目前只有一個選項
+                // ✨ 這裡換成我們側捏專屬的三階段：
+                arrayOf("Level 1 (初階微幅)", "Level 2 (中階標準)", "Level 3 (進階連擊)")
             }
 
             val builder = android.app.AlertDialog.Builder(this)

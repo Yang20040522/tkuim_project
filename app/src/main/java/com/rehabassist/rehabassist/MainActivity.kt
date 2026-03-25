@@ -30,7 +30,7 @@ class MainActivity : AppCompatActivity() {
                 val difficultyOptions = if (selectedAction == "翻掌訓練") {
                     arrayOf("Level 1 (初階 - 容錯較高)", "Level 2 (中階 - 要求嚴格)")
                 } else {
-                    arrayOf("Level 1 (標準側捏)")
+                    arrayOf("Level 1 (初階微幅)", "Level 2 (中階標準)", "Level 3 (進階連擊)")
                 }
                 spinnerDifficulty.adapter = ArrayAdapter(this@MainActivity, android.R.layout.simple_spinner_dropdown_item, difficultyOptions)
             }
