@@ -18,6 +18,9 @@ import com.google.mediapipe.tasks.core.BaseOptions
 import com.google.mediapipe.tasks.vision.core.RunningMode
 import com.google.mediapipe.tasks.vision.handlandmarker.HandLandmarker
 import com.google.mediapipe.tasks.vision.handlandmarker.HandLandmarkerResult
+// ✨ 雙引擎改造 1：引入全身骨架套件
+import com.google.mediapipe.tasks.vision.poselandmarker.PoseLandmarker
+import com.google.mediapipe.tasks.vision.poselandmarker.PoseLandmarkerResult
 import com.rehabassist.rehabassist.actions.* // 🌟 匯入你的卡匣包！
 import java.util.*
 import java.util.concurrent.ExecutorService
@@ -29,7 +32,9 @@ class TrainingActivity : AppCompatActivity(), RehabActionCallback {
     // UI 元件
     private lateinit var previewView: PreviewView
     private lateinit var overlayView: HandOverlayView
+    private lateinit var poseOverlayView: PoseOverlayView // ✨ 新增：全身畫筆變數
     private lateinit var btnStop: Button
+    private lateinit var btnFlipCamera: Button // ✨ 新增：翻轉鏡頭按鈕
     private lateinit var tvTitle: TextView
     private lateinit var tvFeedback: TextView
     private lateinit var tvInstruction: TextView
@@ -39,6 +44,11 @@ class TrainingActivity : AppCompatActivity(), RehabActionCallback {
     // MediaPipe 與相機
     private lateinit var cameraExecutor: ExecutorService
     private var handLandmarker: HandLandmarker? = null
+    // ✨ 雙引擎改造 2：宣告全身骨架引擎變數
+    private var poseLandmarker: PoseLandmarker? = null
+
+    // ✨ 新增：記錄現在是用哪顆鏡頭 (預設後置)
+    private var cameraLensFacing = CameraSelector.LENS_FACING_BACK
 
     // 語音回饋 (TTS)
     private var textToSpeech: TextToSpeech? = null
@@ -61,7 +71,9 @@ class TrainingActivity : AppCompatActivity(), RehabActionCallback {
         // 綁定 UI
         previewView = findViewById(R.id.previewView)
         overlayView = findViewById(R.id.overlayView)
+        poseOverlayView = findViewById(R.id.poseOverlayView)
         btnStop = findViewById(R.id.btnStop)
+        btnFlipCamera = findViewById(R.id.btnFlipCamera) // ✨ 綁定翻轉按鈕
         tvTitle = findViewById(R.id.tvTitle)
         tvFeedback = findViewById(R.id.tvFeedback)
         tvInstruction = findViewById(R.id.tvInstruction)
@@ -77,21 +89,30 @@ class TrainingActivity : AppCompatActivity(), RehabActionCallback {
             }
         }, "com.google.android.tts")
 
-        // 取得 Intent 傳來的動作類型 (從上一個畫面傳過來的)
         currentActionType = intent.getStringExtra("ACTION_TYPE") ?: "TURN_PALM"
-
-        // ✨ 新增：取得 Intent 傳來的難度等級 (若沒傳，預設為 1)
         val difficultyLevel = intent.getIntExtra("DIFFICULTY_LEVEL", 1)
 
         // 🌟 終極大解脫：主機不用管邏輯了，直接根據字串插入對應的卡匣！
         currentExercise = when (currentActionType) {
-            "TURN_PALM" -> TurnPalmAction(this, difficultyLevel) // 🌟 把難度傳給翻掌卡匣
-            "SECOND_ACTION" -> SidePinchAction(this, difficultyLevel) // ✨ 補上難度參數！
+            "TURN_PALM" -> TurnPalmAction(this, difficultyLevel)
+            "SECOND_ACTION" -> SidePinchAction(this, difficultyLevel)
+            "WIPE_ACTION" -> WipeAction(this, difficultyLevel) // ✨ 插入第三個擦拭動作卡匣！
             else -> null
         }
 
         cameraExecutor = Executors.newSingleThreadExecutor()
+
         btnStop.setOnClickListener { finish() }
+
+        // ✨ 點擊翻轉按鈕的邏輯：切換鏡頭方向，然後重啟相機
+        btnFlipCamera.setOnClickListener {
+            cameraLensFacing = if (cameraLensFacing == CameraSelector.LENS_FACING_BACK) {
+                CameraSelector.LENS_FACING_FRONT
+            } else {
+                CameraSelector.LENS_FACING_BACK
+            }
+            startCamera()
+        }
 
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
             setupMediaPipe()
@@ -101,18 +122,32 @@ class TrainingActivity : AppCompatActivity(), RehabActionCallback {
         }
     }
 
+    // ✨ 雙引擎改造 3：根據動作切換引擎
     private fun setupMediaPipe() {
         try {
-            val baseOptions = BaseOptions.builder().setModelAssetPath("hand_landmarker.task").build()
-            val options = HandLandmarker.HandLandmarkerOptions.builder()
-                .setBaseOptions(baseOptions)
-                .setNumHands(1)
-                .setRunningMode(RunningMode.LIVE_STREAM)
-                .setResultListener { result, _ -> processResult(result) }
-                .build()
-            handLandmarker = HandLandmarker.createFromOptions(this, options)
+            if (currentActionType == "WIPE_ACTION") {
+                // 啟動全身骨架引擎
+                val baseOptions = BaseOptions.builder().setModelAssetPath("pose_landmarker_lite.task").build()
+                val options = PoseLandmarker.PoseLandmarkerOptions.builder()
+                    .setBaseOptions(baseOptions)
+                    .setRunningMode(RunningMode.LIVE_STREAM)
+                    .setResultListener { result, _ -> processPoseResult(result) }
+                    .build()
+                poseLandmarker = PoseLandmarker.createFromOptions(this, options)
+            } else {
+                // 啟動原本的手部引擎
+                val baseOptions = BaseOptions.builder().setModelAssetPath("hand_landmarker.task").build()
+                val options = HandLandmarker.HandLandmarkerOptions.builder()
+                    .setBaseOptions(baseOptions)
+                    .setNumHands(1)
+                    .setRunningMode(RunningMode.LIVE_STREAM)
+                    .setResultListener { result, _ -> processResult(result) }
+                    .build()
+                handLandmarker = HandLandmarker.createFromOptions(this, options)
+            }
         } catch (e: Exception) {
             runOnUiThread { tvFeedback.text = "初始化失敗" }
+            e.printStackTrace()
         }
     }
 
@@ -133,12 +168,23 @@ class TrainingActivity : AppCompatActivity(), RehabActionCallback {
                         lastImageWidth = rotatedBitmap.width
                         lastImageHeight = rotatedBitmap.height
                         val mpImage = BitmapImageBuilder(rotatedBitmap).build()
-                        handLandmarker?.detectAsync(mpImage, SystemClock.uptimeMillis())
+
+                        // ✨ 雙引擎改造 4：影像分流
+                        if (currentActionType == "WIPE_ACTION") {
+                            poseLandmarker?.detectAsync(mpImage, SystemClock.uptimeMillis())
+                        } else {
+                            handLandmarker?.detectAsync(mpImage, SystemClock.uptimeMillis())
+                        }
+
                         imageProxy.close()
                     }
                 }
             cameraProvider.unbindAll()
-            cameraProvider.bindToLifecycle(this, CameraSelector.DEFAULT_BACK_CAMERA, preview, imageAnalyzer)
+
+            // ✨ 把原本寫死的 DEFAULT_BACK_CAMERA 換成我們動態控制的 cameraLensFacing
+            val cameraSelector = CameraSelector.Builder().requireLensFacing(cameraLensFacing).build()
+            cameraProvider.bindToLifecycle(this, cameraSelector, preview, imageAnalyzer)
+
         }, ContextCompat.getMainExecutor(this))
     }
 
@@ -148,14 +194,31 @@ class TrainingActivity : AppCompatActivity(), RehabActionCallback {
 
             overlayView.setResults(result, lastImageWidth, lastImageHeight, 0)
             if (result.landmarks().isEmpty()) {
-                // 如果畫面沒抓到手，給予基本提示
                 tvFeedback.text = "請將手放入鏡頭範圍內"
                 tvInstruction.text = "等待偵測中..."
                 tvAccuracy.text = "--"
                 return@runOnUiThread
             }
+            currentExercise?.processLandmarks(result.landmarks()[0])
+        }
+    }
 
-            // 🌟 這裡就是見證奇蹟的時刻：直接把骨架資料丟給目前插著的卡匣去算數學！
+    // ✨ 雙引擎改造 5：全身骨架專屬的資料接收器
+    // ✨ 全身骨架專屬的資料接收器 (修正版)
+    private fun processPoseResult(result: PoseLandmarkerResult) {
+        runOnUiThread {
+            if (isTrainingComplete) return@runOnUiThread
+
+            // ✨ 將全身骨架資料 AND 鏡頭方向 交給畫筆！
+            poseOverlayView.setResults(result, cameraLensFacing) // 👈 改這一行
+
+            if (result.landmarks().isEmpty()) {
+                tvFeedback.text = "請將上半身放入鏡頭範圍內"
+                tvInstruction.text = "等待偵測中..."
+                tvAccuracy.text = "--"
+                return@runOnUiThread
+            }
+            // 把全身的 33 個點傳給卡匣！
             currentExercise?.processLandmarks(result.landmarks()[0])
         }
     }
@@ -199,27 +262,17 @@ class TrainingActivity : AppCompatActivity(), RehabActionCallback {
         }
     }
 
-    // ✨ 升級版：接收來自 AI 卡匣的成績單！
-    // ✨ 接收來自 AI 卡匣的成績單，並且把它「存檔」！
     override fun onTrainingComplete(report: TrainingReport) {
         isTrainingComplete = true
         tvFeedback.text = "🎉 訓練圓滿結束！"
         tvInstruction.text = "辛苦了，請按下停止按鈕休息"
         speak("十次動作全部完成，您做得非常棒", isUrgent = true)
 
-        // ==========================================
-        // 💾 ✨ 核心新增：把成績單存進手機的 SharedPreferences
-        // ==========================================
         try {
-            // 1. 取得儲存庫
             val sharedPref = getSharedPreferences("RehabRecords", android.content.Context.MODE_PRIVATE)
-            val historyJson = sharedPref.getString("history", "[]") // 拿出舊紀錄，如果沒有就是空陣列 "[]"
+            val historyJson = sharedPref.getString("history", "[]")
             val jsonArray = org.json.JSONArray(historyJson)
-
-            // 2. 建立這次的新紀錄 (使用內建的 JSONObject)
             val newRecord = org.json.JSONObject()
-
-            // 產生現在的時間 (例如：03/23 10:50)
             val sdf = java.text.SimpleDateFormat("MM/dd HH:mm", java.util.Locale.getDefault())
             val timestamp = sdf.format(java.util.Date())
 
@@ -228,23 +281,17 @@ class TrainingActivity : AppCompatActivity(), RehabActionCallback {
             newRecord.put("difficulty", report.difficulty)
             newRecord.put("durationSeconds", report.durationSeconds)
 
-            // 處理失誤清單
             val mistakesArray = org.json.JSONArray()
             report.mistakeLogs.forEach { mistakesArray.put(it) }
             newRecord.put("mistakeLogs", mistakesArray)
 
-            // 3. 把新紀錄塞進陣列，然後存回手機裡！
             jsonArray.put(newRecord)
             sharedPref.edit().putString("history", jsonArray.toString()).apply()
 
-            println("💾 存檔成功！目前共有 ${jsonArray.length()} 筆紀錄")
         } catch (e: Exception) {
             e.printStackTrace()
-            println("❌ 存檔失敗")
         }
-        // ==========================================
 
-        // 顯示完成選單
         showCompletionDialog()
     }
 
@@ -252,6 +299,7 @@ class TrainingActivity : AppCompatActivity(), RehabActionCallback {
         super.onDestroy()
         cameraExecutor.shutdown()
         handLandmarker?.close()
+        poseLandmarker?.close() // ✨ 雙引擎改造 6：關閉全身引擎避免漏水
         textToSpeech?.stop()
         textToSpeech?.shutdown()
     }
@@ -262,70 +310,67 @@ class TrainingActivity : AppCompatActivity(), RehabActionCallback {
         matrix.postRotate(degrees.toFloat())
         return android.graphics.Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
     }
-    // ✨ 新增：完成後的「選單列表」邏輯
-    // ✨ 新增：包含「難易度」的完整選單邏輯
-    // ✨ 第一層選單：選擇復健動作
+
     private fun showCompletionDialog() {
         runOnUiThread {
+            // ✨ 選單加上第三個動作
             val actionOptions = arrayOf(
                 "🔄 再來一組 (維持現狀)",
                 "🖐️ 切換：翻掌訓練",
                 "🤏 切換：手部精細動作 - 側捏",
+                "🧽 切換：功能性擦拭訓練",
                 "🏠 結束今日訓練 (回到首頁)"
             )
 
             val builder = android.app.AlertDialog.Builder(this)
             builder.setTitle("🎉 訓練完成！請選擇下一個項目")
-            builder.setCancelable(false) // 防止點擊背景關閉
+            builder.setCancelable(false)
 
             builder.setItems(actionOptions) { _, which ->
                 when (which) {
-                    0 -> recreate() // 維持現狀重新開始
-                    1 -> showDifficultyDialog("TURN_PALM")    // 呼叫第二層選單，傳入翻掌暗號
-                    2 -> showDifficultyDialog("SECOND_ACTION") // 呼叫第二層選單，傳入側捏暗號
-                    3 -> finish() // 回到首頁
+                    0 -> recreate()
+                    1 -> showDifficultyDialog("TURN_PALM")
+                    2 -> showDifficultyDialog("SECOND_ACTION")
+                    3 -> showDifficultyDialog("WIPE_ACTION") // ✨ 呼叫擦拭動作
+                    4 -> finish()
                 }
             }
             builder.show()
         }
     }
 
-    // ✨ 第二層選單：選擇對應的難度
     private fun showDifficultyDialog(actionType: String) {
         runOnUiThread {
-            // 根據傳進來的動作，決定要顯示哪些難度 (呼應你 MainActivity 的設定)
-            val difficultyOptions = if (actionType == "TURN_PALM") {
-                arrayOf("Level 1 (初階 - 容錯較高)", "Level 2 (中階 - 要求嚴格)")
-            } else {
-                // ✨ 這裡換成我們側捏專屬的三階段：
-                arrayOf("Level 1 (初階微幅)", "Level 2 (中階標準)", "Level 3 (進階連擊)")
+            // ✨ 三個動作都有專屬的三階段難度選單了
+            val difficultyOptions = when (actionType) {
+                "TURN_PALM" -> arrayOf("Level 1 (初階 - 容錯較高)", "Level 2 (中階 - 要求嚴格)")
+                "SECOND_ACTION" -> arrayOf("Level 1 (初階微幅)", "Level 2 (中階標準)", "Level 3 (進階連擊)")
+                "WIPE_ACTION" -> arrayOf("Level 1 (微幅擦拭)", "Level 2 (標準來回)", "Level 3 (抗重力穩定)")
+                else -> arrayOf("Level 1")
             }
 
             val builder = android.app.AlertDialog.Builder(this)
             builder.setTitle("請選擇難度等級")
             builder.setCancelable(false)
 
-            // 選擇難度後，正式啟動新的訓練
             builder.setItems(difficultyOptions) { _, which ->
-                val selectedDifficulty = which + 1 // 因為陣列從 0 開始，+1 就會變成 Level 1, Level 2
+                val selectedDifficulty = which + 1
                 startNewTraining(actionType, selectedDifficulty)
             }
 
-            // 加入「返回」按鈕，防呆設計
             builder.setNegativeButton("返回上一步") { _, _ ->
-                showCompletionDialog() // 重新呼叫第一層選單
+                showCompletionDialog()
             }
 
             builder.show()
         }
     }
 
-    // ✨ 負責執行跳轉的工具函式
     private fun startNewTraining(actionType: String, difficulty: Int) {
         val intent = android.content.Intent(this, TrainingActivity::class.java)
         intent.putExtra("ACTION_TYPE", actionType)
-        intent.putExtra("DIFFICULTY_LEVEL", difficulty) // 把難度傳遞給下一個訓練
+        intent.putExtra("DIFFICULTY_LEVEL", difficulty)
         startActivity(intent)
-        finish() // 關掉目前的畫面
+        finish()
     }
 }

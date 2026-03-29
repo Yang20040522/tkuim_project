@@ -4,18 +4,20 @@
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="#F8F9FA"> <TextView
-    android:id="@+id/tvTitle"
-    android:layout_width="wrap_content"
-    android:layout_height="wrap_content"
-    android:text="初階翻掌訓練"
-    android:textColor="#2C3040"
-    android:textSize="24sp"
-    android:textStyle="bold"
-    android:layout_marginTop="32dp"
-    android:layout_marginStart="24dp"
-    app:layout_constraintTop_toTopOf="parent"
-    app:layout_constraintStart_toStartOf="parent" />
+    android:background="#F8F9FA">
+
+    <TextView
+        android:id="@+id/tvTitle"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="初階翻掌訓練"
+        android:textColor="#2C3040"
+        android:textSize="24sp"
+        android:textStyle="bold"
+        android:layout_marginTop="32dp"
+        android:layout_marginStart="24dp"
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintStart_toStartOf="parent" />
 
     <View
         android:layout_width="24dp"
@@ -51,6 +53,11 @@
 
             <com.rehabassist.rehabassist.HandOverlayView
                 android:id="@+id/overlayView"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"/>
+
+            <com.rehabassist.rehabassist.PoseOverlayView
+                android:id="@+id/poseOverlayView"
                 android:layout_width="match_parent"
                 android:layout_height="match_parent"/>
 
@@ -168,10 +175,27 @@
     </LinearLayout>
 
     <com.google.android.material.button.MaterialButton
+        android:id="@+id/btnFlipCamera"
+        android:layout_width="48dp"
+        android:layout_height="48dp"
+        android:contentDescription="翻轉鏡頭"
+        app:icon="@android:drawable/ic_popup_sync"
+        app:iconGravity="textStart"
+        app:iconPadding="0dp"
+        app:iconTint="#FFFFFF"
+        android:backgroundTint="#4A65FF"
+        app:cornerRadius="24dp"
+        android:layout_marginTop="32dp"
+        android:layout_marginEnd="24dp"
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintEnd_toEndOf="parent" />
+
+    <com.google.android.material.button.MaterialButton
         android:id="@+id/btnStop"
         android:layout_width="64dp"
         android:layout_height="64dp"
-        android:contentDescription="停止訓練" app:icon="@android:drawable/ic_media_pause"
+        android:contentDescription="停止訓練"
+        app:icon="@android:drawable/ic_media_pause"
         app:iconGravity="textStart"
         app:iconPadding="0dp"
         app:iconTint="#FFFFFF"
