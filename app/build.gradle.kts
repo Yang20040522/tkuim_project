@@ -50,4 +50,5 @@ dependencies {
     implementation("androidx.camera:camera-camera2:1.5.3")
     implementation("androidx.camera:camera-lifecycle:1.5.3")
     implementation("androidx.camera:camera-view:1.5.3")
+    implementation("com.github.PhilJay:MPAndroidChart:v3.1.0")
 }

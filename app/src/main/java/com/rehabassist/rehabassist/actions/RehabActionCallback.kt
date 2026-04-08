@@ -9,6 +9,15 @@ interface RehabActionCallback {
     fun speak(text: String, isUrgent: Boolean = false)
     fun speakCount(count: Int)
 
-    // ✨ 這裡修改了！通知主機：訓練完成，並且「繳交這回合的訓練紀錄」
+    // 通知主機：訓練完成，並且「繳交這回合的訓練紀錄」
     fun onTrainingComplete(report: TrainingReport)
+
+    // 控制翻掌準備階段的輔助對齊線
+    fun setGuideLineVisible(visible: Boolean)
+
+    // ✨ 控制側捏準備與特效階段的開關
+    fun setPinchGuideEnabled(visible: Boolean)
+
+    // 更新進度條與速度狀態 (0:正常, 1:太快警告)
+    fun updateProgress(progress: Float, speedState: Int)
 }

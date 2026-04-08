@@ -92,11 +92,23 @@ class TrainingActivity : AppCompatActivity(), RehabActionCallback {
         currentActionType = intent.getStringExtra("ACTION_TYPE") ?: "TURN_PALM"
         val difficultyLevel = intent.getIntExtra("DIFFICULTY_LEVEL", 1)
 
-        // 🌟 終極大解脫：主機不用管邏輯了，直接根據字串插入對應的卡匣！
+        // 🌟 核心引擎：根據選擇的動作載入對應的卡匣，並打開對應的視覺特效
         currentExercise = when (currentActionType) {
-            "TURN_PALM" -> TurnPalmAction(this, difficultyLevel)
-            "SECOND_ACTION" -> SidePinchAction(this, difficultyLevel)
-            "WIPE_ACTION" -> WipeAction(this, difficultyLevel) // ✨ 插入第三個擦拭動作卡匣！
+            "TURN_PALM" -> {
+                overlayView.setStickGuideEnabled(true)
+                overlayView.setPinchGuideEnabled(false)
+                TurnPalmAction(this, difficultyLevel)
+            }
+            "SECOND_ACTION" -> {
+                overlayView.setStickGuideEnabled(false)
+                overlayView.setPinchGuideEnabled(true) // ✨ 打開側捏專屬特效
+                SidePinchAction(this, difficultyLevel)
+            }
+            "WIPE_ACTION" -> {
+                overlayView.setStickGuideEnabled(false)
+                overlayView.setPinchGuideEnabled(false)
+                WipeAction(this, difficultyLevel)
+            }
             else -> null
         }
 
@@ -375,5 +387,27 @@ class TrainingActivity : AppCompatActivity(), RehabActionCallback {
         intent.putExtra("DIFFICULTY_LEVEL", difficulty)
         startActivity(intent)
         finish()
+    }
+
+    // =========================================================
+    // ✨ 實作介面：控制畫面的輔助線與進度條
+    // =========================================================
+    override fun setGuideLineVisible(visible: Boolean) {
+        runOnUiThread {
+            overlayView.setStickGuideEnabled(visible)
+        }
+    }
+
+    // ✨ 接收卡匣傳來的側捏視覺開關
+    override fun setPinchGuideEnabled(visible: Boolean) {
+        runOnUiThread {
+            overlayView.setPinchGuideEnabled(visible)
+        }
+    }
+
+    override fun updateProgress(progress: Float, speedState: Int) {
+        runOnUiThread {
+            overlayView.setProgress(progress, speedState)
+        }
     }
 }

@@ -17,11 +17,8 @@ class MainActivity : AppCompatActivity() {
         val spinnerAction = findViewById<Spinner>(R.id.spinnerAction)
         val spinnerDifficulty = findViewById<Spinner>(R.id.spinnerDifficulty)
         val btnStartTraining = findViewById<Button>(R.id.btnStartTraining)
-
-        // ✨ 新增：綁定歷史紀錄按鈕
         val btnHistory = findViewById<Button>(R.id.btnHistory)
 
-        // ✨ 修改 1：在選單陣列裡加上第三個動作
         val actionOptions = arrayOf("翻掌訓練", "手部精細動作 - 側捏", "功能性擦拭訓練")
         spinnerAction.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, actionOptions)
 
@@ -29,7 +26,6 @@ class MainActivity : AppCompatActivity() {
             override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
                 val selectedAction = actionOptions[position]
 
-                // ✨ 修改 2：用 when 判斷式，幫三個動作分別設定專屬的難度選單
                 val difficultyOptions = when (selectedAction) {
                     "翻掌訓練" -> arrayOf("Level 1 (初階 - 容錯較高)", "Level 2 (中階 - 要求嚴格)")
                     "手部精細動作 - 側捏" -> arrayOf("Level 1 (初階微幅)", "Level 2 (中階標準)", "Level 3 (進階連擊)")
@@ -46,7 +42,6 @@ class MainActivity : AppCompatActivity() {
             val selectedAction = spinnerAction.selectedItem.toString()
             val selectedDifficultyPos = spinnerDifficulty.selectedItemPosition
 
-            // ✨ 修改 3：加上擦拭訓練專屬的暗號 "WIPE_ACTION"
             val actionCode = when (selectedAction) {
                 "翻掌訓練" -> "TURN_PALM"
                 "手部精細動作 - 側捏" -> "SECOND_ACTION"
@@ -62,80 +57,12 @@ class MainActivity : AppCompatActivity() {
         }
 
         // ==========================================
-        // ✨ 新增：當點擊「查看歷史紀錄」按鈕時
+        // ✨ 第四步：修改這裡！
+        // 點擊按鈕直接跳轉到專屬的圖表頁面，舊的彈出視窗邏輯都刪掉了！
         // ==========================================
         btnHistory.setOnClickListener {
-            showHistoryDialog()
+            val intent = Intent(this, HistoryActivity::class.java)
+            startActivity(intent)
         }
-    }
-
-    // ✨ 讀取存檔並顯示「紀錄列表」
-    private fun showHistoryDialog() {
-        val sharedPref = getSharedPreferences("RehabRecords", android.content.Context.MODE_PRIVATE)
-        val historyJson = sharedPref.getString("history", "[]")
-        val jsonArray = org.json.JSONArray(historyJson)
-
-        if (jsonArray.length() == 0) {
-            android.app.AlertDialog.Builder(this)
-                .setTitle("訓練紀錄")
-                .setMessage("目前還沒有任何訓練紀錄喔！趕快開始第一次復健吧。")
-                .setPositiveButton("確定", null)
-                .show()
-            return
-        }
-
-        val options = mutableListOf<String>()
-        val recordObjects = mutableListOf<org.json.JSONObject>()
-
-        // 把紀錄一筆一筆抓出來
-        for (i in 0 until jsonArray.length()) {
-            val record = jsonArray.getJSONObject(i)
-            recordObjects.add(record)
-            val time = record.getString("timestamp")
-            val action = record.getString("actionName")
-            options.add("🕒 $time - $action")
-        }
-
-        // 把最新的紀錄放在最上面
-        options.reverse()
-        recordObjects.reverse()
-
-        android.app.AlertDialog.Builder(this)
-            .setTitle("📋 歷史訓練紀錄")
-            .setItems(options.toTypedArray()) { _, which ->
-                // 使用者點擊了某個紀錄，就打開詳細報告！
-                showRecordDetail(recordObjects[which])
-            }
-            .setNegativeButton("關閉", null)
-            .show()
-    }
-
-    // ✨ 顯示單筆紀錄的「詳細失敗原因報告」
-    private fun showRecordDetail(record: org.json.JSONObject) {
-        val time = record.getString("timestamp")
-        val action = record.getString("actionName")
-        val diff = record.getInt("difficulty")
-        val duration = record.getInt("durationSeconds")
-        val mistakes = record.getJSONArray("mistakeLogs")
-
-        // 組裝詳細報告的文字
-        val sb = java.lang.StringBuilder()
-        sb.append("難度：Level $diff\n")
-        sb.append("花費時間：$duration 秒\n\n")
-        sb.append("【AI 姿勢分析報告】\n")
-
-        if (mistakes.length() == 0) {
-            sb.append("✅ 完美！本次訓練動作非常標準，沒有任何失誤。")
-        } else {
-            for (i in 0 until mistakes.length()) {
-                sb.append("❌ ").append(mistakes.getString(i)).append("\n")
-            }
-        }
-
-        android.app.AlertDialog.Builder(this)
-            .setTitle("$action ($time)")
-            .setMessage(sb.toString())
-            .setPositiveButton("確定", null)
-            .show()
     }
 }

@@ -5,16 +5,12 @@ import com.google.mediapipe.tasks.components.containers.NormalizedLandmark
 
 class TurnPalmAction(
     callback: RehabActionCallback,
-    private val startingLevel: Int = 1 // ✨ 這裡加上了起始關卡的接收器！預設為 1
+    private val startingLevel: Int = 1
 ) : BaseRehabAction(callback) {
 
-    // ✨ 新增：準備一本專屬的筆記本，用來記錄失誤
     private val mistakeLogs = mutableListOf<String>()
-    // ✨ 新增：記錄這關開始的時間，用來算總花費秒數
     private var sessionStartTime = 0L
-
     private var currentLevel = 1
-
     private var currentStage = 1
     private var isTransitioning = false
     private var transitionStartTime = 0L
@@ -28,7 +24,6 @@ class TurnPalmAction(
     private var lastConfirmedState = ""
 
     init {
-        // ✨ 這裡改成讀取外面傳進來的指定關卡！
         startLevel(startingLevel)
     }
 
@@ -39,20 +34,20 @@ class TurnPalmAction(
         palmStateBuffer.clear()
         lastConfirmedState = ""
         currentStage = 1
-
-        // ✨ 新增：每次進入新關卡，就把筆記本翻到新的一頁，並開始計時
         mistakeLogs.clear()
         sessionStartTime = System.currentTimeMillis()
+
+        // ✨ 階段一開始：打開輔助線
+        callback.setGuideLineVisible(true)
 
         val difficultyText = if (level == 1) "初階" else "中階 (幅度加大)"
         callback.updateUI(
             title = "$difficultyText 翻掌 - 階段一：穩定棍子",
-            instruction = "請握住短棍，保持直立不要倒 5 秒",
+            instruction = "請握住短棍，對齊虛線保持直立 5 秒",
             repCount = "0.0s / 5.0s",
             accuracy = "--"
         )
-        // 🎙️ 語音同步：關卡開始
-        val levelSpeech = if (level == 1) "第一關，請拿穩短棍" else "第二關，難度提升，請拿穩"
+        val levelSpeech = if (level == 1) "第一關，請拿穩短棍，對齊中間虛線" else "第二關，難度提升，請拿穩"
         callback.speak(levelSpeech, isUrgent = true)
     }
 
@@ -71,11 +66,7 @@ class TurnPalmAction(
         val elapsed = SystemClock.uptimeMillis() - transitionStartTime
         if (elapsed < 3000L) {
             val remain = 3 - (elapsed / 1000).toInt()
-            callback.updateUI(
-                feedback = "⏳ 準備進入階段二",
-                instruction = "請在 $remain 秒後開始練習內外轉"
-            )
-            // 🎙️ 語音同步：倒數計時 3, 2, 1
+            callback.updateUI(feedback = "⏳ 準備進入階段二", instruction = "請在 $remain 秒後開始練習內外轉")
             if (remain != lastCountdownSec && remain > 0) {
                 callback.speak(remain.toString(), isUrgent = true)
                 lastCountdownSec = remain
@@ -85,21 +76,17 @@ class TurnPalmAction(
             currentStage = 2
             lastRepTime = SystemClock.uptimeMillis()
 
-            callback.updateUI(
-                title = "翻掌 Lv.$currentLevel - 階段二：內外翻轉",
-                repCount = "0 / 10",
-                instruction = "請握住圓圈，輕輕向內轉"
-            )
-            // 🎙️ 語音同步：開始指令
+            callback.updateUI(title = "翻掌 Lv.$currentLevel - 階段二：內外翻轉", repCount = "0 / 10", instruction = "請握住短棍，輕輕向內轉")
             callback.speak("開始轉動", isUrgent = true)
         }
     }
 
     private fun detectStage1(landmarks: List<NormalizedLandmark>) {
-        val wrist = landmarks[0]
-        val middleMcp = landmarks[9]
-        val dx = (middleMcp.x() - wrist.x()).toDouble()
-        val dy = (middleMcp.y() - wrist.y()).toDouble()
+        val indexMcp = landmarks[5]
+        val pinkyMcp = landmarks[17]
+
+        val dx = (indexMcp.x() - pinkyMcp.x()).toDouble()
+        val dy = (indexMcp.y() - pinkyMcp.y()).toDouble()
         val angle = Math.toDegrees(Math.atan2(dy, dx))
         val deviation = Math.abs(angle - (-90.0))
         val rawDev = if (deviation > 180) 360 - deviation else deviation
@@ -118,25 +105,22 @@ class TurnPalmAction(
                 callback.updateUI(feedback = "✅ 很好！穩住棍子")
             } else {
                 val duration = SystemClock.uptimeMillis() - holdStartTime
-                callback.updateUI(
-                    instruction = "請出點力，保持直立不要晃動",
-                    repCount = String.format("%.1fs / 5.0s", duration / 1000.0)
-                )
+                callback.updateUI(instruction = "請出點力，保持直立不要晃動", repCount = String.format("%.1fs / 5.0s", duration / 1000.0))
                 if (duration >= 5000L) {
                     isCurrentlyStable = false
                     isTransitioning = true
                     transitionStartTime = SystemClock.uptimeMillis()
                     callback.updateUI(title = "階段一完成", feedback = "🎉 穩定度測試通過！", repCount = "")
-                    // 🎙️ 語音同步：穩定過關
+
+                    // ✨ 階段一通過：關閉輔助線
+                    callback.setGuideLineVisible(false)
                     callback.speak("穩定通過，準備轉場", isUrgent = true)
                 }
             }
         } else {
             isCurrentlyStable = false
-            val direction = if (dx > 0) "棍子往右倒了！" else "棍子往左倒了！"
-            callback.updateUI(feedback = "⚠️ $direction", instruction = "請往反方向出力拉正", repCount = "0.0s / 5.0s")
-            // 🎙️ 語音同步：歪掉警告
-            callback.speak("請拉正", isUrgent = true)
+            val direction = if (dx > 0) "棍子歪了！" else "棍子歪了！"
+            callback.updateUI(feedback = "⚠️ $direction", instruction = "請拉正短棍，對齊虛線", repCount = "0.0s / 5.0s")
         }
     }
 
@@ -153,8 +137,22 @@ class TurnPalmAction(
         if (rawWobble > currentRepMaxWobble) currentRepMaxWobble = rawWobble
 
         val targetDx = if (currentLevel == 1) 0.04 else 0.08
-
         val dx = pinkyMcp.x() - indexMcp.x()
+
+        // ==========================================
+        // ✨ 新增：計算進度條百分比與動態配速警告
+        // ==========================================
+        val rawProgress = Math.abs(dx) / targetDx
+        val progress = Math.min(rawProgress.toFloat(), 1.0f) // 最高 1.0 (100%)
+
+        val now = SystemClock.uptimeMillis()
+        val duration = now - lastRepTime
+
+        // 如果轉超過一半，但花的時間不到 0.6 秒，顯示橘色警告
+        val speedState = if (progress > 0.5f && duration < 600L) 1 else 0
+        callback.updateProgress(progress, speedState)
+        // ==========================================
+
         val state = when {
             dx > targetDx -> "OUTWARD"
             dx < -targetDx -> "INWARD"
@@ -169,16 +167,11 @@ class TurnPalmAction(
 
         if (isStableInward && lastConfirmedState != "INWARD") {
             if (lastConfirmedState == "OUTWARD") {
-                val now = SystemClock.uptimeMillis()
-                val duration = now - lastRepTime
-
                 if (duration > 1200L) {
                     repCount++
                     lastRepTime = now
 
                     var score = 100
-
-                    // ✨ 新增紀錄：判斷並抄寫晃動與速度的失誤
                     if (currentRepMaxWobble > 25.0) {
                         score -= 20
                         mistakeLogs.add("第 ${repCount} 次：嚴重晃動 (偏移 ${currentRepMaxWobble.toInt()} 度)")
@@ -196,16 +189,11 @@ class TurnPalmAction(
                     repScores.add(score)
                     currentRepMaxWobble = 0.0
 
-                    // 🎙️ 語音同步：完成一圈，直接報數 (一、二...)，不加多餘的台詞以免吞字
                     callback.speakCount(repCount)
                     callback.updateUI(feedback = "✅ 完成一次！(本次: $score 分)", instruction = "很好，現在請向外轉")
                 } else {
                     lastRepTime = now
-
-                    // ✨ 新增紀錄：快到不被計入次數，視為無效動作
                     mistakeLogs.add("未計入次數：動作過快 (僅花費 ${duration} 毫秒)")
-
-                    // 🎙️ 語音同步：太快警告
                     callback.speak("太快了", isUrgent = true)
                     callback.updateUI(feedback = "⚠️ 動作太快", instruction = "請慢慢轉動")
                 }
@@ -213,40 +201,33 @@ class TurnPalmAction(
                 callback.updateUI(feedback = "✅ 已向內轉", instruction = "很好，請向外轉")
             }
             lastConfirmedState = "INWARD"
+            callback.updateProgress(0f, 0) // 狀態改變時重置一下視覺
 
         } else if (isStableOutward && lastConfirmedState != "OUTWARD") {
             callback.updateUI(feedback = "✅ 已向外轉", instruction = "很好，請向內轉")
-            // 🎙️ 語音同步：半圈引導 (此時不會報數，所以講話很安全)
             callback.speak("向內", isUrgent = true)
             lastConfirmedState = "OUTWARD"
+            callback.updateProgress(0f, 0) // 狀態改變時重置一下視覺
         }
 
         callback.updateUI(repCount = "$repCount / 10", accuracy = "扭轉值: ${String.format("%.2f", dx)}")
 
         if (repCount >= 10) {
             val finalScore = getFinalScore()
-
             if (currentLevel == 1 && finalScore >= 80) {
-                // 🎙️ 語音同步：晉級提示！
                 callback.speak("恭喜表現優異，進入中階挑戰", isUrgent = true)
-                startLevel(2) // 晉級下一關！
+                startLevel(2)
             } else {
                 callback.updateUI(feedback = "🎉 訓練結束！總平均: $finalScore 分")
-
-                // ✨ 新增：結算總花費秒數
                 val endTime = System.currentTimeMillis()
                 val durationInSeconds = (endTime - sessionStartTime) / 1000
-
-                // ✨ 新增：打包成剛才定義好的 TrainingReport 成績單！
                 val report = TrainingReport(
                     actionName = "翻掌訓練",
                     difficulty = currentLevel,
                     totalReps = repCount,
                     durationSeconds = durationInSeconds,
-                    mistakeLogs = this.mistakeLogs.toList() // 把筆記本交出去
+                    mistakeLogs = this.mistakeLogs.toList()
                 )
-
-                // ✨ 帶著成績單呼叫主機！
                 callback.onTrainingComplete(report)
             }
         }
