@@ -34,7 +34,7 @@ class TrainingActivity : AppCompatActivity(), RehabActionCallback {
     private lateinit var overlayView: HandOverlayView
     private lateinit var poseOverlayView: PoseOverlayView // ✨ 新增：全身畫筆變數
     private lateinit var btnStop: Button
-    private lateinit var btnFlipCamera: Button // ✨ 新增：翻轉鏡頭按鈕
+    // private lateinit var btnFlipCamera: Button // ✨ 新增：翻轉鏡頭按鈕
     private lateinit var tvTitle: TextView
     private lateinit var tvFeedback: TextView
     private lateinit var tvInstruction: TextView
@@ -73,7 +73,7 @@ class TrainingActivity : AppCompatActivity(), RehabActionCallback {
         overlayView = findViewById(R.id.overlayView)
         poseOverlayView = findViewById(R.id.poseOverlayView)
         btnStop = findViewById(R.id.btnStop)
-        btnFlipCamera = findViewById(R.id.btnFlipCamera) // ✨ 綁定翻轉按鈕
+        // btnFlipCamera = findViewById(R.id.btnFlipCamera) // ✨ 綁定翻轉按鈕
         tvTitle = findViewById(R.id.tvTitle)
         tvFeedback = findViewById(R.id.tvFeedback)
         tvInstruction = findViewById(R.id.tvInstruction)
@@ -104,14 +104,14 @@ class TrainingActivity : AppCompatActivity(), RehabActionCallback {
 
         btnStop.setOnClickListener { finish() }
 
-        // ✨ 點擊翻轉按鈕的邏輯：切換鏡頭方向，然後重啟相機
-        btnFlipCamera.setOnClickListener {
+        // ✨ 方案 B：點擊整個相機預覽畫面，就會自動翻轉鏡頭！
+        previewView.setOnClickListener {
             cameraLensFacing = if (cameraLensFacing == CameraSelector.LENS_FACING_BACK) {
                 CameraSelector.LENS_FACING_FRONT
             } else {
                 CameraSelector.LENS_FACING_BACK
             }
-            startCamera()
+            startCamera() // 重新啟動相機
         }
 
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
@@ -192,7 +192,10 @@ class TrainingActivity : AppCompatActivity(), RehabActionCallback {
         runOnUiThread {
             if (isTrainingComplete) return@runOnUiThread
 
-            overlayView.setResults(result, lastImageWidth, lastImageHeight, 0)
+            // ✨ 正統做法：判斷現在是不是前鏡頭，然後傳給畫筆
+            val isFront = cameraLensFacing == CameraSelector.LENS_FACING_FRONT
+            overlayView.setResults(result, lastImageWidth, lastImageHeight, 0, isFront)
+
             if (result.landmarks().isEmpty()) {
                 tvFeedback.text = "請將手放入鏡頭範圍內"
                 tvInstruction.text = "等待偵測中..."

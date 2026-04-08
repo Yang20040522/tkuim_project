@@ -40,11 +40,13 @@ class HandOverlayView @JvmOverloads constructor(
     private var isFrontCamera = false
     private var rotation = 0
 
-    fun setResults(result: HandLandmarkerResult, imgWidth: Int, imgHeight: Int, rotation: Int = 0) {
-        results = result
-        imageWidth = imgWidth
-        imageHeight = imgHeight
+    // ✨ 修改：把 isFrontCamera 參數加進來接收主機的訊號
+    fun setResults(result: HandLandmarkerResult, imgWidth: Int, imgHeight: Int, rotation: Int = 0, isFrontCamera: Boolean = false) {
+        this.results = result
+        this.imageWidth = imgWidth
+        this.imageHeight = imgHeight
         this.rotation = rotation
+        this.isFrontCamera = isFrontCamera // 記錄現在是不是前鏡頭
         invalidate()
     }
 
@@ -58,15 +60,32 @@ class HandOverlayView @JvmOverloads constructor(
         for ((start, end) in connections) {
             val s = landmarks[start]
             val e = landmarks[end]
-            val sx = if (rotation == 90 || rotation == 270) s.y() * width else s.x() * width
+
+            // 計算原始 X 座標
+            var sx = if (rotation == 90 || rotation == 270) s.y() * width else s.x() * width
+            var ex = if (rotation == 90 || rotation == 270) e.y() * width else e.x() * width
+
+            // ✨ 鏡像魔法：如果是前鏡頭，就把 X 座標水平翻轉 (螢幕寬度 - 原始座標)
+            if (isFrontCamera) {
+                sx = width - sx
+                ex = width - ex
+            }
+
             val sy = if (rotation == 90 || rotation == 270) s.x() * height else s.y() * height
-            val ex = if (rotation == 90 || rotation == 270) e.y() * width else e.x() * width
             val ey = if (rotation == 90 || rotation == 270) e.x() * height else e.y() * height
+
             canvas.drawLine(sx, sy, ex, ey, linePaint)
         }
 
         for (lm in landmarks) {
-            val px = if (rotation == 90 || rotation == 270) lm.y() * width else lm.x() * width
+            // 計算原始 X 座標
+            var px = if (rotation == 90 || rotation == 270) lm.y() * width else lm.x() * width
+
+            // ✨ 鏡像魔法：如果是前鏡頭，把點的 X 座標也水平翻轉
+            if (isFrontCamera) {
+                px = width - px
+            }
+
             val py = if (rotation == 90 || rotation == 270) lm.x() * height else lm.y() * height
             canvas.drawCircle(px, py, 8f, pointPaint)
         }
