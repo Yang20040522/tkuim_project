@@ -20,4 +20,7 @@ interface RehabActionCallback {
 
     // 更新進度條與速度狀態 (0:正常, 1:太快警告)
     fun updateProgress(progress: Float, speedState: Int)
+
+    // ✨ 新增這行：控制要顯示哪種骨架模式 ("FULL_BODY", "UPPER_BODY", "ARMS_ONLY")
+    fun setSkeletonMode(mode: String = "FULL_BODY")
 }

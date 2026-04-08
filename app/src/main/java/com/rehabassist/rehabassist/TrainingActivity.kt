@@ -81,11 +81,42 @@ class TrainingActivity : AppCompatActivity(), RehabActionCallback {
         tvAccuracy = findViewById(R.id.tvAccuracy)
 
         // 設定 TTS
+        /*
         textToSpeech = TextToSpeech(this, { status ->
             if (status == TextToSpeech.SUCCESS) {
                 textToSpeech?.language = Locale.TAIWAN
                 textToSpeech?.setSpeechRate(0.95f)
                 textToSpeech?.setPitch(1.1f)
+            }
+        }, "com.google.android.tts")
+         */
+
+        // 設定 TTS
+        textToSpeech = TextToSpeech(this, { status ->
+            if (status == TextToSpeech.SUCCESS) {
+                textToSpeech?.language = Locale.TAIWAN
+
+                // 💡 換了新聲音後，建議先將速度和音調調回預設的 1.0f 聽聽看原音
+                textToSpeech?.setSpeechRate(1.0f)
+                textToSpeech?.setPitch(1.0f)
+
+                // ✨ 召喚「網路高品質」真人語音魔法
+                try {
+                    val voices = textToSpeech?.voices
+                    if (voices != null) {
+                        // 在系統的所有聲音中，尋找台灣口音 (TW) 且帶有 "network" (網路高品質) 的模型
+                        val highQualityVoice = voices.firstOrNull {
+                            it.locale.country == "TW" && it.name.contains("network", ignoreCase = true)
+                        }
+
+                        // 如果有找到高品質的，就幫治療師換上這個新嗓音！
+                        if (highQualityVoice != null) {
+                            textToSpeech?.voice = highQualityVoice
+                        }
+                    }
+                } catch (e: Exception) {
+                    e.printStackTrace() // 萬一找不到，就會默默用原本的機器音，不會當機
+                }
             }
         }, "com.google.android.tts")
 
@@ -108,6 +139,11 @@ class TrainingActivity : AppCompatActivity(), RehabActionCallback {
                 overlayView.setStickGuideEnabled(false)
                 overlayView.setPinchGuideEnabled(false)
                 WipeAction(this, difficultyLevel)
+            }
+            "DRAW_CIRCLE" -> {
+                overlayView.setStickGuideEnabled(false)
+                overlayView.setPinchGuideEnabled(false)
+                DrawCircleAction(this, difficultyLevel)
             }
             else -> null
         }
@@ -137,7 +173,8 @@ class TrainingActivity : AppCompatActivity(), RehabActionCallback {
     // ✨ 雙引擎改造 3：根據動作切換引擎
     private fun setupMediaPipe() {
         try {
-            if (currentActionType == "WIPE_ACTION") {
+            // ✨ 讓擦拭動作和畫圓動作都使用全身骨架引擎
+            if (currentActionType == "WIPE_ACTION" || currentActionType == "DRAW_CIRCLE") {
                 // 啟動全身骨架引擎
                 val baseOptions = BaseOptions.builder().setModelAssetPath("pose_landmarker_lite.task").build()
                 val options = PoseLandmarker.PoseLandmarkerOptions.builder()
@@ -182,7 +219,7 @@ class TrainingActivity : AppCompatActivity(), RehabActionCallback {
                         val mpImage = BitmapImageBuilder(rotatedBitmap).build()
 
                         // ✨ 雙引擎改造 4：影像分流
-                        if (currentActionType == "WIPE_ACTION") {
+                        if (currentActionType == "WIPE_ACTION" || currentActionType == "DRAW_CIRCLE") {
                             poseLandmarker?.detectAsync(mpImage, SystemClock.uptimeMillis())
                         } else {
                             handLandmarker?.detectAsync(mpImage, SystemClock.uptimeMillis())
@@ -328,12 +365,13 @@ class TrainingActivity : AppCompatActivity(), RehabActionCallback {
 
     private fun showCompletionDialog() {
         runOnUiThread {
-            // ✨ 選單加上第三個動作
+            // ✨ 選單加上畫圓動作
             val actionOptions = arrayOf(
                 "🔄 再來一組 (維持現狀)",
                 "🖐️ 切換：翻掌訓練",
                 "🤏 切換：手部精細動作 - 側捏",
                 "🧽 切換：功能性擦拭訓練",
+                "🚗 切換：方向盤畫圓訓練",
                 "🏠 結束今日訓練 (回到首頁)"
             )
 
@@ -346,8 +384,9 @@ class TrainingActivity : AppCompatActivity(), RehabActionCallback {
                     0 -> recreate()
                     1 -> showDifficultyDialog("TURN_PALM")
                     2 -> showDifficultyDialog("SECOND_ACTION")
-                    3 -> showDifficultyDialog("WIPE_ACTION") // ✨ 呼叫擦拭動作
-                    4 -> finish()
+                    3 -> showDifficultyDialog("WIPE_ACTION")
+                    4 -> showDifficultyDialog("DRAW_CIRCLE") // ✨ 呼叫畫圓動作
+                    5 -> finish()
                 }
             }
             builder.show()
@@ -356,11 +395,12 @@ class TrainingActivity : AppCompatActivity(), RehabActionCallback {
 
     private fun showDifficultyDialog(actionType: String) {
         runOnUiThread {
-            // ✨ 三個動作都有專屬的三階段難度選單了
+            // ✨ 難度選單加上畫圓動作
             val difficultyOptions = when (actionType) {
                 "TURN_PALM" -> arrayOf("Level 1 (初階 - 容錯較高)", "Level 2 (中階 - 要求嚴格)")
                 "SECOND_ACTION" -> arrayOf("Level 1 (初階微幅)", "Level 2 (中階標準)", "Level 3 (進階連擊)")
                 "WIPE_ACTION" -> arrayOf("Level 1 (微幅擦拭)", "Level 2 (標準來回)", "Level 3 (抗重力穩定)")
+                "DRAW_CIRCLE" -> arrayOf("Level 1 (小方向盤)", "Level 2 (大方向盤)")
                 else -> arrayOf("Level 1")
             }
 
@@ -408,6 +448,13 @@ class TrainingActivity : AppCompatActivity(), RehabActionCallback {
     override fun updateProgress(progress: Float, speedState: Int) {
         runOnUiThread {
             overlayView.setProgress(progress, speedState)
+        }
+    }
+
+    // ✨ 新增這段：接收卡匣的訊號，並轉達給全身畫筆
+    override fun setSkeletonMode(mode: String) {
+        runOnUiThread {
+            poseOverlayView.setSkeletonMode(mode)
         }
     }
 }

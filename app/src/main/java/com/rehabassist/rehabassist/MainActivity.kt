@@ -19,7 +19,8 @@ class MainActivity : AppCompatActivity() {
         val btnStartTraining = findViewById<Button>(R.id.btnStartTraining)
         val btnHistory = findViewById<Button>(R.id.btnHistory)
 
-        val actionOptions = arrayOf("翻掌訓練", "手部精細動作 - 側捏", "功能性擦拭訓練")
+        // ✨ 加上第四個動作：方向盤畫圓訓練
+        val actionOptions = arrayOf("翻掌訓練", "手部精細動作 - 側捏", "功能性擦拭訓練", "方向盤畫圓訓練")
         spinnerAction.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, actionOptions)
 
         spinnerAction.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
@@ -30,6 +31,7 @@ class MainActivity : AppCompatActivity() {
                     "翻掌訓練" -> arrayOf("Level 1 (初階 - 容錯較高)", "Level 2 (中階 - 要求嚴格)")
                     "手部精細動作 - 側捏" -> arrayOf("Level 1 (初階微幅)", "Level 2 (中階標準)", "Level 3 (進階連擊)")
                     "功能性擦拭訓練" -> arrayOf("Level 1 (微幅擦拭)", "Level 2 (標準來回)", "Level 3 (抗重力穩定)")
+                    "方向盤畫圓訓練" -> arrayOf("Level 1 (小方向盤)", "Level 2 (大方向盤)") // ✨ 加上畫圓的難度選項
                     else -> arrayOf("Level 1")
                 }
 
@@ -46,6 +48,7 @@ class MainActivity : AppCompatActivity() {
                 "翻掌訓練" -> "TURN_PALM"
                 "手部精細動作 - 側捏" -> "SECOND_ACTION"
                 "功能性擦拭訓練" -> "WIPE_ACTION"
+                "方向盤畫圓訓練" -> "DRAW_CIRCLE" // ✨ 加上畫圓的暗號對應
                 else -> "TURN_PALM"
             }
 

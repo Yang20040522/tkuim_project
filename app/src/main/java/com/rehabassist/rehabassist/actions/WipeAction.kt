@@ -2,11 +2,12 @@ package com.rehabassist.rehabassist.actions
 
 import android.os.SystemClock
 import com.google.mediapipe.tasks.components.containers.NormalizedLandmark
-
+import java.util.Locale
+import kotlin.math.hypot
 
 class WipeAction(
     callback: RehabActionCallback,
-    private val startingLevel: Int = 1
+    startingLevel: Int = 1 // 💡 移除了 private val 解決警告
 ) : BaseRehabAction(callback) {
 
     // ✨ 成績單與計時器
@@ -25,6 +26,9 @@ class WipeAction(
     // 紀錄起點的肩膀高度，用來抓代償 (Level 3)
     private var startShoulderY = 0.0
 
+    // ✨ 治療師升級：自動偵測患側手
+    private var activeSide: String? = null // "LEFT" 或 "RIGHT"
+
     init {
         startLevel(startingLevel)
     }
@@ -38,6 +42,11 @@ class WipeAction(
         transitionStartTime = SystemClock.uptimeMillis()
         mistakeLogs.clear()
         sessionStartTime = System.currentTimeMillis()
+
+        // ✨ 畫面設定：關閉不相關的特效，並啟動「上半身骨架模式」
+        callback.setGuideLineVisible(false)
+        callback.setPinchGuideEnabled(false)
+        callback.setSkeletonMode("UPPER_BODY")
 
         val levelName = when (level) {
             1 -> "初階 (微幅擦拭)"
@@ -71,17 +80,41 @@ class WipeAction(
             return
         }
 
-        // 🌟 全身骨架點位 (MediaPipe Pose)
-        // 預設抓取「左手」進行復健：11(左肩膀), 13(左手肘), 15(左手腕)
-        // 💡 如果奶奶是要練右手，請把數字改成 12, 14, 16！
-        val shoulder = landmarks[11]
-        val elbow = landmarks[13]
-        val wrist = landmarks[15]
+        // 🌟 抓出左右手的關鍵點
+        val leftShoulder = landmarks[11]
+        val rightShoulder = landmarks[12]
+        val leftWrist = landmarks[15]
+        val rightWrist = landmarks[16]
 
-        // 計算肩膀到手腕的直線距離 (代表手臂伸直的程度)
-        val armExtension = Math.hypot((wrist.x() - shoulder.x()).toDouble(), (wrist.y() - shoulder.y()).toDouble())
+        // 💡 修正黃色警告：改用 Kotlin 的 hypot 函數
+        val leftExtension = hypot((leftWrist.x() - leftShoulder.x()).toDouble(), (leftWrist.y() - leftShoulder.y()).toDouble())
+        val rightExtension = hypot((rightWrist.x() - rightShoulder.x()).toDouble(), (rightWrist.y() - rightShoulder.y()).toDouble())
 
-        callback.updateUI(accuracy = "手臂伸展度: ${String.format("%.2f", armExtension)}")
+        // ==========================================
+        // ✨ 自動偵測患側手邏輯 (只在剛開始時執行一次)
+        // ==========================================
+        if (activeSide == null) {
+            callback.updateUI(instruction = "👀 請將【要訓練的那隻手】往前推以進行綁定")
+            if (leftExtension > 0.3) {
+                activeSide = "LEFT"
+                callback.speak("已鎖定左手", isUrgent = true)
+            } else if (rightExtension > 0.3) {
+                activeSide = "RIGHT"
+                callback.speak("已鎖定右手", isUrgent = true)
+            }
+            return // 還沒綁定前，先不要跑後面的計數邏輯
+        }
+
+        // ==========================================
+        // 綁定完成後，根據 activeSide 拿出對應的點位
+        // ==========================================
+        val shoulder = if (activeSide == "LEFT") leftShoulder else rightShoulder
+        // 💡 刪除沒有用到的 elbow 和 wrist 變數，解決黃色警告
+
+        val armExtension = if (activeSide == "LEFT") leftExtension else rightExtension
+
+        // 💡 加上 Locale.US 解決 String.format 的黃色警告
+        callback.updateUI(accuracy = "手臂伸展度: ${String.format(Locale.US, "%.2f", armExtension)}")
 
         // 動態難度門檻：決定擦拭要推多遠才算數
         val wipeOutThreshold = when (currentLevel) {
@@ -175,7 +208,13 @@ class WipeAction(
             lastRepTime = SystemClock.uptimeMillis()
             lastCountdownSec = -1
             callback.speak("開始", isUrgent = true)
-            callback.updateUI(instruction = "請先將手收回身體旁")
+
+            // ✨ 如果還沒綁定，就提示他綁定
+            if (activeSide == null) {
+                callback.updateUI(instruction = "👀 請將【要訓練的那隻手】往前推")
+            } else {
+                callback.updateUI(instruction = "請先將手收回身體旁")
+            }
         }
     }
 
@@ -190,10 +229,13 @@ class WipeAction(
                 actionName = "功能性擦拭訓練",
                 difficulty = currentLevel,
                 totalReps = repCount,
-                durationSeconds = durationInSeconds,
+                durationSeconds = durationInSeconds, // 🔴 解決紅色錯誤：移除了 .toInt()
                 mistakeLogs = mistakeLogs.toList()
             )
             callback.updateUI(feedback = "🎉 訓練結束！總平均: $finalScore 分")
+
+            // ✨ 結束時切回全身模式，避免影響下一個動作
+            callback.setSkeletonMode("FULL_BODY")
             callback.onTrainingComplete(report)
         }
     }
