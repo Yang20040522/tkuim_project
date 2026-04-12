@@ -145,6 +145,11 @@ class TrainingActivity : AppCompatActivity(), RehabActionCallback {
                 overlayView.setPinchGuideEnabled(false)
                 DrawCircleAction(this, difficultyLevel)
             }
+            "REACH_ACTION" -> { // ✨ 裝上第五個卡匣：手臂上舉
+                overlayView.setStickGuideEnabled(false)
+                overlayView.setPinchGuideEnabled(false)
+                ReachAction(this, difficultyLevel)
+            }
             else -> null
         }
 
@@ -173,8 +178,8 @@ class TrainingActivity : AppCompatActivity(), RehabActionCallback {
     // ✨ 雙引擎改造 3：根據動作切換引擎
     private fun setupMediaPipe() {
         try {
-            // ✨ 讓擦拭動作和畫圓動作都使用全身骨架引擎
-            if (currentActionType == "WIPE_ACTION" || currentActionType == "DRAW_CIRCLE") {
+            // ✨ 讓擦拭動作、畫圓動作和上舉動作都使用全身骨架引擎
+            if (currentActionType == "WIPE_ACTION" || currentActionType == "DRAW_CIRCLE" || currentActionType == "REACH_ACTION") {
                 // 啟動全身骨架引擎
                 val baseOptions = BaseOptions.builder().setModelAssetPath("pose_landmarker_lite.task").build()
                 val options = PoseLandmarker.PoseLandmarkerOptions.builder()
@@ -219,7 +224,7 @@ class TrainingActivity : AppCompatActivity(), RehabActionCallback {
                         val mpImage = BitmapImageBuilder(rotatedBitmap).build()
 
                         // ✨ 雙引擎改造 4：影像分流
-                        if (currentActionType == "WIPE_ACTION" || currentActionType == "DRAW_CIRCLE") {
+                        if (currentActionType == "WIPE_ACTION" || currentActionType == "DRAW_CIRCLE" || currentActionType == "REACH_ACTION") {
                             poseLandmarker?.detectAsync(mpImage, SystemClock.uptimeMillis())
                         } else {
                             handLandmarker?.detectAsync(mpImage, SystemClock.uptimeMillis())
@@ -365,13 +370,14 @@ class TrainingActivity : AppCompatActivity(), RehabActionCallback {
 
     private fun showCompletionDialog() {
         runOnUiThread {
-            // ✨ 選單加上畫圓動作
+            // ✨ 選單加上畫圓動作和上舉動作
             val actionOptions = arrayOf(
                 "🔄 再來一組 (維持現狀)",
                 "🖐️ 切換：翻掌訓練",
                 "🤏 切換：手部精細動作 - 側捏",
                 "🧽 切換：功能性擦拭訓練",
                 "🚗 切換：方向盤畫圓訓練",
+                "💪 切換：手臂上舉訓練", // ✨ 加入第五個選單
                 "🏠 結束今日訓練 (回到首頁)"
             )
 
@@ -386,7 +392,8 @@ class TrainingActivity : AppCompatActivity(), RehabActionCallback {
                     2 -> showDifficultyDialog("SECOND_ACTION")
                     3 -> showDifficultyDialog("WIPE_ACTION")
                     4 -> showDifficultyDialog("DRAW_CIRCLE") // ✨ 呼叫畫圓動作
-                    5 -> finish()
+                    5 -> showDifficultyDialog("REACH_ACTION") // ✨ 呼叫上舉動作
+                    6 -> finish()
                 }
             }
             builder.show()
@@ -395,12 +402,13 @@ class TrainingActivity : AppCompatActivity(), RehabActionCallback {
 
     private fun showDifficultyDialog(actionType: String) {
         runOnUiThread {
-            // ✨ 難度選單加上畫圓動作
+            // ✨ 難度選單加上畫圓動作和上舉動作
             val difficultyOptions = when (actionType) {
                 "TURN_PALM" -> arrayOf("Level 1 (初階 - 容錯較高)", "Level 2 (中階 - 要求嚴格)")
                 "SECOND_ACTION" -> arrayOf("Level 1 (初階微幅)", "Level 2 (中階標準)", "Level 3 (進階連擊)")
                 "WIPE_ACTION" -> arrayOf("Level 1 (微幅擦拭)", "Level 2 (標準來回)", "Level 3 (抗重力穩定)")
                 "DRAW_CIRCLE" -> arrayOf("Level 1 (小方向盤)", "Level 2 (大方向盤)")
+                "REACH_ACTION" -> arrayOf("Level 1 (輕度抬起)", "Level 2 (舉高至頭部)", "Level 3 (空中定格)") // ✨ 加上上舉的難度選單
                 else -> arrayOf("Level 1")
             }
 
