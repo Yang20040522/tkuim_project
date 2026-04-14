@@ -3,31 +3,26 @@ package com.rehabassist.rehabassist.actions
 import android.os.SystemClock
 import com.google.mediapipe.tasks.components.containers.NormalizedLandmark
 import java.util.Locale
-import kotlin.math.hypot
+import kotlin.math.abs
 
 class WipeAction(
     callback: RehabActionCallback,
-    startingLevel: Int = 1 // 💡 移除了 private val 解決警告
+    startingLevel: Int = 1
 ) : BaseRehabAction(callback) {
 
-    // ✨ 成績單與計時器
     private val mistakeLogs = mutableListOf<String>()
     private var sessionStartTime = System.currentTimeMillis()
 
-    // 🌟 關卡與狀態變數
     private var currentLevel = 1
     private var isTransitioning = false
     private var transitionStartTime = 0L
     private var lastCountdownSec = -1
 
-    // 狀態機：等待出發 -> 往前推 (擦拭) -> 往回收回
     private var currentState = "WAIT_START"
 
-    // 紀錄起點的肩膀高度，用來抓代償 (Level 3)
-    private var startShoulderY = 0.0
-
-    // ✨ 治療師升級：自動偵測患側手
-    private var activeSide: String? = null // "LEFT" 或 "RIGHT"
+    // ✨ OT 大綱專屬變數：核心穩定、側傾追蹤
+    private var startShoulderX = 0.0f
+    private var activeSide: String? = null
 
     init {
         startLevel(startingLevel)
@@ -43,36 +38,36 @@ class WipeAction(
         mistakeLogs.clear()
         sessionStartTime = System.currentTimeMillis()
 
-        // ✨ 畫面設定：關閉不相關的特效，並啟動「上半身骨架模式」
         callback.setGuideLineVisible(false)
         callback.setPinchGuideEnabled(false)
         callback.setSkeletonMode("UPPER_BODY")
+        callback.updateProgress(0f, 0)
 
+        // 💡 UI 與語音全面升級為「桌面左右擦拭」
         val levelName = when (level) {
-            1 -> "初階 (微幅擦拭)"
-            2 -> "中階 (標準來回擦拭)"
-            3 -> "進階 (抗重力穩定擦拭)"
+            1 -> "初階 (桌面小幅左右擦拭)"
+            2 -> "中階 (桌面大幅向外擦拭)"
+            3 -> "進階 (核心穩定抗側傾)"
             else -> "初階"
         }
 
         callback.updateUI(
-            title = "功能性擦拭 Lv.$level - $levelName",
+            title = "水平擦拭訓練 Lv.$level - $levelName",
             instruction = "準備進入關卡...",
             repCount = "0 / 10",
             accuracy = "--"
         )
 
         val speech = when (level) {
-            1 -> "第一關，初階擦拭，請將手輕輕往前滑"
-            2 -> "第二關，中階擦拭，請大範圍來回擦拭"
-            3 -> "第三關，進階擦拭，請維持身體挺直不要塌陷"
+            1 -> "第一關，請將手平貼桌面，輕輕向外側滑動擦拭"
+            2 -> "第二關，請沿著桌面，大幅度向外側擦拭到底"
+            3 -> "第三關，向外擦拭時，身體請保持挺直，不要跟著歪斜"
             else -> "開始"
         }
         callback.speak(speech, isUrgent = true)
     }
 
     override fun processLandmarks(landmarks: List<NormalizedLandmark>) {
-        // 防呆：如果傳進來的點位不到 33 個，代表主機引擎裝錯了！
         if (landmarks.size < 33) return
 
         if (isTransitioning) {
@@ -80,94 +75,105 @@ class WipeAction(
             return
         }
 
-        // 🌟 抓出左右手的關鍵點
         val leftShoulder = landmarks[11]
         val rightShoulder = landmarks[12]
         val leftWrist = landmarks[15]
         val rightWrist = landmarks[16]
 
-        // 💡 修正黃色警告：改用 Kotlin 的 hypot 函數
-        val leftExtension = hypot((leftWrist.x() - leftShoulder.x()).toDouble(), (leftWrist.y() - leftShoulder.y()).toDouble())
-        val rightExtension = hypot((rightWrist.x() - rightShoulder.x()).toDouble(), (rightWrist.y() - rightShoulder.y()).toDouble())
+        // ✨ 專注於 X 軸水平距離 (Horizontal Extension) 來判斷擦拭進度
+        val leftHorizontalExt = abs(leftWrist.x() - leftShoulder.x())
+        val rightHorizontalExt = abs(rightWrist.x() - rightShoulder.x())
 
         // ==========================================
-        // ✨ 自動偵測患側手邏輯 (只在剛開始時執行一次)
+        // ✨ 秒綁定：哪隻手先往外滑，就鎖定哪隻！
         // ==========================================
         if (activeSide == null) {
-            callback.updateUI(instruction = "👀 請將【要訓練的那隻手】往前推以進行綁定")
-            if (leftExtension > 0.3) {
+            callback.updateUI(instruction = "👀 請將【要訓練的那隻手】向外側滑動來綁定")
+
+            if (leftHorizontalExt > 0.25f) {
                 activeSide = "LEFT"
                 callback.speak("已鎖定左手", isUrgent = true)
-            } else if (rightExtension > 0.3) {
+            } else if (rightHorizontalExt > 0.25f) {
                 activeSide = "RIGHT"
                 callback.speak("已鎖定右手", isUrgent = true)
             }
-            return // 還沒綁定前，先不要跑後面的計數邏輯
+            return
         }
 
-        // ==========================================
-        // 綁定完成後，根據 activeSide 拿出對應的點位
-        // ==========================================
         val shoulder = if (activeSide == "LEFT") leftShoulder else rightShoulder
-        // 💡 刪除沒有用到的 elbow 和 wrist 變數，解決黃色警告
+        val horizontalExt = if (activeSide == "LEFT") leftHorizontalExt else rightHorizontalExt
 
-        val armExtension = if (activeSide == "LEFT") leftExtension else rightExtension
+        callback.updateUI(accuracy = "水平伸展度: ${String.format(Locale.US, "%.2f", horizontalExt)}")
 
-        // 💡 加上 Locale.US 解決 String.format 的黃色警告
-        callback.updateUI(accuracy = "手臂伸展度: ${String.format(Locale.US, "%.2f", armExtension)}")
-
-        // 動態難度門檻：決定擦拭要推多遠才算數
+        // 動態難度門檻：X軸距離越遠，代表手往外滑得越直
+        val wipeInThreshold = 0.15f // 靠近身體前方
         val wipeOutThreshold = when (currentLevel) {
-            1 -> 0.35 // 初階：稍微往前推就好
-            2 -> 0.45 // 中階：要推得比較遠 (手肘要伸直)
-            3 -> 0.45 // 進階：推遠，且身體要穩
-            else -> 0.45
+            1 -> 0.35f
+            2 -> 0.45f // 需要大幅度外展
+            3 -> 0.45f // 重點在防身體歪斜
+            else -> 0.45f
         }
-        val wipeInThreshold = 0.25 // 收回來的門檻
+
+        // 計算滑順的進度條
+        val totalDistance = wipeOutThreshold - wipeInThreshold
+        var currentProgress = 0f
+        if (totalDistance > 0.01f) {
+            val currentDistance = horizontalExt - wipeInThreshold
+            currentProgress = (currentDistance / totalDistance).coerceIn(0.0f, 1.0f)
+        }
 
         val now = SystemClock.uptimeMillis()
 
         when (currentState) {
             "WAIT_START" -> {
-                if (armExtension < wipeInThreshold) {
+                callback.updateProgress(0f, 0)
+                if (horizontalExt < wipeInThreshold + 0.05f) {
                     currentState = "WIPING_OUT"
-                    startShoulderY = shoulder.y().toDouble() // 紀錄起始肩膀高度
-                    callback.updateUI(feedback = "✅ 預備完成", instruction = "請將手往前推")
+                    startShoulderX = shoulder.x() // 紀錄起點肩膀的X座標，用來抓身體歪斜
+                    callback.updateUI(feedback = "✅ 預備完成", instruction = "請將手沿著桌面往外側平擦")
                 } else {
-                    callback.updateUI(instruction = "請先將手收回靠近身體")
+                    callback.updateUI(instruction = "請先將手收回至胸前")
                 }
             }
 
             "WIPING_OUT" -> {
-                if (armExtension > wipeOutThreshold) {
-                    currentState = "WIPING_IN"
-                    callback.updateUI(feedback = "✅ 推到頂點！", instruction = "請將手收回")
+                callback.updateProgress(currentProgress, 0)
+                callback.updateUI(instruction = "繼續往外擦... 完成度 ${(currentProgress * 100).toInt()}%")
+
+                // ✨ OT 大綱重點：核心與姿勢維持 (防側傾代償)
+                if (currentLevel >= 2) {
+                    val shoulderLean = abs(shoulder.x() - startShoulderX)
+
+                    if (shoulderLean > 0.08f) { // 身體跟著往外歪
+                        callback.speak("身體請挺直", isUrgent = true)
+                        callback.updateUI(feedback = "⚠️ 身體歪斜代償！", instruction = "請用手臂力量向外擦，身體不要跟著倒過去")
+                    }
                 }
 
-                // Lv3 防作弊：肩膀有沒有往下掉 (身體往前傾或塌陷)
-                if (currentLevel == 3) {
-                    val shoulderDrop = shoulder.y().toDouble() - startShoulderY
-                    if (shoulderDrop > 0.05) { // Y值變大代表在畫面上往下掉
-                        callback.speak("身體請挺直", isUrgent = true)
-                        callback.updateUI(feedback = "⚠️ 身體塌陷！", instruction = "請用核心撐住，不要駝背")
-                    }
+                if (horizontalExt > wipeOutThreshold) {
+                    currentState = "WIPING_IN"
+                    callback.updateUI(feedback = "✅ 擦到外側頂點！", instruction = "請平穩地將手收回胸前")
+                    callback.speak("很好，收回來", isUrgent = true)
                 }
             }
 
             "WIPING_IN" -> {
-                if (armExtension < wipeInThreshold) {
+                callback.updateProgress(currentProgress, 0)
+                callback.updateUI(instruction = "慢慢收回... 剩餘 ${(currentProgress * 100).toInt()}%")
+
+                if (horizontalExt < wipeInThreshold + 0.05f) {
                     val duration = now - lastRepTime
-                    if (duration > 1500L) { // 防作弊：動作太快
+                    if (duration > 1200L) {
                         repCount++
                         lastRepTime = now
                         currentState = "WIPING_OUT"
-                        startShoulderY = shoulder.y().toDouble() // 更新下一輪的高度
 
-                        // 結算這一次的分數與筆記
                         var score = 100
-                        if (currentLevel == 3 && (shoulder.y().toDouble() - startShoulderY) > 0.05) {
-                            score -= 20
-                            mistakeLogs.add("第 $repCount 次：身體前傾代償，核心未維持穩定")
+                        if (currentLevel >= 2) {
+                            if (abs(shoulder.x() - startShoulderX) > 0.08f) {
+                                score -= 20
+                                mistakeLogs.add("第 $repCount 次：身體側傾代償 (未穩定核心)")
+                            }
                         }
                         if (duration > 4000L) {
                             score -= 10
@@ -176,8 +182,11 @@ class WipeAction(
                         score = maxOf(score, 60)
                         repScores.add(score)
 
+                        // 更新下一輪起點
+                        startShoulderX = shoulder.x()
+
                         callback.speakCount(repCount)
-                        callback.updateUI(feedback = "🎉 完成一次！(本次: $score 分)", repCount = "$repCount / 10", instruction = "請繼續往前擦拭")
+                        callback.updateUI(feedback = "🎉 完成一次！(本次: $score 分)", repCount = "$repCount / 10")
 
                         if (repCount >= 10) {
                             checkLevelUp()
@@ -209,11 +218,10 @@ class WipeAction(
             lastCountdownSec = -1
             callback.speak("開始", isUrgent = true)
 
-            // ✨ 如果還沒綁定，就提示他綁定
             if (activeSide == null) {
-                callback.updateUI(instruction = "👀 請將【要訓練的那隻手】往前推")
+                callback.updateUI(instruction = "👀 請將【要訓練的那隻手】往外側平移來綁定")
             } else {
-                callback.updateUI(instruction = "請先將手收回身體旁")
+                callback.updateUI(instruction = "請先將手收回胸前")
             }
         }
     }
@@ -226,15 +234,13 @@ class WipeAction(
         } else {
             val durationInSeconds = (System.currentTimeMillis() - sessionStartTime) / 1000
             val report = TrainingReport(
-                actionName = "功能性擦拭訓練",
+                actionName = "水平擦拭訓練",
                 difficulty = currentLevel,
                 totalReps = repCount,
-                durationSeconds = durationInSeconds, // 🔴 解決紅色錯誤：移除了 .toInt()
+                durationSeconds = durationInSeconds,
                 mistakeLogs = mistakeLogs.toList()
             )
             callback.updateUI(feedback = "🎉 訓練結束！總平均: $finalScore 分")
-
-            // ✨ 結束時切回全身模式，避免影響下一個動作
             callback.setSkeletonMode("FULL_BODY")
             callback.onTrainingComplete(report)
         }
