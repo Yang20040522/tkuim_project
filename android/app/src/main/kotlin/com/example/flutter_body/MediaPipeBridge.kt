@@ -33,6 +33,20 @@ class MediaPipeBridge(
     private var cameraProvider: ProcessCameraProvider? = null
     private var currentExercise: BaseRehabAction? = null
 
+    // ⚡ 優化 1：防止幀堆積，避免分析執行緒被塞爆
+    private var isProcessing = false
+
+    // ⚡ 優化 2：平滑濾波，消除骨架抖動
+    private var smoothedLandmarks = Array(21) { FloatArray(3) }
+    private var isFirstFrame = true
+    private val SMOOTHING_FACTOR = 0.65f
+
+    // ⚡ 優化 3：節流閥，限制傳送給 Flutter 的頻率，避免 UI 通道塞車
+    private var lastEventSendTime = 0L
+
+    // ⚡ 優化 4：重複使用 Matrix，減少 GC 壓力避免卡頓
+    private val reusableMatrix = android.graphics.Matrix()
+
     fun start() {
         setupMediaPipe()
         startCamera()
@@ -46,6 +60,7 @@ class MediaPipeBridge(
 
     fun flipCamera() {
         useFrontCamera = !useFrontCamera
+        isFirstFrame = true  // ⚡ 優化 6：翻鏡頭時重置平滑狀態，防止畫面閃爍
         startCamera()
     }
 
@@ -57,8 +72,18 @@ class MediaPipeBridge(
             val options = HandLandmarker.HandLandmarkerOptions.builder()
                 .setBaseOptions(baseOptions)
                 .setNumHands(1)
+                // ⚡ 優化 7：設定信心度門檻，讓偵測更穩定
+                .setMinHandDetectionConfidence(0.5f)
+                .setMinHandPresenceConfidence(0.5f)
+                .setMinTrackingConfidence(0.5f)
                 .setRunningMode(RunningMode.LIVE_STREAM)
-                .setResultListener { result, _ -> processResult(result) }
+                .setResultListener { result, _ ->
+                    processResult(result)
+                    isProcessing = false  // ⚡ 優化 1：分析完成才釋放旗標
+                }
+                .setErrorListener { _ ->
+                    isProcessing = false  // ⚡ 優化 8：錯誤時也要釋放，防止死鎖
+                }
                 .build()
             handLandmarker = HandLandmarker.createFromOptions(context, options)
 
@@ -77,16 +102,30 @@ class MediaPipeBridge(
         cameraProviderFuture.addListener({
             cameraProvider = cameraProviderFuture.get()
 
-            val preview = Preview.Builder().build().also {
-                it.setSurfaceProvider(previewView?.surfaceProvider)
-            }
+            // ⚡ 優化 5a：預覽不裁切畫面，確保顯示完整
+            previewView?.scaleType = PreviewView.ScaleType.FIT_CENTER
+
+            // ⚡ 優化 5b：強制 4:3 比例，讓預覽與 Flutter UI 對齊
+            val preview = Preview.Builder()
+                .setTargetAspectRatio(AspectRatio.RATIO_4_3)
+                .build().also {
+                    it.setSurfaceProvider(previewView?.surfaceProvider)
+                }
 
             val imageAnalyzer = ImageAnalysis.Builder()
                 .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
-                .setOutputImageFormat(ImageAnalysis.OUTPUT_IMAGE_FORMAT_RGBA_8888)
+                // ⚡ 優化 5c：AI 分析也用 4:3，確保座標比例不偏移
+                .setTargetAspectRatio(AspectRatio.RATIO_4_3)
                 .build()
                 .also { analysis ->
                     analysis.setAnalyzer(cameraExecutor) { imageProxy ->
+                        // ⚡ 優化 1：若上一幀還在處理中，直接跳過此幀
+                        if (isProcessing) {
+                            imageProxy.close()
+                            return@setAnalyzer
+                        }
+
+                        isProcessing = true
                         val rotation = imageProxy.imageInfo.rotationDegrees
                         val bitmap = imageProxy.toBitmap()
                         val rotated = rotateBitmap(bitmap, rotation)
@@ -115,40 +154,76 @@ class MediaPipeBridge(
         }, ContextCompat.getMainExecutor(context))
     }
 
+    private fun rotateBitmap(bitmap: android.graphics.Bitmap, degrees: Int): android.graphics.Bitmap {
+        if (degrees == 0) return bitmap
+        // ⚡ 優化 4：重複使用 Matrix，不每次都 new 新物件
+        reusableMatrix.reset()
+        reusableMatrix.postRotate(degrees.toFloat())
+        return android.graphics.Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, reusableMatrix, true)
+    }
+
     private fun processResult(result: HandLandmarkerResult) {
         val isFront = useFrontCamera
         val landmarks = if (result.landmarks().isNotEmpty()) result.landmarks()[0] else null
 
-        val landmarkList = landmarks?.map { lm ->
-            mapOf(
-                "x" to if (isFront) 1f - lm.x() else lm.x(),
-                "y" to lm.y(),
-                "z" to lm.z()
-            )
-        } ?: emptyList()
+        if (landmarks == null) {
+            // 偵測不到手時重置平滑狀態
+            isFirstFrame = true
+            val now = SystemClock.uptimeMillis()
+            // ⚡ 優化 3：沒有手時也節流，每 32ms 最多送一次
+            if (now - lastEventSendTime > 32) {
+                lastEventSendTime = now
+                (context as? android.app.Activity)?.runOnUiThread {
+                    landmarkEventSink?.success(mapOf(
+                        "landmarks" to emptyList<Map<String, Float>>(),
+                        "handDetected" to false
+                    ))
+                }
+            }
+            return
+        }
 
-        (context as? android.app.Activity)?.runOnUiThread {
-            landmarkEventSink?.success(mapOf(
-                "landmarks" to landmarkList,
-                "handDetected" to (landmarks != null)
+        val landmarkList = mutableListOf<Map<String, Float>>()
+        for (i in landmarks.indices) {
+            val lm = landmarks[i]
+            // 前鏡頭鏡像反轉
+            val rawX = if (isFront) 1f - lm.x() else lm.x()
+            val rawY = lm.y()
+            val rawZ = lm.z()
+
+            // ⚡ 優化 2：平滑濾波，第一幀直接採用，之後做指數加權平均
+            if (isFirstFrame) {
+                smoothedLandmarks[i][0] = rawX
+                smoothedLandmarks[i][1] = rawY
+                smoothedLandmarks[i][2] = rawZ
+            } else {
+                smoothedLandmarks[i][0] = (SMOOTHING_FACTOR * rawX) + ((1 - SMOOTHING_FACTOR) * smoothedLandmarks[i][0])
+                smoothedLandmarks[i][1] = (SMOOTHING_FACTOR * rawY) + ((1 - SMOOTHING_FACTOR) * smoothedLandmarks[i][1])
+                smoothedLandmarks[i][2] = (SMOOTHING_FACTOR * rawZ) + ((1 - SMOOTHING_FACTOR) * smoothedLandmarks[i][2])
+            }
+
+            landmarkList.add(mapOf(
+                "x" to smoothedLandmarks[i][0],
+                "y" to smoothedLandmarks[i][1],
+                "z" to smoothedLandmarks[i][2]
             ))
         }
+        isFirstFrame = false
 
-        if (landmarks != null) {
-            currentExercise?.processLandmarks(landmarks)
+        // ⚡ 優化 3：節流閥核心，限制約 25fps 傳送給 Flutter，解決 UI 渲染卡頓
+        val now = SystemClock.uptimeMillis()
+        if (now - lastEventSendTime > 40) {
+            lastEventSendTime = now
+            (context as? android.app.Activity)?.runOnUiThread {
+                landmarkEventSink?.success(mapOf(
+                    "landmarks" to landmarkList,
+                    "handDetected" to true
+                ))
+            }
         }
-    }
 
-    private fun rotateBitmap(
-        bitmap: android.graphics.Bitmap,
-        degrees: Int
-    ): android.graphics.Bitmap {
-        if (degrees == 0) return bitmap
-        val matrix = android.graphics.Matrix()
-        matrix.postRotate(degrees.toFloat())
-        return android.graphics.Bitmap.createBitmap(
-            bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true
-        )
+        // 注意：運動邏輯仍使用原始（未節流）的 landmarks，保持準確性
+        currentExercise?.processLandmarks(landmarks)
     }
 
     override fun updateUI(

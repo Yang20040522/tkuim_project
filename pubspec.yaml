@@ -10,6 +10,8 @@ dependencies:
   flutter:
     sdk: flutter
   shared_preferences: ^2.2.2
+  camera: ^0.11.2+1          # ✅ 新增
+  onnxruntime_v2: ^1.23.2    # ✅ 新增
 
 dev_dependencies:
   flutter_test:
@@ -18,3 +20,6 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+  assets:                    # ✅ 移到這裡（縮排在 flutter: 底下）
+    - assets/rtmdet.onnx
+    - assets/rtmpose_wholebody.onnx

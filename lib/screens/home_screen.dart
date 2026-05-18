@@ -1,6 +1,9 @@
+// lib/screens/home_screen.dart
+
 import 'package:flutter/material.dart';
 import '../models/training_action.dart';
 import 'training_screen.dart';
+import 'body_test_screen.dart'; // ✅ 新增
 import 'history_screen.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -33,6 +36,19 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   }
 
   void _selectAction(TrainingAction action) {
+    // ✅ 全身骨架直接跳轉，不需要選難度
+    if (action.type == ActionType.bodyTest) {
+      Navigator.of(context).push(
+        PageRouteBuilder(
+          pageBuilder: (_, anim, __) => const BodyTestScreen(),
+          transitionsBuilder: (_, anim, __, child) =>
+              FadeTransition(opacity: anim, child: child),
+          transitionDuration: const Duration(milliseconds: 400),
+        ),
+      );
+      return;
+    }
+
     setState(() {
       _selectedAction = action;
       _selectedDifficulty = action.difficulties.first;
@@ -74,15 +90,28 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                       const SizedBox(height: 8),
                       _buildSectionLabel('選擇訓練動作'),
                       const SizedBox(height: 12),
-                      ...kTrainingActions.map(_buildActionCard),
+                      // 手部動作卡片（原有的兩個）
+                      ...kTrainingActions
+                          .where((a) => a.type != ActionType.bodyTest)
+                          .map(_buildActionCard),
+                      const SizedBox(height: 16),
+                      // ✅ 全身骨架測試獨立區塊
+                      _buildSectionLabel('實驗功能'),
+                      const SizedBox(height: 12),
+                      _buildBodyTestCard(),
                       const SizedBox(height: 28),
-                      if (_selectedAction != null) ...[
+                      // 難度選擇（只在選了手部動作時顯示）
+                      if (_selectedAction != null &&
+                          _selectedAction!.type != ActionType.bodyTest) ...[
                         _buildSectionLabel('選擇難度等級'),
                         const SizedBox(height: 12),
                         _buildDifficultySelector(),
                         const SizedBox(height: 32),
                       ],
-                      _buildStartButton(),
+                      // 開始按鈕（只在選了手部動作時顯示）
+                      if (_selectedAction != null &&
+                          _selectedAction!.type != ActionType.bodyTest)
+                        _buildStartButton(),
                       const SizedBox(height: 16),
                       _buildHistoryButton(),
                       const SizedBox(height: 32),
@@ -229,9 +258,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                   Text(
                     action.name,
                     style: TextStyle(
-                      color: isSelected
-                          ? Colors.white
-                          : const Color(0xFFD0D2E0),
+                      color: isSelected ? Colors.white : const Color(0xFFD0D2E0),
                       fontSize: 16,
                       fontWeight: FontWeight.w700,
                     ),
@@ -253,8 +280,78 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                   color: Color(0xFF4A65FF),
                   shape: BoxShape.circle,
                 ),
-                child: const Icon(Icons.check, color: Colors.white, size: 14),
+                child:
+                    const Icon(Icons.check, color: Colors.white, size: 14),
               ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ✅ 全身骨架測試專屬卡片（點擊直接跳轉，不需選難度）
+  Widget _buildBodyTestCard() {
+    return GestureDetector(
+      onTap: () => _selectAction(
+          kTrainingActions.firstWhere((a) => a.type == ActionType.bodyTest)),
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 12),
+        padding: const EdgeInsets.all(18),
+        decoration: BoxDecoration(
+          color: const Color(0xFF161824),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: const Color(0xFF2A3050)),
+          gradient: const LinearGradient(
+            colors: [Color(0xFF161824), Color(0xFF1A2040)],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 52,
+              height: 52,
+              decoration: BoxDecoration(
+                color: const Color(0xFF00BCD4).withOpacity(0.15),
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(
+                    color: const Color(0xFF00BCD4).withOpacity(0.3)),
+              ),
+              child: const Center(
+                child: Text('🦴', style: TextStyle(fontSize: 26)),
+              ),
+            ),
+            const SizedBox(width: 16),
+            const Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Text(
+                        '全身骨架偵測',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 16,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      SizedBox(width: 8),
+                      // Beta 標籤
+                      _BetaBadge(),
+                    ],
+                  ),
+                  SizedBox(height: 3),
+                  Text(
+                    'RTMPose 全身 133 關鍵點即時追蹤',
+                    style: TextStyle(color: Color(0xFF8A8D9F), fontSize: 12),
+                  ),
+                ],
+              ),
+            ),
+            const Icon(Icons.arrow_forward_ios,
+                color: Color(0xFF00BCD4), size: 16),
           ],
         ),
       ),
@@ -290,9 +387,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                   Text(
                     diff.label,
                     style: TextStyle(
-                      color: isSelected
-                          ? Colors.white
-                          : const Color(0xFF8A8D9F),
+                      color:
+                          isSelected ? Colors.white : const Color(0xFF8A8D9F),
                       fontWeight: FontWeight.w700,
                       fontSize: 13,
                     ),
@@ -355,7 +451,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
             children: [
               Icon(
                 Icons.play_arrow_rounded,
-                color: canStart ? Colors.white : const Color(0xFF555770),
+                color:
+                    canStart ? Colors.white : const Color(0xFF555770),
                 size: 26,
               ),
               const SizedBox(width: 8),
@@ -404,6 +501,32 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+// ✅ Beta 標籤元件
+class _BetaBadge extends StatelessWidget {
+  const _BetaBadge();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: const Color(0xFF00BCD4).withOpacity(0.15),
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(
+            color: const Color(0xFF00BCD4).withOpacity(0.4), width: 1),
+      ),
+      child: const Text(
+        'Beta',
+        style: TextStyle(
+          color: Color(0xFF00BCD4),
+          fontSize: 10,
+          fontWeight: FontWeight.w700,
         ),
       ),
     );
