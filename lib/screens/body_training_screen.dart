@@ -1,0 +1,507 @@
+// lib/screens/body_training_screen.dart
+//
+// ══════════════════════════════════════════════════════════════════
+//  全身復健「共用畫面殼」
+//
+//  改動：加入完成後儲存紀錄 + 顯示 CompletionDialog（含選其他動作功能）
+// ══════════════════════════════════════════════════════════════════
+
+import 'package:flutter/material.dart';
+import 'package:camera/camera.dart';
+import '../models/pose_data.dart';
+import '../models/body_frame.dart';
+import '../models/training_action.dart';
+import '../services/body_pose_engine.dart';
+import '../services/history_service.dart';
+import '../actions/body_rehab_action.dart';
+import '../actions/wipe_body_action.dart';
+import '../actions/draw_circle_action.dart';
+import '../actions/reach_action.dart';
+import '../widgets/completion_dialog.dart';
+import 'training_screen.dart';
+
+// RTMPose 133 點 → RehabJoint 對應表
+const Map<RehabJoint, int> _kJointIndex = {
+  RehabJoint.leftShoulder: 5,
+  RehabJoint.rightShoulder: 6,
+  RehabJoint.leftElbow: 7,
+  RehabJoint.rightElbow: 8,
+  RehabJoint.leftWrist: 9,
+  RehabJoint.rightWrist: 10,
+  RehabJoint.leftHip: 11,
+  RehabJoint.rightHip: 12,
+};
+
+const _skeletonConnections = [
+  [0, 1], [0, 2], [1, 3], [2, 4],
+  [5, 6], [5, 7], [7, 9], [6, 8], [8, 10],
+  [5, 11], [6, 12], [11, 12],
+  [11, 13], [13, 15], [12, 14], [14, 16],
+];
+
+class BodyTrainingScreen extends StatefulWidget {
+  final BodyRehabAction action;
+
+  /// 用來儲存紀錄和 CompletionDialog 顯示，可選填
+  final TrainingAction? trainingActionMeta;
+  final DifficultyOption? difficultyMeta;
+
+  const BodyTrainingScreen({
+    super.key,
+    required this.action,
+    this.trainingActionMeta,
+    this.difficultyMeta,
+  });
+
+  @override
+  State<BodyTrainingScreen> createState() => _BodyTrainingScreenState();
+}
+
+class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
+  final BodyPoseEngine _engine = BodyPoseEngine();
+  static const double _scoreThreshold = BodyPoseEngine.scoreThreshold;
+
+  int _repCount = 0;
+  String _feedback = '請將身體放入鏡頭範圍內';
+  late String _instruction;
+  bool _bodyVisible = false;
+
+  final DateTime _sessionStart = DateTime.now();
+  bool _completionShown = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _instruction = widget.action.initialHint;
+    _start();
+  }
+
+  Future<void> _start() async {
+    await _engine.init();
+    if (!mounted) return;
+    setState(() {});
+    await _engine.startCamera();
+    _engine.poseNotifier.addListener(_onPoseUpdate);
+  }
+
+  void _onPoseUpdate() {
+    final data = _engine.poseNotifier.value;
+    if (data.keypoints.length < BodyPoseEngine.numKpts) return;
+
+    final joints = <RehabJoint, Offset>{};
+    _kJointIndex.forEach((joint, idx) {
+      joints[joint] = data.keypoints[idx];
+    });
+    final frame = BodyFrame(joints: joints);
+
+    final visible = data.scores[5] > _scoreThreshold &&
+        data.scores[6] > _scoreThreshold;
+
+    final fb = widget.action.update(frame);
+
+    if (mounted) {
+      setState(() {
+        _bodyVisible = visible;
+        if (fb.scored) _repCount++;
+        if (fb.prompt != null) _feedback = fb.prompt!;
+        if (fb.leveledUp) _instruction = '難度提升，請繼續保持';
+      });
+
+      // 全身動作目前沒有自動完成機制，可視需求加條件
+      // 若你希望達到某個次數就顯示完成，在這裡判斷
+      // 範例：if (_repCount >= 9 && !_completionShown) { _handleCompletion(); }
+    }
+  }
+
+  Future<void> _switchCamera() async {
+    await _engine.switchCamera();
+    if (mounted) setState(() {});
+  }
+
+  void _handleCompletion() {
+    if (_completionShown) return;
+    _completionShown = true;
+
+    final durationSeconds =
+        DateTime.now().difference(_sessionStart).inSeconds;
+
+    // 儲存紀錄（如果有 meta 資訊）
+    if (widget.trainingActionMeta != null && widget.difficultyMeta != null) {
+      HistoryService().saveRecord(TrainingRecord(
+        timestamp: DateTime.now().toString().substring(0, 16),
+        actionName: widget.trainingActionMeta!.name,
+        difficulty: widget.trainingActionMeta!.difficulties
+                .indexOf(widget.difficultyMeta!) +
+            1,
+        durationSeconds: durationSeconds,
+        mistakeLogs: const [],
+      ));
+    }
+
+    // 找出對應的 TrainingAction（用來顯示在 Dialog 裡）
+    final currentMeta = widget.trainingActionMeta ??
+        kTrainingActions.firstWhere(
+          (a) => a.name == widget.action.title,
+          orElse: () => kTrainingActions.first,
+        );
+    final currentDiff = widget.difficultyMeta ??
+        currentMeta.difficulties.first;
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => CompletionDialog(
+        repCount: _repCount,
+        durationSeconds: durationSeconds,
+        mistakeLogs: const [],
+        currentAction: currentMeta,
+        currentDifficulty: currentDiff,
+        onRetry: () {
+          Navigator.of(context).pop();
+          Navigator.of(context).pushReplacement(MaterialPageRoute(
+            builder: (_) => BodyTrainingScreen(
+              action: widget.action,
+              trainingActionMeta: widget.trainingActionMeta,
+              difficultyMeta: widget.difficultyMeta,
+            ),
+          ));
+        },
+        onHome: () {
+          Navigator.of(context).pop();
+          Navigator.of(context).pop();
+        },
+        onStartNew: (action, difficulty) {
+          Navigator.of(context).pop();
+          _navigateToAction(action, difficulty);
+        },
+      ),
+    );
+  }
+
+  void _navigateToAction(TrainingAction action, DifficultyOption difficulty) {
+    Widget screen;
+    final diff = _mapDifficulty(difficulty.level);
+    if (action.type == ActionType.wipeBody) {
+      screen = BodyTrainingScreen(
+        action: WipeBodyAction(difficulty: diff),
+        trainingActionMeta: action,
+        difficultyMeta: difficulty,
+      );
+    } else if (action.type == ActionType.drawCircle) {
+      screen = BodyTrainingScreen(
+        action: DrawCircleAction(difficulty: diff),
+        trainingActionMeta: action,
+        difficultyMeta: difficulty,
+      );
+    } else if (action.type == ActionType.reach) {
+      screen = BodyTrainingScreen(
+        action: ReachAction(difficulty: diff),
+        trainingActionMeta: action,
+        difficultyMeta: difficulty,
+      );
+    } else {
+      screen = TrainingScreen(action: action, difficulty: difficulty);
+    }
+    Navigator.of(context).pushReplacement(MaterialPageRoute(builder: (_) => screen));
+  }
+
+  RehabDifficulty _mapDifficulty(DifficultyLevel level) {
+    switch (level) {
+      case DifficultyLevel.level1:
+        return RehabDifficulty.easy;
+      case DifficultyLevel.level2:
+        return RehabDifficulty.medium;
+      case DifficultyLevel.level3:
+        return RehabDifficulty.hard;
+    }
+  }
+
+  @override
+  void dispose() {
+    _engine.poseNotifier.removeListener(_onPoseUpdate);
+    _engine.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: const Color(0xFF0D0F1A),
+      body: SafeArea(
+        child: Column(
+          children: [
+            _buildTopBar(),
+            Expanded(child: _buildBody()),
+            _buildCoachCard(),
+            _buildStatsBar(),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTopBar() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+      child: Row(
+        children: [
+          GestureDetector(
+            onTap: () => Navigator.of(context).pop(),
+            child: Container(
+              width: 40, height: 40,
+              decoration: BoxDecoration(
+                color: const Color(0xFF161824),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: const Color(0xFF252738)),
+              ),
+              child: const Icon(Icons.arrow_back_ios_new,
+                  color: Colors.white, size: 16),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              widget.action.title,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 18,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ),
+          GestureDetector(
+            onTap: _switchCamera,
+            child: Container(
+              width: 40, height: 40,
+              decoration: BoxDecoration(
+                color: const Color(0xFF161824),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: const Color(0xFF252738)),
+              ),
+              child: const Icon(Icons.flip_camera_ios,
+                  color: Colors.white, size: 20),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildBody() {
+    final cam = _engine.cameraController;
+    if (!_engine.cameraReady.value || cam == null) {
+      return const Center(
+        child: CircularProgressIndicator(
+            color: Color(0xFF00BCD4), strokeWidth: 3),
+      );
+    }
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(24),
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            CameraPreview(cam),
+            ValueListenableBuilder<PoseData>(
+              valueListenable: _engine.poseNotifier,
+              builder: (_, data, __) {
+                return TweenAnimationBuilder<PoseData>(
+                  tween: _PoseTween(end: data),
+                  duration: const Duration(milliseconds: 40),
+                  curve: Curves.easeOutCubic,
+                  builder: (_, lerped, __) => CustomPaint(
+                    painter: _SkeletonPainter(lerped, _scoreThreshold),
+                  ),
+                );
+              },
+            ),
+            if (!_bodyVisible)
+              Container(
+                color: Colors.black.withValues(alpha: 0.3),
+                child: const Center(
+                  child: Text(
+                    '請站入鏡頭範圍內',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 18,
+                      fontWeight: FontWeight.w600,
+                      shadows: [Shadow(blurRadius: 8, color: Colors.black)],
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCoachCard() {
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: BoxDecoration(
+        color: const Color(0xFF161824),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFF252738)),
+      ),
+      child: Row(
+        children: [
+          const Text('🤖', style: TextStyle(fontSize: 24)),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  _feedback,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                if (_instruction.isNotEmpty)
+                  Text(
+                    _instruction,
+                    style: const TextStyle(
+                        color: Color(0xFF4A65FF), fontSize: 12),
+                  ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStatsBar() {
+    return Container(
+      margin: const EdgeInsets.all(16),
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+      decoration: BoxDecoration(
+        color: const Color(0xFF161824),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFF252738)),
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceAround,
+        children: [
+          _stat('完成次數', '$_repCount', const Color(0xFF4CAF50)),
+          Container(width: 1, height: 32, color: const Color(0xFF252738)),
+          _stat('目前難度', widget.action.difficultyLabel,
+              const Color(0xFF00BCD4)),
+          Container(width: 1, height: 32, color: const Color(0xFF252738)),
+          // 完成按鈕（手動觸發完成）
+          GestureDetector(
+            onTap: _handleCompletion,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFF4B4B),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: const Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.stop_rounded, color: Colors.white, size: 16),
+                  SizedBox(width: 4),
+                  Text('完成',
+                      style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w700)),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _stat(String label, String value, Color color) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(value,
+            style: TextStyle(
+                color: color, fontSize: 18, fontWeight: FontWeight.w800)),
+        const SizedBox(height: 4),
+        Text(label,
+            style: const TextStyle(
+                color: Color(0xFF8A8D9F), fontSize: 10)),
+      ],
+    );
+  }
+}
+
+class _SkeletonPainter extends CustomPainter {
+  final PoseData data;
+  final double threshold;
+  _SkeletonPainter(this.data, this.threshold);
+
+  bool _valid(Offset p) =>
+      p.dx > 0.02 && p.dx < 0.98 && p.dy > 0.02 && p.dy < 0.98;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (data.keypoints.isEmpty || data.scores.isEmpty) return;
+
+    final bone = Paint()
+      ..color = const Color(0xFF00E5FF).withOpacity(0.8)
+      ..strokeWidth = 2.5
+      ..style = PaintingStyle.stroke
+      ..strokeCap = StrokeCap.round;
+    final joint = Paint()
+      ..color = const Color(0xFF00E5FF)
+      ..style = PaintingStyle.fill;
+
+    for (final c in _skeletonConnections) {
+      final a = c[0], b = c[1];
+      if (a >= data.keypoints.length || b >= data.keypoints.length) continue;
+      if (a >= data.scores.length || b >= data.scores.length) continue;
+      if (data.scores[a] < threshold || data.scores[b] < threshold) continue;
+      final pa = data.keypoints[a], pb = data.keypoints[b];
+      if (!_valid(pa) || !_valid(pb)) continue;
+      canvas.drawLine(
+        Offset(pa.dx * size.width, pa.dy * size.height),
+        Offset(pb.dx * size.width, pb.dy * size.height),
+        bone,
+      );
+    }
+    for (int i = 0; i < 17 && i < data.keypoints.length; i++) {
+      if (i >= data.scores.length || data.scores[i] < threshold) continue;
+      final p = data.keypoints[i];
+      if (!_valid(p)) continue;
+      canvas.drawCircle(
+          Offset(p.dx * size.width, p.dy * size.height), 5, joint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(_SkeletonPainter old) => true;
+}
+
+class _PoseTween extends Tween<PoseData> {
+  _PoseTween({super.end});
+
+  @override
+  PoseData lerp(double t) {
+    final b = begin ?? PoseData.empty();
+    final e = end ?? PoseData.empty();
+    if (b.keypoints.isEmpty ||
+        e.keypoints.isEmpty ||
+        b.keypoints.length != e.keypoints.length) {
+      return e;
+    }
+    final lerped = <Offset>[];
+    for (int i = 0; i < e.keypoints.length; i++) {
+      lerped.add(Offset.lerp(b.keypoints[i], e.keypoints[i], t)!);
+    }
+    return PoseData(lerped, e.scores);
+  }
+}

@@ -137,7 +137,9 @@ class BodyPoseService {
     } else {
       for (int i = 0; i < newData.keypoints.length; i++) {
         if (i >= newData.scores.length ||
-            newData.scores[i] < _scoreThreshold) continue;
+            newData.scores[i] < _scoreThreshold) {
+          continue;
+        }
         final cur = newData.keypoints[i];
         final prev = _smoothedKeypoints[i];
         final dx = cur.dx - prev.dx;
@@ -179,7 +181,7 @@ class BodyPoseService {
       tensor.release();
       runOpts.release();
 
-      if (outputs == null || outputs.length < 2) return PoseData.empty();
+      if (outputs.length < 2) return PoseData.empty();
 
       // outputs[0] / [1] 不會是 null（長度已確認 >= 2）
       final xOut = outputs[0]!;

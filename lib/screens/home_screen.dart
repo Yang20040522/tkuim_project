@@ -3,8 +3,22 @@
 import 'package:flutter/material.dart';
 import '../models/training_action.dart';
 import 'training_screen.dart';
-import 'body_test_screen.dart'; // ✅ 新增
+import 'body_test_screen.dart';
 import 'history_screen.dart';
+import 'body_training_screen.dart';
+import '../actions/wipe_body_action.dart';
+import '../actions/draw_circle_action.dart';
+import '../actions/reach_action.dart';
+
+// 手部動作清單
+const _handActions = [ActionType.turnPalm, ActionType.sidePinch];
+// 全身動作清單
+const _bodyActions = [
+  ActionType.wipeBody,
+  ActionType.drawCircle,
+  ActionType.reach,
+  ActionType.bodyTest,
+];
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -16,6 +30,11 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   TrainingAction? _selectedAction;
   DifficultyOption? _selectedDifficulty;
+
+  // 控制兩個選單的展開狀態
+  bool _handExpanded = true;
+  bool _bodyExpanded = false;
+
   late AnimationController _fadeCtrl;
   late Animation<double> _fadeAnim;
 
@@ -36,38 +55,55 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   }
 
   void _selectAction(TrainingAction action) {
-    // ✅ 全身骨架直接跳轉，不需要選難度
     if (action.type == ActionType.bodyTest) {
-      Navigator.of(context).push(
-        PageRouteBuilder(
-          pageBuilder: (_, anim, __) => const BodyTestScreen(),
-          transitionsBuilder: (_, anim, __, child) =>
-              FadeTransition(opacity: anim, child: child),
-          transitionDuration: const Duration(milliseconds: 400),
-        ),
-      );
+      Navigator.of(context).push(PageRouteBuilder(
+        pageBuilder: (_, anim, __) => const BodyTestScreen(),
+        transitionsBuilder: (_, anim, __, child) =>
+            FadeTransition(opacity: anim, child: child),
+        transitionDuration: const Duration(milliseconds: 400),
+      ));
       return;
     }
-
     setState(() {
       _selectedAction = action;
       _selectedDifficulty = action.difficulties.first;
     });
   }
 
-  void _startTraining() {
-    if (_selectedAction == null || _selectedDifficulty == null) return;
-    Navigator.of(context).push(
-      PageRouteBuilder(
-        pageBuilder: (_, anim, __) => TrainingScreen(
-          action: _selectedAction!,
-          difficulty: _selectedDifficulty!,
-        ),
-        transitionsBuilder: (_, anim, __, child) =>
-            FadeTransition(opacity: anim, child: child),
-        transitionDuration: const Duration(milliseconds: 400),
-      ),
-    );
+  void _startTraining({TrainingAction? action, DifficultyOption? difficulty}) {
+    final act = action ?? _selectedAction;
+    final diff = difficulty ?? _selectedDifficulty;
+    if (act == null || diff == null) return;
+
+    Widget screen;
+    if (act.type == ActionType.wipeBody) {
+      screen = BodyTrainingScreen(
+        action: WipeBodyAction(difficulty: _mapDifficulty(diff.level)),
+        trainingActionMeta: act,
+        difficultyMeta: diff,
+      );
+    } else if (act.type == ActionType.drawCircle) {
+      screen = BodyTrainingScreen(
+        action: DrawCircleAction(difficulty: _mapDifficulty(diff.level)),
+        trainingActionMeta: act,
+        difficultyMeta: diff,
+      );
+    } else if (act.type == ActionType.reach) {
+      screen = BodyTrainingScreen(
+        action: ReachAction(difficulty: _mapDifficulty(diff.level)),
+        trainingActionMeta: act,
+        difficultyMeta: diff,
+      );
+    } else {
+      screen = TrainingScreen(action: act, difficulty: diff);
+    }
+
+    Navigator.of(context).push(PageRouteBuilder(
+      pageBuilder: (_, anim, __) => screen,
+      transitionsBuilder: (_, anim, __, child) =>
+          FadeTransition(opacity: anim, child: child),
+      transitionDuration: const Duration(milliseconds: 400),
+    ));
   }
 
   @override
@@ -83,36 +119,77 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               _buildHeader(),
               Expanded(
                 child: SingleChildScrollView(
-                  padding: const EdgeInsets.symmetric(horizontal: 24),
+                  padding: const EdgeInsets.symmetric(horizontal: 20),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       const SizedBox(height: 8),
-                      _buildSectionLabel('選擇訓練動作'),
-                      const SizedBox(height: 12),
-                      // 手部動作卡片（原有的兩個）
-                      ...kTrainingActions
-                          .where((a) => a.type != ActionType.bodyTest)
-                          .map(_buildActionCard),
-                      const SizedBox(height: 16),
-                      // ✅ 全身骨架測試獨立區塊
-                      _buildSectionLabel('實驗功能'),
-                      const SizedBox(height: 12),
-                      _buildBodyTestCard(),
-                      const SizedBox(height: 28),
-                      // 難度選擇（只在選了手部動作時顯示）
+
+                      // ── 手部復健選單 ────────────────────────────────
+                      _buildAccordion(
+                        title: '手部復健',
+                        icon: '🖐️',
+                        subtitle: '翻掌 · 側捏',
+                        isExpanded: _handExpanded,
+                        onToggle: () => setState(() {
+                          _handExpanded = !_handExpanded;
+                          // 展開手部時，如果有選全身動作則清除
+                          if (_handExpanded && _selectedAction != null &&
+                              _bodyActions.contains(_selectedAction!.type)) {
+                            _selectedAction = null;
+                            _selectedDifficulty = null;
+                          }
+                        }),
+                        child: Column(
+                          children: kTrainingActions
+                              .where((a) => _handActions.contains(a.type))
+                              .map(_buildActionCard)
+                              .toList(),
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+
+                      // ── 全身復健選單 ────────────────────────────────
+                      _buildAccordion(
+                        title: '全身復健',
+                        icon: '🦴',
+                        subtitle: '擦拭 · 畫圓 · 舉高 · 骨架偵測',
+                        isExpanded: _bodyExpanded,
+                        onToggle: () => setState(() {
+                          _bodyExpanded = !_bodyExpanded;
+                          if (_bodyExpanded && _selectedAction != null &&
+                              _handActions.contains(_selectedAction!.type)) {
+                            _selectedAction = null;
+                            _selectedDifficulty = null;
+                          }
+                        }),
+                        child: Column(
+                          children: [
+                            // 一般全身動作
+                            ...kTrainingActions
+                                .where((a) =>
+                                    _bodyActions.contains(a.type) &&
+                                    a.type != ActionType.bodyTest)
+                                .map(_buildActionCard),
+                            // bodyTest 特殊卡片
+                            _buildBodyTestCard(),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 20),
+
+                      // ── 難度選擇 + 開始按鈕 ─────────────────────────
                       if (_selectedAction != null &&
                           _selectedAction!.type != ActionType.bodyTest) ...[
                         _buildSectionLabel('選擇難度等級'),
-                        const SizedBox(height: 12),
+                        const SizedBox(height: 10),
                         _buildDifficultySelector(),
-                        const SizedBox(height: 32),
-                      ],
-                      // 開始按鈕（只在選了手部動作時顯示）
-                      if (_selectedAction != null &&
-                          _selectedAction!.type != ActionType.bodyTest)
+                        const SizedBox(height: 20),
                         _buildStartButton(),
-                      const SizedBox(height: 16),
+                        const SizedBox(height: 12),
+                      ],
+
+                      // ── 歷史紀錄按鈕 ────────────────────────────────
                       _buildHistoryButton(),
                       const SizedBox(height: 32),
                     ],
@@ -122,6 +199,102 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  // ── 可展開選單 ──────────────────────────────────────────────────────────────
+  Widget _buildAccordion({
+    required String title,
+    required String icon,
+    required String subtitle,
+    required bool isExpanded,
+    required VoidCallback onToggle,
+    required Widget child,
+  }) {
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 250),
+      decoration: BoxDecoration(
+        color: const Color(0xFF161824),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: isExpanded
+              ? const Color(0xFF4A65FF).withOpacity(0.5)
+              : const Color(0xFF252738),
+          width: isExpanded ? 1.5 : 1,
+        ),
+      ),
+      child: Column(
+        children: [
+          // 標頭列
+          GestureDetector(
+            onTap: onToggle,
+            behavior: HitTestBehavior.opaque,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+              child: Row(
+                children: [
+                  Container(
+                    width: 40,
+                    height: 40,
+                    decoration: BoxDecoration(
+                      color: isExpanded
+                          ? const Color(0xFF4A65FF).withOpacity(0.15)
+                          : const Color(0xFF1E2030),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Center(
+                      child: Text(icon,
+                          style: const TextStyle(fontSize: 20)),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          title,
+                          style: TextStyle(
+                            color: isExpanded
+                                ? Colors.white
+                                : const Color(0xFFD0D2E0),
+                            fontSize: 15,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                        Text(
+                          subtitle,
+                          style: const TextStyle(
+                              color: Color(0xFF555770), fontSize: 11),
+                        ),
+                      ],
+                    ),
+                  ),
+                  AnimatedRotation(
+                    turns: isExpanded ? 0.5 : 0,
+                    duration: const Duration(milliseconds: 250),
+                    child: const Icon(Icons.keyboard_arrow_down,
+                        color: Color(0xFF8A8D9F), size: 22),
+                  ),
+                ],
+              ),
+            ),
+          ),
+
+          // 展開內容
+          AnimatedCrossFade(
+            firstChild: Padding(
+              padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+              child: child,
+            ),
+            secondChild: const SizedBox.shrink(),
+            crossFadeState: isExpanded
+                ? CrossFadeState.showFirst
+                : CrossFadeState.showSecond,
+            duration: const Duration(milliseconds: 250),
+          ),
+        ],
       ),
     );
   }
@@ -169,7 +342,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               ),
             ],
           ),
-          const SizedBox(height: 28),
+          const SizedBox(height: 24),
           const Text(
             '今日復健計畫',
             style: TextStyle(
@@ -211,13 +384,13 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       onTap: () => _selectAction(action),
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 200),
-        margin: const EdgeInsets.only(bottom: 12),
-        padding: const EdgeInsets.all(18),
+        margin: const EdgeInsets.only(bottom: 8),
+        padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
           color: isSelected
               ? const Color(0xFF1E2B5E).withOpacity(0.9)
-              : const Color(0xFF161824),
-          borderRadius: BorderRadius.circular(16),
+              : const Color(0xFF1A1E30),
+          borderRadius: BorderRadius.circular(14),
           border: Border.all(
             color: isSelected
                 ? const Color(0xFF4A65FF)
@@ -227,9 +400,9 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
           boxShadow: isSelected
               ? [
                   BoxShadow(
-                    color: const Color(0xFF4A65FF).withOpacity(0.25),
-                    blurRadius: 16,
-                    offset: const Offset(0, 4),
+                    color: const Color(0xFF4A65FF).withOpacity(0.2),
+                    blurRadius: 12,
+                    offset: const Offset(0, 3),
                   )
                 ]
               : [],
@@ -237,20 +410,20 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         child: Row(
           children: [
             Container(
-              width: 52,
-              height: 52,
+              width: 44,
+              height: 44,
               decoration: BoxDecoration(
                 color: isSelected
                     ? const Color(0xFF4A65FF).withOpacity(0.2)
-                    : const Color(0xFF1E2030),
-                borderRadius: BorderRadius.circular(14),
+                    : const Color(0xFF252738),
+                borderRadius: BorderRadius.circular(12),
               ),
               child: Center(
                 child: Text(action.emoji,
-                    style: const TextStyle(fontSize: 26)),
+                    style: const TextStyle(fontSize: 22)),
               ),
             ),
-            const SizedBox(width: 16),
+            const SizedBox(width: 12),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -258,30 +431,33 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                   Text(
                     action.name,
                     style: TextStyle(
-                      color: isSelected ? Colors.white : const Color(0xFFD0D2E0),
-                      fontSize: 16,
+                      color: isSelected
+                          ? Colors.white
+                          : const Color(0xFFD0D2E0),
+                      fontSize: 14,
                       fontWeight: FontWeight.w700,
                     ),
                   ),
-                  const SizedBox(height: 3),
+                  const SizedBox(height: 2),
                   Text(
                     action.description,
                     style: const TextStyle(
-                        color: Color(0xFF8A8D9F), fontSize: 12),
+                        color: Color(0xFF8A8D9F), fontSize: 11),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
                   ),
                 ],
               ),
             ),
             if (isSelected)
               Container(
-                width: 24,
-                height: 24,
+                width: 22,
+                height: 22,
                 decoration: const BoxDecoration(
                   color: Color(0xFF4A65FF),
                   shape: BoxShape.circle,
                 ),
-                child:
-                    const Icon(Icons.check, color: Colors.white, size: 14),
+                child: const Icon(Icons.check, color: Colors.white, size: 13),
               ),
           ],
         ),
@@ -289,17 +465,15 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     );
   }
 
-  // ✅ 全身骨架測試專屬卡片（點擊直接跳轉，不需選難度）
   Widget _buildBodyTestCard() {
     return GestureDetector(
       onTap: () => _selectAction(
           kTrainingActions.firstWhere((a) => a.type == ActionType.bodyTest)),
       child: Container(
-        margin: const EdgeInsets.only(bottom: 12),
-        padding: const EdgeInsets.all(18),
+        margin: const EdgeInsets.only(bottom: 8),
+        padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
-          color: const Color(0xFF161824),
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(14),
           border: Border.all(color: const Color(0xFF2A3050)),
           gradient: const LinearGradient(
             colors: [Color(0xFF161824), Color(0xFF1A2040)],
@@ -310,19 +484,19 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         child: Row(
           children: [
             Container(
-              width: 52,
-              height: 52,
+              width: 44,
+              height: 44,
               decoration: BoxDecoration(
                 color: const Color(0xFF00BCD4).withOpacity(0.15),
-                borderRadius: BorderRadius.circular(14),
+                borderRadius: BorderRadius.circular(12),
                 border: Border.all(
                     color: const Color(0xFF00BCD4).withOpacity(0.3)),
               ),
               child: const Center(
-                child: Text('🦴', style: TextStyle(fontSize: 26)),
+                child: Text('🦴', style: TextStyle(fontSize: 22)),
               ),
             ),
-            const SizedBox(width: 16),
+            const SizedBox(width: 12),
             const Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -333,25 +507,24 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                         '全身骨架偵測',
                         style: TextStyle(
                           color: Colors.white,
-                          fontSize: 16,
+                          fontSize: 14,
                           fontWeight: FontWeight.w700,
                         ),
                       ),
                       SizedBox(width: 8),
-                      // Beta 標籤
                       _BetaBadge(),
                     ],
                   ),
-                  SizedBox(height: 3),
+                  SizedBox(height: 2),
                   Text(
                     'RTMPose 全身 133 關鍵點即時追蹤',
-                    style: TextStyle(color: Color(0xFF8A8D9F), fontSize: 12),
+                    style: TextStyle(color: Color(0xFF8A8D9F), fontSize: 11),
                   ),
                 ],
               ),
             ),
             const Icon(Icons.arrow_forward_ios,
-                color: Color(0xFF00BCD4), size: 16),
+                color: Color(0xFF00BCD4), size: 14),
           ],
         ),
       ),
@@ -370,7 +543,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               duration: const Duration(milliseconds: 150),
               margin: const EdgeInsets.only(right: 8),
               padding:
-                  const EdgeInsets.symmetric(vertical: 14, horizontal: 8),
+                  const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
               decoration: BoxDecoration(
                 color: isSelected
                     ? const Color(0xFF4A65FF)
@@ -387,14 +560,15 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                   Text(
                     diff.label,
                     style: TextStyle(
-                      color:
-                          isSelected ? Colors.white : const Color(0xFF8A8D9F),
+                      color: isSelected
+                          ? Colors.white
+                          : const Color(0xFF8A8D9F),
                       fontWeight: FontWeight.w700,
                       fontSize: 13,
                     ),
                     textAlign: TextAlign.center,
                   ),
-                  const SizedBox(height: 3),
+                  const SizedBox(height: 2),
                   Text(
                     diff.description,
                     style: TextStyle(
@@ -417,14 +591,13 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   }
 
   Widget _buildStartButton() {
-    final canStart =
-        _selectedAction != null && _selectedDifficulty != null;
+    final canStart = _selectedAction != null && _selectedDifficulty != null;
     return GestureDetector(
       onTap: canStart ? _startTraining : null,
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 200),
         width: double.infinity,
-        height: 60,
+        height: 58,
         decoration: BoxDecoration(
           gradient: canStart
               ? const LinearGradient(
@@ -451,8 +624,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
             children: [
               Icon(
                 Icons.play_arrow_rounded,
-                color:
-                    canStart ? Colors.white : const Color(0xFF555770),
+                color: canStart ? Colors.white : const Color(0xFF555770),
                 size: 26,
               ),
               const SizedBox(width: 8),
@@ -479,7 +651,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       ),
       child: Container(
         width: double.infinity,
-        height: 56,
+        height: 54,
         decoration: BoxDecoration(
           color: const Color(0xFF161824),
           borderRadius: BorderRadius.circular(16),
@@ -505,9 +677,19 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       ),
     );
   }
+
+  RehabDifficulty _mapDifficulty(DifficultyLevel level) {
+    switch (level) {
+      case DifficultyLevel.level1:
+        return RehabDifficulty.easy;
+      case DifficultyLevel.level2:
+        return RehabDifficulty.medium;
+      case DifficultyLevel.level3:
+        return RehabDifficulty.hard;
+    }
+  }
 }
 
-// ✅ Beta 標籤元件
 class _BetaBadge extends StatelessWidget {
   const _BetaBadge();
 
@@ -518,8 +700,8 @@ class _BetaBadge extends StatelessWidget {
       decoration: BoxDecoration(
         color: const Color(0xFF00BCD4).withOpacity(0.15),
         borderRadius: BorderRadius.circular(6),
-        border: Border.all(
-            color: const Color(0xFF00BCD4).withOpacity(0.4), width: 1),
+        border:
+            Border.all(color: const Color(0xFF00BCD4).withOpacity(0.4), width: 1),
       ),
       child: const Text(
         'Beta',

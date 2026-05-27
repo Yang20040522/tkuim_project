@@ -12,12 +12,10 @@ class MainActivity : FlutterActivity() {
 
     private val METHOD_CHANNEL = "com.rehabassist/mediapipe"
     private val LANDMARK_CHANNEL = "com.rehabassist/landmarks"
-    private val TRAINING_CHANNEL = "com.rehabassist/training"
 
     private var mediaPipeBridge: MediaPipeBridge? = null
     private var cameraPreviewView: CameraPreviewView? = null
     private var landmarkEventSink: EventChannel.EventSink? = null
-    private var trainingEventSink: EventChannel.EventSink? = null
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -48,34 +46,17 @@ class MainActivity : FlutterActivity() {
                 }
             })
 
-        EventChannel(flutterEngine.dartExecutor.binaryMessenger, TRAINING_CHANNEL)
-            .setStreamHandler(object : EventChannel.StreamHandler {
-                override fun onListen(args: Any?, events: EventChannel.EventSink?) {
-                    trainingEventSink = events
-                    mediaPipeBridge?.trainingEventSink = events
-                }
-                override fun onCancel(args: Any?) {
-                    trainingEventSink = null
-                    mediaPipeBridge?.trainingEventSink = null
-                }
-            })
-
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, METHOD_CHANNEL)
             .setMethodCallHandler { call, result ->
                 when (call.method) {
                     "startDetection" -> {
-                        val actionType = call.argument<String>("actionType") ?: "TURN_PALM"
-                        val difficulty = call.argument<Int>("difficulty") ?: 1
                         val useFront = call.argument<Boolean>("useFrontCamera") ?: false
                         mediaPipeBridge = MediaPipeBridge(
                             context = this,
-                            actionType = actionType,
-                            difficulty = difficulty,
                             useFrontCamera = useFront,
                             previewView = cameraPreviewView?.previewView
                         )
                         mediaPipeBridge?.landmarkEventSink = landmarkEventSink
-                        mediaPipeBridge?.trainingEventSink = trainingEventSink
                         mediaPipeBridge?.start()
                         result.success(null)
                     }

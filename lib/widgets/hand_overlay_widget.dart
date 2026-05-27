@@ -1,3 +1,5 @@
+// lib/widgets/hand_overlay_widget.dart
+
 import 'package:flutter/material.dart';
 import '../services/mediapipe_service.dart';
 
@@ -17,7 +19,7 @@ class HandOverlayPainter extends CustomPainter {
     [0, 17], [17, 18], [18, 19], [19, 20],
   ];
 
-  HandOverlayPainter({
+  const HandOverlayPainter({
     required this.landmarks,
     this.isMirrored = false,
     this.showStickGuide = false,
@@ -38,13 +40,13 @@ class HandOverlayPainter extends CustomPainter {
     if (landmarks.isEmpty) return;
 
     final linePaint = Paint()
-      ..color = Colors.white.withOpacity(0.5)
+      ..color = Colors.white.withValues(alpha: 0.5)
       ..strokeWidth = 4
       ..style = PaintingStyle.stroke
       ..strokeCap = StrokeCap.round;
 
     final pointPaint = Paint()
-      ..color = Colors.redAccent.withOpacity(0.7)
+      ..color = Colors.redAccent.withValues(alpha: 0.7)
       ..style = PaintingStyle.fill;
 
     for (final conn in _connections) {
@@ -143,12 +145,12 @@ class HandOverlayPainter extends CustomPainter {
     final centerY = (ty + idy) / 2;
 
     if (progress > 0.9) {
-      final radius = 55.0;
+      const radius = 55.0;
       final glowPaint = Paint()
         ..shader = RadialGradient(
           colors: [
-            Colors.greenAccent.withOpacity(0.8),
-            Colors.green.withOpacity(0.3),
+            Colors.greenAccent.withValues(alpha: 0.8),
+            Colors.green.withValues(alpha: 0.3),
             Colors.transparent,
           ],
           stops: const [0, 0.5, 1],
@@ -174,18 +176,20 @@ class HandOverlayPainter extends CustomPainter {
     final rect = Rect.fromCircle(center: Offset(wx, wy - 100), radius: radius);
 
     canvas.drawArc(rect, 3.14159, 3.14159, false,
-      Paint()
-        ..color = Colors.white.withOpacity(0.2)
-        ..strokeWidth = 18
-        ..style = PaintingStyle.stroke
-        ..strokeCap = StrokeCap.round);
+        Paint()
+          ..color = Colors.white.withValues(alpha: 0.2)
+          ..strokeWidth = 18
+          ..style = PaintingStyle.stroke
+          ..strokeCap = StrokeCap.round);
 
     canvas.drawArc(rect, 3.14159, 3.14159 * progress, false,
-      Paint()
-        ..color = speedState == 1 ? const Color(0xFFFF9800) : Colors.greenAccent
-        ..strokeWidth = 20
-        ..style = PaintingStyle.stroke
-        ..strokeCap = StrokeCap.round);
+        Paint()
+          ..color = speedState == 1
+              ? const Color(0xFFFF9800)
+              : Colors.greenAccent
+          ..strokeWidth = 20
+          ..style = PaintingStyle.stroke
+          ..strokeCap = StrokeCap.round);
 
     if (speedState == 1) {
       _drawText(canvas, '⚠️ 慢一點！',
@@ -224,18 +228,28 @@ class HandOverlayPainter extends CustomPainter {
     if (x.abs() <= 1) {
       return pi4 * x - x * (x.abs() - 1) * (0.2447 + 0.0663 * x.abs());
     }
-    return pi2 - (pi4 / x) +
+    return pi2 -
+        (pi4 / x) +
         (1 / x) * ((1 / x).abs() - 1) * (0.2447 + 0.0663 * (1 / x).abs());
   }
 
   @override
-  bool shouldRepaint(HandOverlayPainter old) =>
-      old.landmarks != landmarks ||
-      old.progress != progress ||
-      old.speedState != speedState ||
-      old.showStickGuide != showStickGuide ||
-      old.showPinchGuide != showPinchGuide ||
-      old.isMirrored != isMirrored;
+  bool shouldRepaint(HandOverlayPainter old) {
+    // ✅ 修正：比較內容而非 List 參考，避免每幀都重繪
+    if (old.landmarks.length != landmarks.length) return true;
+    if (old.progress != progress) return true;
+    if (old.speedState != speedState) return true;
+    if (old.showStickGuide != showStickGuide) return true;
+    if (old.showPinchGuide != showPinchGuide) return true;
+    if (old.isMirrored != isMirrored) return true;
+    for (int i = 0; i < landmarks.length; i++) {
+      if (old.landmarks[i].x != landmarks[i].x ||
+          old.landmarks[i].y != landmarks[i].y) {
+        return true;
+      }
+    }
+    return false;
+  }
 }
 
 class HandOverlayWidget extends StatelessWidget {
@@ -258,16 +272,18 @@ class HandOverlayWidget extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return CustomPaint(
-      painter: HandOverlayPainter(
-        landmarks: landmarks,
-        isMirrored: isMirrored,
-        showStickGuide: showStickGuide,
-        showPinchGuide: showPinchGuide,
-        progress: progress,
-        speedState: speedState,
+    return RepaintBoundary(                // ✅ 新增：隔離重繪，不影響父層
+      child: CustomPaint(
+        painter: HandOverlayPainter(
+          landmarks: landmarks,
+          isMirrored: isMirrored,
+          showStickGuide: showStickGuide,
+          showPinchGuide: showPinchGuide,
+          progress: progress,
+          speedState: speedState,
+        ),
+        child: const SizedBox.expand(),
       ),
-      child: const SizedBox.expand(),
     );
   }
 }
