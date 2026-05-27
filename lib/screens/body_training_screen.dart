@@ -19,6 +19,7 @@ import '../actions/draw_circle_action.dart';
 import '../actions/reach_action.dart';
 import '../widgets/completion_dialog.dart';
 import 'training_screen.dart';
+import '../services/voice_service.dart';
 
 // RTMPose 133 點 → RehabJoint 對應表
 const Map<RehabJoint, int> _kJointIndex = {
@@ -73,6 +74,7 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
   void initState() {
     super.initState();
     _instruction = widget.action.initialHint;
+    VoiceService.init();
     _start();
   }
 
@@ -106,6 +108,11 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
         if (fb.prompt != null) _feedback = fb.prompt!;
         if (fb.leveledUp) _instruction = '難度提升，請繼續保持';
       });
+
+      // 有提示就念出來
+      if (fb.prompt != null) {
+        VoiceService.speak(fb.prompt!);
+      }
 
       // 全身動作目前沒有自動完成機制，可視需求加條件
       // 若你希望達到某個次數就顯示完成，在這裡判斷
@@ -218,6 +225,7 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
 
   @override
   void dispose() {
+    VoiceService.stop();
     _engine.poseNotifier.removeListener(_onPoseUpdate);
     _engine.dispose();
     super.dispose();

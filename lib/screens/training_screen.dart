@@ -27,6 +27,8 @@ import '../actions/wipe_body_action.dart';
 import '../actions/draw_circle_action.dart';
 import '../actions/reach_action.dart';
 
+import '../services/voice_service.dart';
+
 class TrainingScreen extends StatefulWidget {
   final TrainingAction action;
   final DifficultyOption difficulty;
@@ -46,6 +48,7 @@ class _TrainingScreenState extends State<TrainingScreen>
 
   late final RehabSessionController _controller;
 
+
   bool _isInitialized = false;
   bool _completionShown = false;
 
@@ -60,6 +63,8 @@ class _TrainingScreenState extends State<TrainingScreen>
   @override
   void initState() {
     super.initState();
+
+    VoiceService.init();
 
     final IPoseModel selectedModel = MediaPipeModel();
     _controller = RehabSessionController(
@@ -88,6 +93,10 @@ class _TrainingScreenState extends State<TrainingScreen>
     _controller.stateStream.listen((state) {
       if (!mounted) return;
       setState(() {});
+
+      // feedback 有變化就念出來
+      VoiceService.speak(state.feedback);
+
       if (state.isComplete && !_completionShown) {
         _completionShown = true;
         _handleCompletion(state);
@@ -102,6 +111,7 @@ class _TrainingScreenState extends State<TrainingScreen>
 
   @override
   void dispose() {
+    VoiceService.stop();
     _controller.dispose();
     _pulseCtrl.dispose();
     _slideCtrl.dispose();
@@ -112,6 +122,7 @@ class _TrainingScreenState extends State<TrainingScreen>
     await _controller.flipCamera();
     if (mounted) setState(() {});
   }
+
 
   void _handleCompletion(RehabSessionState state) {
     // 儲存紀錄
