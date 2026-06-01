@@ -9,14 +9,23 @@ import 'body_training_screen.dart';
 import '../actions/wipe_body_action.dart';
 import '../actions/draw_circle_action.dart';
 import '../actions/reach_action.dart';
+import '../actions/raise_both_arms_action.dart';
+import '../actions/elbow_forward_action.dart';
 
 // 手部動作清單
-const _handActions = [ActionType.turnPalm, ActionType.sidePinch];
+final _handActions = [
+  ActionType.turnPalm,
+  ActionType.sidePinch,
+  ActionType.wristExtension,  // 第11 翹手腕式
+  ActionType.wristSideBend,   // 第10 左右彎手腕式
+];
 // 全身動作清單
-const _bodyActions = [
+final _bodyActions = [
   ActionType.wipeBody,
   ActionType.drawCircle,
   ActionType.reach,
+  ActionType.raiseBothArms,   // 第3 雙手抬舉式
+  ActionType.elbowForward,    // 第8 交扣手肘前伸式
   ActionType.bodyTest,
 ];
 
@@ -94,6 +103,18 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         trainingActionMeta: act,
         difficultyMeta: diff,
       );
+    } else if (act.type == ActionType.raiseBothArms) {
+      screen = BodyTrainingScreen(
+        action: RaiseBothArmsAction(),
+        trainingActionMeta: act,
+        difficultyMeta: diff,
+      );
+    } else if (act.type == ActionType.elbowForward) {
+      screen = BodyTrainingScreen(
+        action: ElbowForwardAction(),
+        trainingActionMeta: act,
+        difficultyMeta: diff,
+      );
     } else {
       screen = TrainingScreen(action: act, difficulty: diff);
     }
@@ -129,7 +150,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                       _buildAccordion(
                         title: '手部復健',
                         icon: '🖐️',
-                        subtitle: '翻掌 · 側捏',
+                        subtitle: '翻掌 · 側捏 · 翹手腕 · 左右彎手腕',
                         isExpanded: _handExpanded,
                         onToggle: () => setState(() {
                           _handExpanded = !_handExpanded;
@@ -153,7 +174,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                       _buildAccordion(
                         title: '全身復健',
                         icon: '🦴',
-                        subtitle: '擦拭 · 畫圓 · 舉高 · 骨架偵測',
+                        subtitle: '擦拭 · 畫圓 · 舉高 · 雙手抬舉 · 手肘前伸 · 骨架偵測',
                         isExpanded: _bodyExpanded,
                         onToggle: () => setState(() {
                           _bodyExpanded = !_bodyExpanded;

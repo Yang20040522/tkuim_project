@@ -10,6 +10,8 @@ import '../actions/base_rehab_action.dart';
 import '../actions/rehab_action_callback.dart';
 import '../actions/side_pinch_action.dart';
 import '../actions/turn_palm_action.dart';
+import '../actions/wrist_extension_action.dart';
+import '../actions/wrist_side_bend_action.dart';
 import '../models/training_action.dart';
 import '../services/mediapipe_service.dart';
 import '../services/pose_model_interface.dart';
@@ -113,11 +115,22 @@ class RehabSessionController implements RehabActionCallback {
   }) {
     final diffIdx = action.difficulties.indexOf(difficulty) + 1;
 
-    if (action.type == ActionType.turnPalm) {
-      _actionLogic = TurnPalmAction(callback: this);
-    } else {
-      _actionLogic = SidePinchAction(callback: this, difficulty: diffIdx);
-      _state = _state.copyWith(countdownDone: true);
+    switch (action.type) {
+      case ActionType.turnPalm:
+        _actionLogic = TurnPalmAction(callback: this);
+
+      case ActionType.wristExtension:
+        _actionLogic = WristExtensionAction(callback: this);
+        // 有 3 秒倒數，countdownDone 由 action 自己透過 onCountdownChanged 設定
+
+      case ActionType.wristSideBend:
+        _actionLogic = WristSideBendAction(callback: this);
+        // 有 3 秒倒數，countdownDone 由 action 自己透過 onCountdownChanged 設定
+
+      default:
+        // sidePinch 及其他手部動作
+        _actionLogic = SidePinchAction(callback: this, difficulty: diffIdx);
+        _state = _state.copyWith(countdownDone: true);
     }
   }
 

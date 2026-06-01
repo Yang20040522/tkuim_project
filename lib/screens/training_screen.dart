@@ -26,8 +26,8 @@ import 'body_training_screen.dart';
 import '../actions/wipe_body_action.dart';
 import '../actions/draw_circle_action.dart';
 import '../actions/reach_action.dart';
-
-import '../services/voice_service.dart';
+import '../actions/raise_both_arms_action.dart';
+import '../actions/elbow_forward_action.dart';
 
 class TrainingScreen extends StatefulWidget {
   final TrainingAction action;
@@ -48,7 +48,6 @@ class _TrainingScreenState extends State<TrainingScreen>
 
   late final RehabSessionController _controller;
 
-
   bool _isInitialized = false;
   bool _completionShown = false;
 
@@ -63,8 +62,6 @@ class _TrainingScreenState extends State<TrainingScreen>
   @override
   void initState() {
     super.initState();
-
-    VoiceService.init();
 
     final IPoseModel selectedModel = MediaPipeModel();
     _controller = RehabSessionController(
@@ -93,10 +90,6 @@ class _TrainingScreenState extends State<TrainingScreen>
     _controller.stateStream.listen((state) {
       if (!mounted) return;
       setState(() {});
-
-      // feedback 有變化就念出來
-      VoiceService.speak(state.feedback);
-
       if (state.isComplete && !_completionShown) {
         _completionShown = true;
         _handleCompletion(state);
@@ -111,7 +104,6 @@ class _TrainingScreenState extends State<TrainingScreen>
 
   @override
   void dispose() {
-    VoiceService.stop();
     _controller.dispose();
     _pulseCtrl.dispose();
     _slideCtrl.dispose();
@@ -122,7 +114,6 @@ class _TrainingScreenState extends State<TrainingScreen>
     await _controller.flipCamera();
     if (mounted) setState(() {});
   }
-
 
   void _handleCompletion(RehabSessionState state) {
     // 儲存紀錄
@@ -163,7 +154,6 @@ class _TrainingScreenState extends State<TrainingScreen>
 
         // 選新動作或新難度
         onStartNew: (action, difficulty) {
-          // 先離開目前畫面（關閉這個 TrainingScreen）
           Navigator.of(context).pop();
           _navigateToAction(action, difficulty);
         },
@@ -171,20 +161,34 @@ class _TrainingScreenState extends State<TrainingScreen>
     );
   }
 
-  /// 根據動作類型導航到對應畫面（手部 → TrainingScreen，全身 → BodyTrainingScreen）
+  /// 根據動作類型導航到對應畫面
+  /// - 全身動作 → BodyTrainingScreen
+  /// - 手部動作（包含新的 wristExtension / wristSideBend）→ TrainingScreen
   void _navigateToAction(TrainingAction action, DifficultyOption difficulty) {
     Widget screen;
-    if (action.type == ActionType.wipeBody) {
-      screen = BodyTrainingScreen(
-          action: WipeBodyAction(difficulty: _mapDifficulty(difficulty.level)));
-    } else if (action.type == ActionType.drawCircle) {
-      screen = BodyTrainingScreen(
-          action: DrawCircleAction(difficulty: _mapDifficulty(difficulty.level)));
-    } else if (action.type == ActionType.reach) {
-      screen = BodyTrainingScreen(
-          action: ReachAction(difficulty: _mapDifficulty(difficulty.level)));
-    } else {
-      screen = TrainingScreen(action: action, difficulty: difficulty);
+
+    switch (action.type) {
+      case ActionType.wipeBody:
+        screen = BodyTrainingScreen(
+            action: WipeBodyAction(difficulty: _mapDifficulty(difficulty.level)));
+
+      case ActionType.drawCircle:
+        screen = BodyTrainingScreen(
+            action: DrawCircleAction(difficulty: _mapDifficulty(difficulty.level)));
+
+      case ActionType.reach:
+        screen = BodyTrainingScreen(
+            action: ReachAction(difficulty: _mapDifficulty(difficulty.level)));
+
+      case ActionType.raiseBothArms:
+        screen = BodyTrainingScreen(action: RaiseBothArmsAction());
+
+      case ActionType.elbowForward:
+        screen = BodyTrainingScreen(action: ElbowForwardAction());
+
+      default:
+        // 所有手部動作（turnPalm, sidePinch, wristExtension, wristSideBend）
+        screen = TrainingScreen(action: action, difficulty: difficulty);
     }
 
     Navigator.of(context).pushReplacement(MaterialPageRoute(builder: (_) => screen));

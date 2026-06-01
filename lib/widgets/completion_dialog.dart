@@ -3,12 +3,21 @@
 import 'package:flutter/material.dart';
 import '../models/training_action.dart';
 
-// 手部 / 全身動作分類（與 home_screen 相同）
-const _handActions = [ActionType.turnPalm, ActionType.sidePinch];
+// 手部動作清單（與 home_screen 同步）
+const _handActions = [
+  ActionType.turnPalm,
+  ActionType.sidePinch,
+  ActionType.wristExtension,  // ✅ 補上翹手腕
+  ActionType.wristSideBend,   // ✅ 補上左右彎手腕
+];
+
+// 全身動作清單（與 home_screen 同步）
 const _bodyActions = [
   ActionType.wipeBody,
   ActionType.drawCircle,
   ActionType.reach,
+  ActionType.raiseBothArms,   // ✅ 補上雙手抬舉
+  ActionType.elbowForward,    // ✅ 補上交扣手肘前伸
   ActionType.bodyTest,
 ];
 
@@ -316,7 +325,7 @@ class _OtherActionsSectionState extends State<_OtherActionsSection> {
         _buildAccordion(
           title: '手部復健',
           icon: '🖐️',
-          subtitle: '翻掌 · 側捏',
+          subtitle: '翻掌 · 側捏 · 翹手腕 · 左右彎手腕',
           isExpanded: _handExpanded,
           onToggle: () => setState(() => _handExpanded = !_handExpanded),
           children: kTrainingActions
@@ -330,7 +339,7 @@ class _OtherActionsSectionState extends State<_OtherActionsSection> {
         _buildAccordion(
           title: '全身復健',
           icon: '🦴',
-          subtitle: '擦拭 · 畫圓 · 舉高',
+          subtitle: '擦拭 · 畫圓 · 舉高 · 雙手抬舉 · 手肘前伸',
           isExpanded: _bodyExpanded,
           onToggle: () => setState(() => _bodyExpanded = !_bodyExpanded),
           children: kTrainingActions
