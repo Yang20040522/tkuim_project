@@ -18,6 +18,12 @@ enum RehabJoint {
   rightWrist,
   leftHip,
   rightHip,
+
+  // 下肢(新增,給坐站訓練等下肢動作用)
+  leftKnee,
+  rightKnee,
+  leftAnkle,
+  rightAnkle,
 }
 
 // 一幀全身姿勢結果 — 全身復健邏輯只讀這個

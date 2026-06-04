@@ -32,6 +32,9 @@ class CompletionDialog extends StatelessWidget {
   final DifficultyOption currentDifficulty;
   final void Function(TrainingAction action, DifficultyOption difficulty) onStartNew;
 
+  /// 暫停模式:不顯示成績、標題改「已暫停」、隱藏失誤
+  final bool isPaused;
+
   const CompletionDialog({
     super.key,
     required this.repCount,
@@ -42,6 +45,7 @@ class CompletionDialog extends StatelessWidget {
     required this.currentAction,
     required this.currentDifficulty,
     required this.onStartNew,
+    this.isPaused = false,    // 預設 false,完成模式
   });
 
   @override
@@ -59,45 +63,46 @@ class CompletionDialog extends StatelessWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Text('🎉', style: TextStyle(fontSize: 48)),
+              Text(isPaused ? '⏸️' : '🎉', style: const TextStyle(fontSize: 48)),
               const SizedBox(height: 10),
-              const Text(
-                '訓練完成！',
-                style: TextStyle(
+              Text(
+                isPaused ? '已暫停' : '訓練完成！',
+                style: const TextStyle(
                     color: Colors.white,
                     fontSize: 24,
                     fontWeight: FontWeight.w900),
               ),
               const SizedBox(height: 18),
 
-              // ── 數據列 ──────────────────────────────────────────────
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                children: [
-                  _statItem('完美動作', '$perfectCount / 10', const Color(0xFF4A65FF)),
-                  _statItem(
-                    '花費時間',
-                    '$minutes:${seconds.toString().padLeft(2, '0')}',
-                    const Color(0xFF4CAF50),
-                  ),
-                  _statItem(
-                    '失誤次數',
-                    '${mistakeLogs.length}',
-                    mistakeLogs.isEmpty
-                        ? const Color(0xFF4CAF50)
-                        : const Color(0xFFFF4B4B),
-                  ),
-                ],
-              ),
+              // ── 數據列(只在「完成模式」顯示)─────────────────────
+              if (!isPaused)
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                  children: [
+                    _statItem('完美動作', '$perfectCount / 10', const Color(0xFF4A65FF)),
+                    _statItem(
+                      '花費時間',
+                      '$minutes:${seconds.toString().padLeft(2, '0')}',
+                      const Color(0xFF4CAF50),
+                    ),
+                    _statItem(
+                      '失誤次數',
+                      '${mistakeLogs.length}',
+                      mistakeLogs.isEmpty
+                          ? const Color(0xFF4CAF50)
+                          : const Color(0xFFFF4B4B),
+                    ),
+                  ],
+                ),
 
               const SizedBox(height: 22),
-              _divider('接下來要做什麼？'),
+              _divider(isPaused ? '想做什麼？' : '接下來要做什麼？'),
               const SizedBox(height: 14),
 
               // ── 再來一組（相同動作+難度）───────────────────────────
               _actionButton(
                 icon: '🔄',
-                label: '再來一組',
+                label: isPaused ? '繼續訓練' : '再來一組',
                 subtitle: '${currentAction.name} · ${currentDifficulty.label}',
                 color: const Color(0xFF4A65FF),
                 onTap: onRetry,
@@ -111,10 +116,12 @@ class CompletionDialog extends StatelessWidget {
                 _DifficultyRow(
                   action: currentAction,
                   currentDifficulty: currentDifficulty,
-                  onSelect: (diff) {
-                    Navigator.of(context).pop();
-                    onStartNew(currentAction, diff);
-                  },
+                  onSelect: (diff) => onStartNew(currentAction, diff),
+                  //onSelect: (diff) {
+                    //Navigator.of(context).pop();
+                    //onStartNew(currentAction, diff);
+                    
+                  //},
                 ),
                 const SizedBox(height: 10),
               ],
@@ -124,10 +131,11 @@ class CompletionDialog extends StatelessWidget {
               const SizedBox(height: 10),
               _OtherActionsSection(
                 currentAction: currentAction,
-                onSelect: (action) {
-                  Navigator.of(context).pop();
-                  onStartNew(action, action.difficulties.first);
-                },
+                onSelect: (action) => onStartNew(action, action.difficulties.first),
+                // onSelect: (action) {
+                  // Navigator.of(context).pop();
+                  // onStartNew(action, action.difficulties.first);
+                // },
               ),
 
               const SizedBox(height: 14),

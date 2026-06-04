@@ -11,6 +11,8 @@ import '../actions/draw_circle_action.dart';
 import '../actions/reach_action.dart';
 import '../actions/raise_both_arms_action.dart';
 import '../actions/elbow_forward_action.dart';
+import '../actions/sit_to_stand_action.dart';
+import '../actions/lateral_step_action.dart';
 
 // 手部動作清單
 final _handActions = [
@@ -26,6 +28,8 @@ final _bodyActions = [
   ActionType.reach,
   ActionType.raiseBothArms,   // 第3 雙手抬舉式
   ActionType.elbowForward,    // 第8 交扣手肘前伸式
+  ActionType.sitToStand,    // ← 加這行
+  ActionType.lateralStep,
   ActionType.bodyTest,
 ];
 
@@ -41,7 +45,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   DifficultyOption? _selectedDifficulty;
 
   // 控制兩個選單的展開狀態
-  bool _handExpanded = true;
+  bool _handExpanded = false;
   bool _bodyExpanded = false;
 
   late AnimationController _fadeCtrl;
@@ -115,6 +119,18 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         trainingActionMeta: act,
         difficultyMeta: diff,
       );
+    } else if (act.type == ActionType.sitToStand) {       // ← 新增從這裡
+      screen = BodyTrainingScreen(
+        action: SitToStandAction(difficulty: _mapDifficulty(diff.level)),
+        trainingActionMeta: act,
+        difficultyMeta: diff,
+      );
+    } else if (act.type == ActionType.lateralStep) {
+      screen = BodyTrainingScreen(
+        action: LateralStepAction(difficulty: _mapDifficulty(diff.level)),
+        trainingActionMeta: act,
+        difficultyMeta: diff,
+      );
     } else {
       screen = TrainingScreen(action: act, difficulty: diff);
     }
@@ -174,7 +190,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                       _buildAccordion(
                         title: '全身復健',
                         icon: '🦴',
-                        subtitle: '擦拭 · 畫圓 · 舉高 · 雙手抬舉 · 手肘前伸 · 骨架偵測',
+                        subtitle: '擦拭 · 畫圓 · 舉高 · 雙手抬舉 · 手肘前伸 · 坐站 · 骨架偵測',
                         isExpanded: _bodyExpanded,
                         onToggle: () => setState(() {
                           _bodyExpanded = !_bodyExpanded;

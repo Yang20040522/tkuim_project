@@ -107,6 +107,7 @@ class BodyPoseEngine {
   bool _isFrontCamera = true;
 
   List<Offset> _smoothedKeypoints = [];
+  bool _disposed = false;
 
   // 對外:骨架資料 (畫骨架的人監聽這個)
   final ValueNotifier<PoseData> poseNotifier =
@@ -199,7 +200,8 @@ class BodyPoseEngine {
 
   // ── 每幀進入點 ────────────────────────────────────────────────────
   void _onFrame(CameraImage image) {
-    if (_processing || _poseSession == null) return;
+    //if (_processing || _poseSession == null) return;
+    if (_disposed || _processing || _poseSession == null) return;
     _processing = true;
 
     final input = InferenceInput(
@@ -303,17 +305,35 @@ class BodyPoseEngine {
       }
       // 散熱節能鎖 (與 body_test_screen 相同:休息 20ms)
       Future.delayed(const Duration(milliseconds: 20), () {
-        _processing = false;
+        //_processing = false;
+        if (!_disposed) _processing = false;
       });
     }
   }
 
   // ── 釋放 ──────────────────────────────────────────────────────────
   Future<void> dispose() async {
-    await _cam?.stopImageStream();
-    await _cam?.dispose();
-    _runOpts?.release();
-    _poseSession?.release();
+    if (_disposed) return;       // 防重複 dispose
+    _disposed = true;
+
+    try {
+      if (_cam?.value.isStreamingImages == true) {
+        await _cam!.stopImageStream();
+      }
+    } catch (_) {}
+    
+    try {
+      await _cam?.dispose();
+    } catch (_) {}
+    _cam = null;
+    
+    try {
+      _runOpts?.release();
+    } catch (_) {}
+    try {
+      _poseSession?.release();
+    } catch (_) {}
+    
     poseNotifier.dispose();
     cameraReady.dispose();
   }

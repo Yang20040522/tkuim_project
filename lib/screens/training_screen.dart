@@ -115,7 +115,7 @@ class _TrainingScreenState extends State<TrainingScreen>
     if (mounted) setState(() {});
   }
 
-  void _handleCompletion(RehabSessionState state) {
+  Future<void> _handleCompletion(RehabSessionState state) async {
     // 儲存紀錄
     HistoryService().saveRecord(TrainingRecord(
       timestamp: DateTime.now().toString().substring(0, 16),
@@ -125,40 +125,45 @@ class _TrainingScreenState extends State<TrainingScreen>
       mistakeLogs: state.mistakeLogs,
     ));
 
-    showDialog(
+    // dialog 不直接導航,而是回傳「使用者選了什麼」
+    final result = await showDialog<_CompletionResult>(
       context: context,
       barrierDismissible: false,
-      builder: (_) => CompletionDialog(
+      builder: (dialogCtx) => CompletionDialog(
         repCount: state.repCount,
         durationSeconds: state.durationSeconds,
         mistakeLogs: state.mistakeLogs,
         currentAction: widget.action,
         currentDifficulty: widget.difficulty,
-
-        // 再來一組（相同動作 + 難度）
-        onRetry: () {
-          Navigator.of(context).pop();
-          Navigator.of(context).pushReplacement(MaterialPageRoute(
-            builder: (_) => TrainingScreen(
-              action: widget.action,
-              difficulty: widget.difficulty,
-            ),
-          ));
-        },
-
-        // 回首頁
-        onHome: () {
-          Navigator.of(context).pop();
-          Navigator.of(context).pop();
-        },
-
-        // 選新動作或新難度
-        onStartNew: (action, difficulty) {
-          Navigator.of(context).pop();
-          _navigateToAction(action, difficulty);
-        },
+        onRetry: () =>
+            Navigator.of(dialogCtx).pop(_CompletionResult.retry()),
+        onHome: () =>
+            Navigator.of(dialogCtx).pop(_CompletionResult.home()),
+        onStartNew: (a, d) =>
+            Navigator.of(dialogCtx).pop(_CompletionResult.startNew(a, d)),
       ),
     );
+
+    if (!mounted || result == null) return;
+
+    print('完成對話框結果:${result.kind}');
+    // dialog 已關閉,Navigator 空閒,現在跳安全
+    switch (result.kind) {
+      case _CompletionKind.retry:
+        Navigator.of(context).pushReplacement(MaterialPageRoute(
+          builder: (_) => TrainingScreen(
+            action: widget.action,
+            difficulty: widget.difficulty,
+          ),
+        ));
+        break;
+      case _CompletionKind.home:
+        Navigator.of(context).pop();
+        break;
+      case _CompletionKind.startNew:
+        _navigateToAction(result.action!, result.difficulty!);
+        break;
+    }
   }
 
   /// 根據動作類型導航到對應畫面
@@ -297,4 +302,20 @@ class _TrainingScreenState extends State<TrainingScreen>
       ),
     );
   }
+}
+
+enum _CompletionKind { retry, home, startNew }
+
+class _CompletionResult {
+  final _CompletionKind kind;
+  final TrainingAction? action;
+  final DifficultyOption? difficulty;
+  const _CompletionResult._(this.kind, this.action, this.difficulty);
+  factory _CompletionResult.retry() =>
+      const _CompletionResult._(_CompletionKind.retry, null, null);
+  factory _CompletionResult.home() =>
+      const _CompletionResult._(_CompletionKind.home, null, null);
+  factory _CompletionResult.startNew(
+          TrainingAction a, DifficultyOption d) =>
+      _CompletionResult._(_CompletionKind.startNew, a, d);
 }

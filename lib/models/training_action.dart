@@ -13,6 +13,8 @@ enum ActionType {
   elbowForward,    
   wristExtension,  // 檢查拼字是否為小寫 w 開頭的 wristExtension
   wristSideBend,   // 檢查拼字是否為小寫 w 開頭的 wristSideBend
+  sitToStand, 
+  lateralStep,
 }
 
 enum DifficultyLevel { level1, level2, level3 }
@@ -193,6 +195,46 @@ const List<TrainingAction> kTrainingActions = [
           level: DifficultyLevel.level1,
           label: '標準',
           description: '手腕左右來回彎曲，完成 10 次'),
+    ],
+  ),
+  TrainingAction(                        // ← 從這裡開始貼
+    type: ActionType.sitToStand,
+    name: '坐站訓練',
+    emoji: '🦵',
+    description: '訓練腿部力量與站起穩定度',
+    difficulties: [
+      DifficultyOption(
+          level: DifficultyLevel.level1,
+          label: '初級',
+          description: '微蹲 — 膝蓋彎曲到 140 度'),
+      DifficultyOption(
+          level: DifficultyLevel.level2,
+          label: '中級',
+          description: '半蹲 — 大腿接近平行地面'),
+      DifficultyOption(
+          level: DifficultyLevel.level3,
+          label: '高級',
+          description: '半蹲撐住 3 秒'),
+    ],
+  ),
+  TrainingAction(
+    type: ActionType.lateralStep,
+    name: '側跨步訓練',
+    emoji: '🚶',
+    description: '訓練下肢平衡與單側肌力,防止跌倒',
+    difficulties: [
+      DifficultyOption(
+          level: DifficultyLevel.level1,
+          label: '初級',
+          description: '微跨 — 膝蓋彎曲到 140 度'),
+      DifficultyOption(
+          level: DifficultyLevel.level2,
+          label: '中級',
+          description: '半蹲側弓步'),
+      DifficultyOption(
+          level: DifficultyLevel.level3,
+          label: '高級',
+          description: '深側弓步撐住 2 秒'),
     ],
   ),
 ];

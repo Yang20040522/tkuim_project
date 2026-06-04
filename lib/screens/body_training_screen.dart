@@ -20,6 +20,10 @@ import '../actions/reach_action.dart';
 import '../widgets/completion_dialog.dart';
 import 'training_screen.dart';
 import '../services/voice_service.dart';
+import '../actions/raise_both_arms_action.dart';
+import '../actions/elbow_forward_action.dart';
+import '../actions/sit_to_stand_action.dart';
+import '../actions/lateral_step_action.dart';
 
 // RTMPose 133 點 → RehabJoint 對應表
 const Map<RehabJoint, int> _kJointIndex = {
@@ -31,6 +35,12 @@ const Map<RehabJoint, int> _kJointIndex = {
   RehabJoint.rightWrist: 10,
   RehabJoint.leftHip: 11,
   RehabJoint.rightHip: 12,
+
+  // 下肢(新增)
+  RehabJoint.leftKnee: 13,
+  RehabJoint.rightKnee: 14,
+  RehabJoint.leftAnkle: 15,
+  RehabJoint.rightAnkle: 16,
 };
 
 const _skeletonConnections = [
@@ -125,14 +135,14 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
     if (mounted) setState(() {});
   }
 
-  void _handleCompletion() {
+  Future<void> _handleCompletion() async {
     if (_completionShown) return;
     _completionShown = true;
 
     final durationSeconds =
         DateTime.now().difference(_sessionStart).inSeconds;
 
-    // 儲存紀錄（如果有 meta 資訊）
+    // 儲存紀錄
     if (widget.trainingActionMeta != null && widget.difficultyMeta != null) {
       HistoryService().saveRecord(TrainingRecord(
         timestamp: DateTime.now().toString().substring(0, 16),
@@ -145,7 +155,6 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
       ));
     }
 
-    // 找出對應的 TrainingAction（用來顯示在 Dialog 裡）
     final currentMeta = widget.trainingActionMeta ??
         kTrainingActions.firstWhere(
           (a) => a.name == widget.action.title,
@@ -154,38 +163,105 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
     final currentDiff = widget.difficultyMeta ??
         currentMeta.difficulties.first;
 
-    showDialog(
+    // 用 showDialog 的回傳值決定下一步,而不是 dialog 內部直接導航
+    final result = await showDialog<_CompletionResult>(
       context: context,
       barrierDismissible: false,
-      builder: (_) => CompletionDialog(
+      builder: (dialogCtx) => CompletionDialog(
         repCount: _repCount,
         durationSeconds: durationSeconds,
         mistakeLogs: const [],
         currentAction: currentMeta,
         currentDifficulty: currentDiff,
-        onRetry: () {
-          Navigator.of(context).pop();
-          Navigator.of(context).pushReplacement(MaterialPageRoute(
-            builder: (_) => BodyTrainingScreen(
-              action: widget.action,
-              trainingActionMeta: widget.trainingActionMeta,
-              difficultyMeta: widget.difficultyMeta,
-            ),
-          ));
-        },
-        onHome: () {
-          Navigator.of(context).pop();
-          Navigator.of(context).pop();
-        },
-        onStartNew: (action, difficulty) {
-          Navigator.of(context).pop();
-          _navigateToAction(action, difficulty);
-        },
+        onRetry: () =>
+            Navigator.of(dialogCtx).pop(_CompletionResult.retry()),
+        onHome: () =>
+            Navigator.of(dialogCtx).pop(_CompletionResult.home()),
+        onStartNew: (a, d) =>
+            Navigator.of(dialogCtx).pop(_CompletionResult.startNew(a, d)),
       ),
     );
+
+    if (!mounted || result == null) return;
+
+    print('完成對話框結果:${result.kind}');
+    // dialog 已經關了,現在才導航,Navigator 不會鎖
+    switch (result.kind) {
+      case _CompletionKind.retry:
+        Navigator.of(context).pushReplacement(MaterialPageRoute(
+          builder: (_) => BodyTrainingScreen(
+            action: widget.action,
+            trainingActionMeta: widget.trainingActionMeta,
+            difficultyMeta: widget.difficultyMeta,
+          ),
+        ));
+        break;
+      case _CompletionKind.home:
+        Navigator.of(context).pop();
+        break;
+      case _CompletionKind.startNew:
+        _navigateToAction(result.action!, result.difficulty!);
+        break;
+    }
   }
 
-  void _navigateToAction(TrainingAction action, DifficultyOption difficulty) {
+  Future<void> _handlePause() async {
+    final currentMeta = widget.trainingActionMeta ??
+        kTrainingActions.firstWhere(
+          (a) => a.name == widget.action.title,
+          orElse: () => kTrainingActions.first,
+        );
+    final currentDiff = widget.difficultyMeta ??
+        currentMeta.difficulties.first;
+
+    // 跟 _handleCompletion 一樣用 _CompletionResult 模式
+    final result = await showDialog<_CompletionResult>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogCtx) => CompletionDialog(
+        isPaused: true,                           // ← 關鍵:暫停模式
+        repCount: 0,                              // 暫停模式不用,給 0
+        durationSeconds: 0,                       // 暫停模式不用,給 0
+        mistakeLogs: const [],                    // 暫停模式不用
+        currentAction: currentMeta,
+        currentDifficulty: currentDiff,
+        onRetry: () =>
+            Navigator.of(dialogCtx).pop(_CompletionResult.retry()),
+        onHome: () =>
+            Navigator.of(dialogCtx).pop(_CompletionResult.home()),
+        onStartNew: (a, d) =>
+            Navigator.of(dialogCtx).pop(_CompletionResult.startNew(a, d)),
+      ),
+    );
+
+    if (!mounted || result == null) return;
+
+    switch (result.kind) {
+      case _CompletionKind.retry:
+        // 「繼續訓練」= 重開這個動作的訓練畫面
+        Navigator.of(context).pushReplacement(MaterialPageRoute(
+          builder: (_) => BodyTrainingScreen(
+            action: widget.action,
+            trainingActionMeta: widget.trainingActionMeta,
+            difficultyMeta: widget.difficultyMeta,
+          ),
+        ));
+        break;
+      case _CompletionKind.home:
+        Navigator.of(context).pop();
+        break;
+      case _CompletionKind.startNew:
+        _navigateToAction(result.action!, result.difficulty!);
+        break;
+    }
+  }
+
+  Future<void> _navigateToAction(
+      TrainingAction action, DifficultyOption difficulty) async {
+    // 等舊相機/engine 完全釋放(關鍵:給 dispose 跑完的時間)
+    await _engine.dispose();
+    if (!mounted) return;
+
     Widget screen;
     final diff = _mapDifficulty(difficulty.level);
     if (action.type == ActionType.wipeBody) {
@@ -206,9 +282,35 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
         trainingActionMeta: action,
         difficultyMeta: difficulty,
       );
+    } else if (action.type == ActionType.raiseBothArms) {
+      screen = BodyTrainingScreen(
+        action: RaiseBothArmsAction(),
+        trainingActionMeta: action,
+        difficultyMeta: difficulty,
+      );
+    } else if (action.type == ActionType.elbowForward) {
+      screen = BodyTrainingScreen(
+        action: ElbowForwardAction(),
+        trainingActionMeta: action,
+        difficultyMeta: difficulty,
+      );
+    } else if (action.type == ActionType.sitToStand) {
+      screen = BodyTrainingScreen(
+        action: SitToStandAction(difficulty: diff),
+        trainingActionMeta: action,
+        difficultyMeta: difficulty,
+      );
+    } else if (action.type == ActionType.lateralStep) {
+      screen = BodyTrainingScreen(
+        action: LateralStepAction(difficulty: diff),
+        trainingActionMeta: action,
+        difficultyMeta: difficulty,
+      );
     } else {
       screen = TrainingScreen(action: action, difficulty: difficulty);
     }
+    
+    if (!mounted) return;
     Navigator.of(context).pushReplacement(MaterialPageRoute(builder: (_) => screen));
   }
 
@@ -405,7 +507,8 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
           Container(width: 1, height: 32, color: const Color(0xFF252738)),
           // 完成按鈕（手動觸發完成）
           GestureDetector(
-            onTap: _handleCompletion,
+            //onTap: _handleCompletion,
+            onTap: _handlePause,
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
               decoration: BoxDecoration(
@@ -417,7 +520,7 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
                 children: [
                   Icon(Icons.stop_rounded, color: Colors.white, size: 16),
                   SizedBox(width: 4),
-                  Text('完成',
+                  Text('結束',
                       style: TextStyle(
                           color: Colors.white,
                           fontSize: 13,
@@ -512,4 +615,20 @@ class _PoseTween extends Tween<PoseData> {
     }
     return PoseData(lerped, e.scores);
   }
+}
+
+enum _CompletionKind { retry, home, startNew }
+
+class _CompletionResult {
+  final _CompletionKind kind;
+  final TrainingAction? action;
+  final DifficultyOption? difficulty;
+  const _CompletionResult._(this.kind, this.action, this.difficulty);
+  factory _CompletionResult.retry() =>
+      const _CompletionResult._(_CompletionKind.retry, null, null);
+  factory _CompletionResult.home() =>
+      const _CompletionResult._(_CompletionKind.home, null, null);
+  factory _CompletionResult.startNew(
+          TrainingAction a, DifficultyOption d) =>
+      _CompletionResult._(_CompletionKind.startNew, a, d);
 }
