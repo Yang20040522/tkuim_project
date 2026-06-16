@@ -149,24 +149,40 @@ const List<TrainingAction> kTrainingActions = [
     type: ActionType.raiseBothArms,
     name: '雙手抬舉式',
     emoji: '🙌',
-    description: '雙手交扣往上抬舉過肩，訓練肩膀活動度與核心穩定',
+    description: '雙手交扣往上抬舉,訓練肩膀活動度與核心穩定',
     difficulties: [
       DifficultyOption(
           level: DifficultyLevel.level1,
-          label: '標準',
-          description: '雙手交扣，抬舉過肩並撐住 2 秒'),
+          label: '初級',
+          description: '抬到肩膀水平即可'),
+      DifficultyOption(
+          level: DifficultyLevel.level2,
+          label: '中級',
+          description: '抬過頭頂並撐住 2 秒'),
+      DifficultyOption(
+          level: DifficultyLevel.level3,
+          label: '高級',
+          description: '抬到最高位置撐住 3 秒'),
     ],
   ),
   TrainingAction(
     type: ActionType.elbowForward,
-    name: '交扣手肘前伸式',
+    name: '手肘屈伸訓練',
     emoji: '🤲',
-    description: '雙手十指交扣向前推出伸直，訓練手肘伸展與肩膀前推',
+    description: '雙手交扣後手肘來回伸直收回,訓練手肘關節活動度',
     difficulties: [
       DifficultyOption(
           level: DifficultyLevel.level1,
-          label: '標準',
-          description: '雙手交扣前推，撐住 2 秒再收回'),
+          label: '初級',
+          description: '手肘伸到接近 130 度'),
+      DifficultyOption(
+          level: DifficultyLevel.level2,
+          label: '中級',
+          description: '手肘伸直到 150 度並撐住 2 秒'),
+      DifficultyOption(
+          level: DifficultyLevel.level3,
+          label: '高級',
+          description: '手肘完全伸直並撐住 3 秒'),
     ],
   ),
   TrainingAction(

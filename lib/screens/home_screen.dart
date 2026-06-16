@@ -14,6 +14,8 @@ import '../actions/elbow_forward_action.dart';
 import '../actions/sit_to_stand_action.dart';
 import '../actions/lateral_step_action.dart';
 
+import '../actions/body_rehab_action.dart';
+
 // 手部動作清單
 final _handActions = [
   ActionType.turnPalm,
@@ -109,13 +111,13 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       );
     } else if (act.type == ActionType.raiseBothArms) {
       screen = BodyTrainingScreen(
-        action: RaiseBothArmsAction(),
+        action: RaiseBothArmsAction(difficulty: _mapDifficulty(diff.level)),
         trainingActionMeta: act,
         difficultyMeta: diff,
       );
     } else if (act.type == ActionType.elbowForward) {
       screen = BodyTrainingScreen(
-        action: ElbowForwardAction(),
+        action: ElbowForwardAction(difficulty: _mapDifficulty(diff.level)),
         trainingActionMeta: act,
         difficultyMeta: diff,
       );

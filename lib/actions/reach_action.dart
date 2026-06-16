@@ -1,162 +1,183 @@
 // lib/actions/reach_action.dart
 //
 // 伸手舉高訓練 — 判定邏輯。implements BodyRehabAction。
+//
+// 改版重點:
+//   1. 用「髖-肩-手腕」角度判定,身高/距離無影響
+//   2. 三難度梯度合理:水平 → 頭頂 → 頭頂撐 3 秒
+//   3. 起點統一為「手自然下垂」(角度 ≤ 30°)
+//   4. 升級門檻 5 次
 
 import 'dart:math' as math;
+import 'package:flutter/painting.dart';
 import '../models/body_frame.dart';
 import 'body_rehab_action.dart';
-import 'wipe_body_action.dart' show RehabDifficulty;
+//import 'wipe_body_action.dart' show RehabDifficulty;
 
 enum _ReachState { waitStart, reachingUp, holding, pullingDown }
 
 class ReachAction implements BodyRehabAction {
   RehabDifficulty difficulty;
   int successCount = 0;
-  final int targetCount = 3;
+  static const int _targetCount = 5;   // 升級門檻 5 次
+
+  // ── 角度門檻(髖-肩-手腕)─────────────────────────────────
+  static const double _restAngle = 30.0;    // 手垂下身側(寬鬆)
+  static const double _horizontalAngle = 80.0;   // 水平(easy 終點)
+  static const double _topAngle = 150.0;    // 頭頂(medium/hard 終點)
+  static const double _topDropTolerance = 15.0;  // hard 撐住時允許掉的範圍
 
   _ReachState _currentState = _ReachState.waitStart;
   RehabJoint? _activeWrist;
   RehabJoint? _activeShoulder;
+  RehabJoint? _activeHip;
 
-  DateTime _lastVoiceTime = DateTime.now();
+  DateTime _lastVoiceTime = DateTime.fromMillisecondsSinceEpoch(0);
   DateTime _holdStartTime = DateTime.now();
-  DateTime _lastRepTime = DateTime.now();
+  DateTime _lastRepTime = DateTime.fromMillisecondsSinceEpoch(0);
 
   ReachAction({this.difficulty = RehabDifficulty.easy});
 
-  // ── 合約要求 ──────────────────────────────────────────────
+  // ── 合約 ──────────────────────────────────────────────
   @override
   String get title => '伸手舉高訓練';
 
   @override
-  String get initialHint => '先舉一下手鎖定,再將手放下準備';
+  String get initialHint => '請放鬆站好,雙手自然垂在身側';
 
   @override
-  String get difficultyLabel {
-    switch (difficulty) {
-      case RehabDifficulty.easy:
-        return '初級';
-      case RehabDifficulty.medium:
-        return '中級';
-      case RehabDifficulty.hard:
-        return '高級';
-    }
-  }
+  String get difficultyLabel => switch (difficulty) {
+        RehabDifficulty.easy => '初級',
+        RehabDifficulty.medium => '中級',
+        RehabDifficulty.hard => '高級',
+      };
 
-  // ── 合約核心:每幀判定 ────────────────────────────────────
+  // ── 每幀判定 ──────────────────────────────────────────
   @override
   RehabFeedback update(BodyFrame frame) {
-    final leftShoulder = frame.joints[RehabJoint.leftShoulder];
-    final rightShoulder = frame.joints[RehabJoint.rightShoulder];
-    final leftWrist = frame.joints[RehabJoint.leftWrist];
-    final rightWrist = frame.joints[RehabJoint.rightWrist];
-    final leftHip = frame.joints[RehabJoint.leftHip];
+    final lShoulder = frame.joints[RehabJoint.leftShoulder];
+    final rShoulder = frame.joints[RehabJoint.rightShoulder];
+    final lWrist = frame.joints[RehabJoint.leftWrist];
+    final rWrist = frame.joints[RehabJoint.rightWrist];
+    final lHip = frame.joints[RehabJoint.leftHip];
+    final rHip = frame.joints[RehabJoint.rightHip];
 
-    if (leftShoulder == null ||
-        rightShoulder == null ||
-        leftWrist == null ||
-        rightWrist == null ||
-        leftHip == null) {
+    if (lShoulder == null || rShoulder == null ||
+        lWrist == null || rWrist == null ||
+        lHip == null || rHip == null) {
       return RehabFeedback.none;
     }
 
-    // 1. 自動偵測活躍手
+    // 1. 自動偵測活躍手(哪隻手先抬起來就鎖定哪隻)
     if (_activeWrist == null) {
-      if (leftWrist.dy < leftShoulder.dy) {
+      final leftAngle = _armAngle(lHip, lShoulder, lWrist);
+      final rightAngle = _armAngle(rHip, rShoulder, rWrist);
+
+      // 等使用者抬一下手鎖定 → 然後要求放下準備
+      if (leftAngle > 40.0 && leftAngle > rightAngle) {
         _activeWrist = RehabJoint.leftWrist;
         _activeShoulder = RehabJoint.leftShoulder;
-        return RehabFeedback(prompt: _speakThrottled('已鎖定左手,請先將手放下準備'));
-      } else if (rightWrist.dy < rightShoulder.dy) {
+        _activeHip = RehabJoint.leftHip;
+        return RehabFeedback(prompt: _throttled('已鎖定左手,請先將手自然放下'));
+      }
+      if (rightAngle > 40.0) {
         _activeWrist = RehabJoint.rightWrist;
         _activeShoulder = RehabJoint.rightShoulder;
-        return RehabFeedback(prompt: _speakThrottled('已鎖定右手,請先將手放下準備'));
+        _activeHip = RehabJoint.rightHip;
+        return RehabFeedback(prompt: _throttled('已鎖定右手,請先將手自然放下'));
       }
       return RehabFeedback.none;
     }
 
     final shoulder = frame.joints[_activeShoulder!];
     final wrist = frame.joints[_activeWrist!];
-    if (shoulder == null || wrist == null) return RehabFeedback.none;
-
-    // 2. 防後仰借力
-    final spineDx = leftShoulder.dx - leftHip.dx;
-    final spineDy = leftShoulder.dy - leftHip.dy;
-    final spineAngle = math.atan2(spineDx, spineDy) * (180 / math.pi);
-    if (spineAngle < -20 || spineAngle > 20) {
-      return RehabFeedback(prompt: _speakThrottled('身體請保持挺直,不要後仰借力'));
+    final hip = frame.joints[_activeHip!];
+    if (shoulder == null || wrist == null || hip == null) {
+      return RehabFeedback.none;
     }
 
-    // 3. 難度參數
-    final headEstimateY = shoulder.dy - 0.20;
-    final targetHeightY = (difficulty == RehabDifficulty.easy)
-        ? shoulder.dy - 0.10
-        : (difficulty == RehabDifficulty.medium)
-            ? headEstimateY
-            : headEstimateY - 0.10;
-    final restingHeightY = shoulder.dy + 0.20;
+    // 2. 防後仰借力(脊椎傾斜檢查,用左肩-左髖)
+    final spineDx = lShoulder.dx - lHip.dx;
+    final spineDy = lShoulder.dy - lHip.dy;
+    final spineAngle = math.atan2(spineDx, spineDy) * (180 / math.pi);
+    if (spineAngle.abs() > 20) {
+      return RehabFeedback(prompt: _throttled('身體請保持挺直,不要後仰借力'));
+    }
 
-    // 4. 狀態機
+    // 3. 算當前手臂角度
+    final armAngle = _armAngle(hip, shoulder, wrist);
+
+    // 4. 目標角度(依難度)
+    final targetAngle = switch (difficulty) {
+      RehabDifficulty.easy => _horizontalAngle,    // 80° 水平
+      RehabDifficulty.medium => _topAngle,         // 150° 頭頂
+      RehabDifficulty.hard => _topAngle,           // 150° 頭頂(再要求撐 3 秒)
+    };
+
     final now = DateTime.now();
 
+    // 5. 狀態機
     switch (_currentState) {
       case _ReachState.waitStart:
-        if (wrist.dy > restingHeightY) {
+        // 手要先回到下垂位置才能開始下一輪
+        if (armAngle <= _restAngle) {
           _currentState = _ReachState.reachingUp;
-          return RehabFeedback(prompt: _speakThrottled('預備完成,請用力往上舉高'));
+          return RehabFeedback(prompt: _throttled('預備完成,請用力往上舉'));
         }
         break;
 
       case _ReachState.reachingUp:
-        if (wrist.dy < targetHeightY) {
+        if (armAngle >= targetAngle) {
           if (difficulty == RehabDifficulty.hard) {
             _currentState = _ReachState.holding;
             _holdStartTime = now;
-            return RehabFeedback(prompt: _speakThrottled('撐住 3 秒!'));
+            return RehabFeedback(prompt: _throttled('撐住 3 秒'));
           } else {
             _currentState = _ReachState.pullingDown;
-            return RehabFeedback(prompt: _speakThrottled('很好,請慢慢放下'));
+            return RehabFeedback(prompt: _throttled('很好,請慢慢放下'));
           }
         }
         break;
 
       case _ReachState.holding:
-        if (wrist.dy > targetHeightY + 0.05) {
+        // 掉下來太多 → 回前一階段
+        if (armAngle < targetAngle - _topDropTolerance) {
           _currentState = _ReachState.reachingUp;
-          return RehabFeedback(prompt: _speakThrottled('手掉下來了,請再次舉高並撐住'));
-        } else {
-          if (now.difference(_holdStartTime).inSeconds >= 3) {
-            _currentState = _ReachState.pullingDown;
-            return RehabFeedback(prompt: _speakThrottled('非常穩定!請慢慢放下'));
-          }
+          return RehabFeedback(prompt: _throttled('手掉下來了,請再次舉高並撐住'));
+        }
+        if (now.difference(_holdStartTime).inSeconds >= 3) {
+          _currentState = _ReachState.pullingDown;
+          return RehabFeedback(prompt: _throttled('非常穩定,請慢慢放下'));
         }
         break;
 
       case _ReachState.pullingDown:
-        if (wrist.dy > restingHeightY) {
+        if (armAngle <= _restAngle) {
           final durationMs = now.difference(_lastRepTime).inMilliseconds;
 
+          // 放下要慢(防甩手)
           if (durationMs > 1500) {
             successCount++;
             _lastRepTime = now;
-            _currentState = _ReachState.reachingUp;
+            _currentState = _ReachState.waitStart;
 
-            if (successCount >= targetCount) {
-              _upgradeDifficulty();
-              return const RehabFeedback(
-                prompt: '完美過關!解鎖下一個難度!',
+            if (successCount >= _targetCount) {
+              final leveled = _upgrade();
+              return RehabFeedback(
+                prompt: leveled ? '完美過關,解鎖下一個難度' : '完成一組,辛苦了',
                 scored: true,
-                leveledUp: true,
+                leveledUp: leveled,
               );
             }
             return const RehabFeedback(
-              prompt: '完成一次!請繼續往上舉',
+              prompt: '完成一次,請繼續',
               scored: true,
             );
           } else {
             _lastRepTime = now;
             _currentState = _ReachState.waitStart;
             return RehabFeedback(
-                prompt: _speakThrottled('放下太快了!請用肌肉控制慢慢放下'));
+                prompt: _throttled('放下太快了,請用肌肉控制慢慢放下'));
           }
         }
         break;
@@ -165,25 +186,49 @@ class ReachAction implements BodyRehabAction {
     return RehabFeedback.none;
   }
 
-  // ── 私有 ──────────────────────────────────────────────────
-  String? _speakThrottled(String text) {
+  // ── 算「髖-肩-手腕」夾角 ─────────────────────────────────
+  // 回傳「上臂從垂直線轉開的角度」:
+  //   0°   = 手完全垂直貼身體
+  //   90°  = 手水平
+  //   180° = 手完全舉到頭頂以上
+  double _armAngle(Offset hip, Offset shoulder, Offset wrist) {
+    // 向量 A:肩 → 髖(代表「身體垂直方向」)
+    final ax = hip.dx - shoulder.dx;
+    final ay = hip.dy - shoulder.dy;
+    // 向量 B:肩 → 手腕(代表「上臂方向」)
+    final bx = wrist.dx - shoulder.dx;
+    final by = wrist.dy - shoulder.dy;
+
+    final magA = math.sqrt(ax * ax + ay * ay);
+    final magB = math.sqrt(bx * bx + by * by);
+    if (magA == 0 || magB == 0) return 0.0;
+
+    final cosTheta = (ax * bx + ay * by) / (magA * magB);
+    return math.acos(cosTheta.clamp(-1.0, 1.0)) * (180 / math.pi);
+  }
+
+  String? _throttled(String text) {
     final now = DateTime.now();
-    if (now.difference(_lastVoiceTime).inSeconds > 2) {
+    if (now.difference(_lastVoiceTime).inMilliseconds > 2000) {
       _lastVoiceTime = now;
       return text;
     }
     return null;
   }
 
-  void _upgradeDifficulty() {
+  bool _upgrade() {
     successCount = 0;
     _currentState = _ReachState.waitStart;
-    _activeWrist = null;     // 升級時重新綁定手
+    _activeWrist = null;
     _activeShoulder = null;
+    _activeHip = null;
     if (difficulty == RehabDifficulty.easy) {
       difficulty = RehabDifficulty.medium;
+      return true;
     } else if (difficulty == RehabDifficulty.medium) {
       difficulty = RehabDifficulty.hard;
+      return true;
     }
+    return false;
   }
 }

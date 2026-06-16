@@ -7,7 +7,7 @@ import 'dart:math' as math;
 import '../models/body_frame.dart';
 import 'body_rehab_action.dart';
 
-enum RehabDifficulty { easy, medium, hard }
+//enum RehabDifficulty { easy, medium, hard }
 
 class WipeBodyAction implements BodyRehabAction {
   RehabDifficulty difficulty;

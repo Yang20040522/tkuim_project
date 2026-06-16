@@ -5,7 +5,7 @@
 import 'dart:math' as math;
 import '../models/body_frame.dart';
 import 'body_rehab_action.dart';
-import 'wipe_body_action.dart' show RehabDifficulty; // 共用同一個難度 enum
+//import 'wipe_body_action.dart' show RehabDifficulty; // 共用同一個難度 enum
 
 class DrawCircleAction implements BodyRehabAction {
   RehabDifficulty difficulty;

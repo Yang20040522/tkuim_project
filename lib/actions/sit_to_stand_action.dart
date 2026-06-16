@@ -11,7 +11,7 @@ import 'dart:math' as math;
 import 'package:flutter/painting.dart';
 import '../models/body_frame.dart';
 import 'body_rehab_action.dart';
-import 'wipe_body_action.dart' show RehabDifficulty;
+//import 'wipe_body_action.dart' show RehabDifficulty;
 
 enum _SquatState { standing, squattingDown, holding, standingUp }
 

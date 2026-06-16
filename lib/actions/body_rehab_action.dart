@@ -34,3 +34,6 @@ abstract class BodyRehabAction {
   // 畫面每幀餵骨架進來,動作回報判定結果
   RehabFeedback update(BodyFrame frame);
 }
+
+// 復健難度三階(全身共用)
+enum RehabDifficulty { easy, medium, hard }

@@ -284,13 +284,13 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
       );
     } else if (action.type == ActionType.raiseBothArms) {
       screen = BodyTrainingScreen(
-        action: RaiseBothArmsAction(),
+        action: RaiseBothArmsAction(difficulty: diff),
         trainingActionMeta: action,
         difficultyMeta: difficulty,
       );
     } else if (action.type == ActionType.elbowForward) {
       screen = BodyTrainingScreen(
-        action: ElbowForwardAction(),
+        action: ElbowForwardAction(difficulty: diff),
         trainingActionMeta: action,
         difficultyMeta: difficulty,
       );

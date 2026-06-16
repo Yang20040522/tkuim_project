@@ -29,6 +29,8 @@ import '../actions/reach_action.dart';
 import '../actions/raise_both_arms_action.dart';
 import '../actions/elbow_forward_action.dart';
 
+import '../actions/body_rehab_action.dart';
+
 class TrainingScreen extends StatefulWidget {
   final TrainingAction action;
   final DifficultyOption difficulty;
