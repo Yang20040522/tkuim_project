@@ -31,7 +31,7 @@ import '../../actions/elbow_forward_action.dart';
 
 import '../../actions/body_rehab_action.dart';
 
-import '../actions/body_rehab_action.dart';
+
 
 class TrainingScreen extends StatefulWidget {
   final TrainingAction action;
@@ -150,10 +150,6 @@ class _TrainingScreenState extends State<TrainingScreen>
 
     if (!mounted || result == null) return;
 
-<<<<<<< HEAD:lib/screens/training_screen.dart
-    print('完成對話框結果:${result.kind}');
-=======
->>>>>>> 86bf8de (更新專案):lib/features/rehab/training_screen.dart
     // dialog 已關閉,Navigator 空閒,現在跳安全
     switch (result.kind) {
       case _CompletionKind.retry:
@@ -222,7 +218,7 @@ class _TrainingScreenState extends State<TrainingScreen>
     final s = _controller.currentState;
 
     return Scaffold(
-      backgroundColor: const Color(0xFF0D0F1A),
+      backgroundColor: const Color(0xFFFFFFFF),
       body: SafeArea(
         child: Column(
           children: [

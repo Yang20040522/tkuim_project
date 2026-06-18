@@ -86,22 +86,22 @@ const List<TrainingAction> kTrainingActions = [
   ),
   TrainingAction(
     type: ActionType.wipeBody,
-    name: '功能性擦拭訓練',
-    emoji: '🧼',
-    description: '融合日常擦澡動作，訓練核心穩定、防聳肩與手肘伸展控制',
+    name: '站姿抬腳式訓練',
+    emoji: '🦿',
+    description: '站姿下左右抬膝，鍛鍊下肢平衡與核心穩定',
     difficulties: [
       DifficultyOption(
           level: DifficultyLevel.level1,
           label: '初級',
-          description: '擦拭大腿 — 動作幅度小、高容錯'),
+          description: '抬膝幅度小 — 高容錯'),
       DifficultyOption(
           level: DifficultyLevel.level2,
           label: '中級',
-          description: '擦拭腹部，嚴格檢測聳肩代償'),
+          description: '抬膝至腰部高度，嚴格檢測身體晃動'),
       DifficultyOption(
           level: DifficultyLevel.level3,
           label: '高級',
-          description: '全身擦拭，挑戰手肘完全伸直'),
+          description: '抬膝過腰並定格 2 秒'),
     ],
   ),
   TrainingAction(
@@ -216,7 +216,7 @@ const List<TrainingAction> kTrainingActions = [
   TrainingAction(                        // ← 從這裡開始貼
     type: ActionType.sitToStand,
     name: '坐站訓練',
-    emoji: '🦵',
+    emoji: '🪑',
     description: '訓練腿部力量與站起穩定度',
     difficulties: [
       DifficultyOption(

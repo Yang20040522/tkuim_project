@@ -419,4 +419,3 @@ class PoseDataTween extends Tween<PoseData> {
     return PoseData(lerpedPoints, e.scores);
   }
 }
-

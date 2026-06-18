@@ -19,19 +19,12 @@ import '../../actions/draw_circle_action.dart';
 import '../../actions/reach_action.dart';
 import '../../widgets/completion_dialog.dart';
 import 'training_screen.dart';
-<<<<<<< HEAD:lib/screens/body_training_screen.dart
-import '../services/voice_service.dart';
-import '../actions/raise_both_arms_action.dart';
-import '../actions/elbow_forward_action.dart';
-import '../actions/sit_to_stand_action.dart';
-import '../actions/lateral_step_action.dart';
-=======
+
 import '../../services/voice_service.dart';
 import '../../actions/raise_both_arms_action.dart';
 import '../../actions/elbow_forward_action.dart';
 import '../../actions/sit_to_stand_action.dart';
 import '../../actions/lateral_step_action.dart';
->>>>>>> 86bf8de (更新專案):lib/features/rehab/body_training_screen.dart
 
 // RTMPose 133 點 → RehabJoint 對應表
 const Map<RehabJoint, int> _kJointIndex = {
@@ -344,7 +337,7 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Color(0xFF0D0F1A),
+      backgroundColor: const Color(0xFFFFFFFF),
       body: SafeArea(
         child: Column(
           children: [
@@ -368,12 +361,12 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
             child: Container(
               width: 40, height: 40,
               decoration: BoxDecoration(
-                color: Color(0xFF161824),
+                color: const Color(0xFFF5F6FA),
                 borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: Color(0xFF252738)),
+                border: Border.all(color: const Color(0xFFDDE0F0)),
               ),
               child: const Icon(Icons.arrow_back_ios_new,
-                  color: Colors.white, size: 16),
+                  color: Color(0xFF374151), size: 16),
             ),
           ),
           const SizedBox(width: 12),
@@ -381,7 +374,7 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
             child: Text(
               widget.action.title,
               style: const TextStyle(
-                color: Colors.white,
+                color: Color(0xFF1A1D2E),
                 fontSize: 18,
                 fontWeight: FontWeight.w800,
               ),
@@ -392,12 +385,12 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
             child: Container(
               width: 40, height: 40,
               decoration: BoxDecoration(
-                color: Color(0xFF161824),
+                color: const Color(0xFFF5F6FA),
                 borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: Color(0xFF252738)),
+                border: Border.all(color: const Color(0xFFDDE0F0)),
               ),
               child: const Icon(Icons.flip_camera_ios,
-                  color: Colors.white, size: 20),
+                  color: Color(0xFF374151), size: 20),
             ),
           ),
         ],
@@ -461,9 +454,9 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
       margin: const EdgeInsets.fromLTRB(16, 8, 16, 0),
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       decoration: BoxDecoration(
-        color: Color(0xFF161824),
+        color: const Color(0xFFF5F6FA),
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Color(0xFF252738)),
+        border: Border.all(color: const Color(0xFFDDE0F0)),
       ),
       child: Row(
         children: [
@@ -477,7 +470,7 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
                 Text(
                   _feedback,
                   style: const TextStyle(
-                    color: Colors.white,
+                    color: Color(0xFF1A1D2E),
                     fontSize: 15,
                     fontWeight: FontWeight.w700,
                   ),
@@ -501,18 +494,18 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
       margin: const EdgeInsets.all(16),
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
       decoration: BoxDecoration(
-        color: Color(0xFF161824),
+        color: const Color(0xFFF5F6FA),
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Color(0xFF252738)),
+        border: Border.all(color: const Color(0xFFDDE0F0)),
       ),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceAround,
         children: [
-          _stat('完成次數', '$_repCount', Color(0xFF4CAF50)),
-          Container(width: 1, height: 32, color: Color(0xFF252738)),
+          _stat('完成次數', '$_repCount', const Color(0xFF4CAF50)),
+          Container(width: 1, height: 32, color: const Color(0xFFDDE0F0)),
           _stat('目前難度', widget.action.difficultyLabel,
-              Color(0xFF00BCD4)),
-          Container(width: 1, height: 32, color: Color(0xFF252738)),
+              const Color(0xFF00BCD4)),
+          Container(width: 1, height: 32, color: const Color(0xFFDDE0F0)),
           // 完成按鈕（手動觸發完成）
           GestureDetector(
             //onTap: _handleCompletion,
@@ -552,7 +545,7 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
         const SizedBox(height: 4),
         Text(label,
             style: const TextStyle(
-                color: Color(0xFF8A8D9F), fontSize: 10)),
+                color: Color(0xFF6B7280), fontSize: 10)),
       ],
     );
   }

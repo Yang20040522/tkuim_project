@@ -1,22 +1,7 @@
 // lib/screens/home_screen.dart
 
 import 'package:flutter/material.dart';
-<<<<<<< HEAD:lib/screens/home_screen.dart
-import '../models/training_action.dart';
-import 'training_screen.dart';
-import 'body_test_screen.dart';
-import 'history_screen.dart';
-import 'body_training_screen.dart';
-import '../actions/wipe_body_action.dart';
-import '../actions/draw_circle_action.dart';
-import '../actions/reach_action.dart';
-import '../actions/raise_both_arms_action.dart';
-import '../actions/elbow_forward_action.dart';
-import '../actions/sit_to_stand_action.dart';
-import '../actions/lateral_step_action.dart';
 
-import '../actions/body_rehab_action.dart';
-=======
 import '../../models/training_action.dart';
 import '../rehab/training_screen.dart';
 import '../body_test/body_test_screen.dart';
@@ -31,7 +16,6 @@ import '../../actions/sit_to_stand_action.dart';
 import '../../actions/lateral_step_action.dart';
 
 import '../../actions/body_rehab_action.dart';
->>>>>>> 86bf8de (更新專案):lib/features/home/home_screen.dart
 
 // 手部動作清單
 final _handActions = [
@@ -165,7 +149,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Color(0xFF0D0F1A),
+      backgroundColor: const Color(0xFFFFFFFF),
       body: FadeTransition(
         opacity: _fadeAnim,
         child: SafeArea(
@@ -209,7 +193,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                       _buildAccordion(
                         title: '全身復健',
                         icon: '🦴',
-                        subtitle: '擦拭 · 畫圓 · 舉高 · 雙手抬舉 · 手肘前伸 · 坐站 · 骨架偵測',
+                        subtitle: '抬腳 · 畫圓 · 舉高 · 雙手抬舉 · 手肘前伸 · 坐站 · 骨架偵測',
                         isExpanded: _bodyExpanded,
                         onToggle: () => setState(() {
                           _bodyExpanded = !_bodyExpanded;
@@ -271,12 +255,12 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     return AnimatedContainer(
       duration: const Duration(milliseconds: 250),
       decoration: BoxDecoration(
-        color: Color(0xFF161824),
+        color: const Color(0xFFF5F6FA),
         borderRadius: BorderRadius.circular(20),
         border: Border.all(
           color: isExpanded
-              ? Color(0xFF4A65FF).withValues(alpha: 0.5)
-              : Color(0xFF252738),
+              ? const Color(0xFF4A65FF).withValues(alpha: 0.5)
+              : const Color(0xFFDDE0F0),
           width: isExpanded ? 1.5 : 1,
         ),
       ),
@@ -295,8 +279,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                     height: 40,
                     decoration: BoxDecoration(
                       color: isExpanded
-                          ? Color(0xFF4A65FF).withValues(alpha: 0.15)
-                          : Color(0xFF1E2030),
+                          ? const Color(0xFF4A65FF).withValues(alpha: 0.15)
+                          : const Color(0xFFEDEFF7),
                       borderRadius: BorderRadius.circular(12),
                     ),
                     child: Center(
@@ -313,8 +297,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                           title,
                           style: TextStyle(
                             color: isExpanded
-                                ? Colors.white
-                                : Color(0xFFD0D2E0),
+                                ? const Color(0xFF1A1D2E)
+                                : const Color(0xFF374151),
                             fontSize: 15,
                             fontWeight: FontWeight.w800,
                           ),
@@ -322,7 +306,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                         Text(
                           subtitle,
                           style: const TextStyle(
-                              color: Color(0xFF555770), fontSize: 11),
+                              color: Color(0xFF9CA3AF), fontSize: 11),
                         ),
                       ],
                     ),
@@ -331,7 +315,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                     turns: isExpanded ? 0.5 : 0,
                     duration: const Duration(milliseconds: 250),
                     child: const Icon(Icons.keyboard_arrow_down,
-                        color: Color(0xFF8A8D9F), size: 22),
+                        color: Color(0xFF6B7280), size: 22),
                   ),
                 ],
               ),
@@ -384,7 +368,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                   Text(
                     'RehabAssist',
                     style: TextStyle(
-                      color: Colors.white,
+                      color: Color(0xFF1A1D2E),
                       fontSize: 20,
                       fontWeight: FontWeight.w800,
                       letterSpacing: 0.5,
@@ -392,7 +376,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                   ),
                   Text(
                     'AI 復健訓練助理',
-                    style: TextStyle(color: Color(0xFF8A8D9F), fontSize: 12),
+                    style: TextStyle(color: Color(0xFF6B7280), fontSize: 12),
                   ),
                 ],
               ),
@@ -402,7 +386,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
           const Text(
             '今日復健計畫',
             style: TextStyle(
-              color: Colors.white,
+              color: Color(0xFF1A1D2E),
               fontSize: 28,
               fontWeight: FontWeight.w900,
               height: 1.1,
@@ -426,7 +410,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     return Text(
       text,
       style: const TextStyle(
-        color: Color(0xFF8A8D9F),
+        color: Color(0xFF6B7280),
         fontSize: 13,
         fontWeight: FontWeight.w600,
         letterSpacing: 0.8,
@@ -444,19 +428,19 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
           color: isSelected
-              ? Color(0xFF1E2B5E).withValues(alpha: 0.9)
-              : Color(0xFF1A1E30),
+              ? const Color(0xFFEAEEFF)
+              : const Color(0xFFF5F6FA),
           borderRadius: BorderRadius.circular(14),
           border: Border.all(
             color: isSelected
-                ? Color(0xFF4A65FF)
-                : Color(0xFF252738),
+                ? const Color(0xFF4A65FF)
+                : const Color(0xFFDDE0F0),
             width: isSelected ? 2 : 1,
           ),
           boxShadow: isSelected
               ? [
                   BoxShadow(
-                    color: Color(0xFF4A65FF).withValues(alpha: 0.2),
+                    color: const Color(0xFF4A65FF).withValues(alpha: 0.15),
                     blurRadius: 12,
                     offset: const Offset(0, 3),
                   )
@@ -470,8 +454,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               height: 44,
               decoration: BoxDecoration(
                 color: isSelected
-                    ? Color(0xFF4A65FF).withValues(alpha: 0.2)
-                    : Color(0xFF252738),
+                    ? const Color(0xFF4A65FF).withValues(alpha: 0.15)
+                    : const Color(0xFFEDEFF7),
                 borderRadius: BorderRadius.circular(12),
               ),
               child: Center(
@@ -488,8 +472,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                     action.name,
                     style: TextStyle(
                       color: isSelected
-                          ? Colors.white
-                          : Color(0xFFD0D2E0),
+                          ? const Color(0xFF1A1D2E)
+                          : const Color(0xFF374151),
                       fontSize: 14,
                       fontWeight: FontWeight.w700,
                     ),
@@ -498,7 +482,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                   Text(
                     action.description,
                     style: const TextStyle(
-                        color: Color(0xFF8A8D9F), fontSize: 11),
+                        color: Color(0xFF6B7280), fontSize: 11),
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                   ),
@@ -530,9 +514,9 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: Color(0xFF2A3050)),
+          border: Border.all(color: const Color(0xFFDDE0F0)),
           gradient: const LinearGradient(
-            colors: [Color(0xFF161824), Color(0xFF1A2040)],
+            colors: [Color(0xFFF5F6FA), Color(0xFFEAEEFF)],
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
           ),
@@ -562,7 +546,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                       Text(
                         '全身骨架偵測',
                         style: TextStyle(
-                          color: Colors.white,
+                          color: Color(0xFF1A1D2E),
                           fontSize: 14,
                           fontWeight: FontWeight.w700,
                         ),
@@ -574,7 +558,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                   SizedBox(height: 2),
                   Text(
                     'RTMPose 全身 133 關鍵點即時追蹤',
-                    style: TextStyle(color: Color(0xFF8A8D9F), fontSize: 11),
+                    style: TextStyle(color: Color(0xFF6B7280), fontSize: 11),
                   ),
                 ],
               ),
@@ -602,13 +586,13 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                   const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
               decoration: BoxDecoration(
                 color: isSelected
-                    ? Color(0xFF4A65FF)
-                    : Color(0xFF161824),
+                    ? const Color(0xFF4A65FF)
+                    : const Color(0xFFF5F6FA),
                 borderRadius: BorderRadius.circular(12),
                 border: Border.all(
                   color: isSelected
-                      ? Color(0xFF4A65FF)
-                      : Color(0xFF252738),
+                      ? const Color(0xFF4A65FF)
+                      : const Color(0xFFDDE0F0),
                 ),
               ),
               child: Column(
@@ -618,7 +602,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                     style: TextStyle(
                       color: isSelected
                           ? Colors.white
-                          : Color(0xFF8A8D9F),
+                          : const Color(0xFF374151),
                       fontWeight: FontWeight.w700,
                       fontSize: 13,
                     ),
@@ -630,7 +614,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                     style: TextStyle(
                       color: isSelected
                           ? Colors.white.withValues(alpha: 0.7)
-                          : Color(0xFF555770),
+                          : const Color(0xFF9CA3AF),
                       fontSize: 10,
                     ),
                     textAlign: TextAlign.center,
@@ -662,12 +646,12 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                   end: Alignment.centerRight,
                 )
               : null,
-          color: canStart ? null : Color(0xFF1E2030),
+          color: canStart ? null : const Color(0xFFEDEFF7),
           borderRadius: BorderRadius.circular(16),
           boxShadow: canStart
               ? [
                   BoxShadow(
-                    color: Color(0xFF4A65FF).withValues(alpha: 0.4),
+                    color: const Color(0xFF4A65FF).withValues(alpha: 0.3),
                     blurRadius: 20,
                     offset: const Offset(0, 6),
                   )
@@ -680,14 +664,14 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
             children: [
               Icon(
                 Icons.play_arrow_rounded,
-                color: canStart ? Colors.white : Color(0xFF555770),
+                color: canStart ? Colors.white : const Color(0xFFB0B3C5),
                 size: 26,
               ),
               const SizedBox(width: 8),
               Text(
                 '開始 AI 訓練',
                 style: TextStyle(
-                  color: canStart ? Colors.white : Color(0xFF555770),
+                  color: canStart ? Colors.white : const Color(0xFFB0B3C5),
                   fontSize: 18,
                   fontWeight: FontWeight.w800,
                   letterSpacing: 0.5,
@@ -709,9 +693,9 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         width: double.infinity,
         height: 54,
         decoration: BoxDecoration(
-          color: Color(0xFF161824),
+          color: const Color(0xFFF5F6FA),
           borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: Color(0xFF252738)),
+          border: Border.all(color: const Color(0xFFDDE0F0)),
         ),
         child: const Center(
           child: Row(
@@ -722,7 +706,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               Text(
                 '查看訓練紀錄',
                 style: TextStyle(
-                  color: Color(0xFFD0D2E0),
+                  color: Color(0xFF374151),
                   fontSize: 16,
                   fontWeight: FontWeight.w600,
                 ),
