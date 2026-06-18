@@ -8,22 +8,30 @@
 
 import 'package:flutter/material.dart';
 import 'package:camera/camera.dart';
-import '../models/pose_data.dart';
-import '../models/body_frame.dart';
-import '../models/training_action.dart';
-import '../services/body_pose_engine.dart';
-import '../services/history_service.dart';
-import '../actions/body_rehab_action.dart';
-import '../actions/wipe_body_action.dart';
-import '../actions/draw_circle_action.dart';
-import '../actions/reach_action.dart';
-import '../widgets/completion_dialog.dart';
+import '../../models/pose_data.dart';
+import '../../models/body_frame.dart';
+import '../../models/training_action.dart';
+import '../../services/body_pose_engine.dart';
+import '../../services/history_service.dart';
+import '../../actions/body_rehab_action.dart';
+import '../../actions/standing_knee_raise_action.dart';
+import '../../actions/draw_circle_action.dart';
+import '../../actions/reach_action.dart';
+import '../../widgets/completion_dialog.dart';
 import 'training_screen.dart';
+<<<<<<< HEAD:lib/screens/body_training_screen.dart
 import '../services/voice_service.dart';
 import '../actions/raise_both_arms_action.dart';
 import '../actions/elbow_forward_action.dart';
 import '../actions/sit_to_stand_action.dart';
 import '../actions/lateral_step_action.dart';
+=======
+import '../../services/voice_service.dart';
+import '../../actions/raise_both_arms_action.dart';
+import '../../actions/elbow_forward_action.dart';
+import '../../actions/sit_to_stand_action.dart';
+import '../../actions/lateral_step_action.dart';
+>>>>>>> 86bf8de (更新專案):lib/features/rehab/body_training_screen.dart
 
 // RTMPose 133 點 → RehabJoint 對應表
 const Map<RehabJoint, int> _kJointIndex = {
@@ -266,7 +274,7 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
     final diff = _mapDifficulty(difficulty.level);
     if (action.type == ActionType.wipeBody) {
       screen = BodyTrainingScreen(
-        action: WipeBodyAction(difficulty: diff),
+        action: StandingKneeRaiseAction(difficulty: diff),
         trainingActionMeta: action,
         difficultyMeta: difficulty,
       );
@@ -336,7 +344,7 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF0D0F1A),
+      backgroundColor: Color(0xFF0D0F1A),
       body: SafeArea(
         child: Column(
           children: [
@@ -360,9 +368,9 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
             child: Container(
               width: 40, height: 40,
               decoration: BoxDecoration(
-                color: const Color(0xFF161824),
+                color: Color(0xFF161824),
                 borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: const Color(0xFF252738)),
+                border: Border.all(color: Color(0xFF252738)),
               ),
               child: const Icon(Icons.arrow_back_ios_new,
                   color: Colors.white, size: 16),
@@ -384,9 +392,9 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
             child: Container(
               width: 40, height: 40,
               decoration: BoxDecoration(
-                color: const Color(0xFF161824),
+                color: Color(0xFF161824),
                 borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: const Color(0xFF252738)),
+                border: Border.all(color: Color(0xFF252738)),
               ),
               child: const Icon(Icons.flip_camera_ios,
                   color: Colors.white, size: 20),
@@ -453,9 +461,9 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
       margin: const EdgeInsets.fromLTRB(16, 8, 16, 0),
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       decoration: BoxDecoration(
-        color: const Color(0xFF161824),
+        color: Color(0xFF161824),
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFF252738)),
+        border: Border.all(color: Color(0xFF252738)),
       ),
       child: Row(
         children: [
@@ -493,18 +501,18 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
       margin: const EdgeInsets.all(16),
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
       decoration: BoxDecoration(
-        color: const Color(0xFF161824),
+        color: Color(0xFF161824),
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFF252738)),
+        border: Border.all(color: Color(0xFF252738)),
       ),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceAround,
         children: [
-          _stat('完成次數', '$_repCount', const Color(0xFF4CAF50)),
-          Container(width: 1, height: 32, color: const Color(0xFF252738)),
+          _stat('完成次數', '$_repCount', Color(0xFF4CAF50)),
+          Container(width: 1, height: 32, color: Color(0xFF252738)),
           _stat('目前難度', widget.action.difficultyLabel,
-              const Color(0xFF00BCD4)),
-          Container(width: 1, height: 32, color: const Color(0xFF252738)),
+              Color(0xFF00BCD4)),
+          Container(width: 1, height: 32, color: Color(0xFF252738)),
           // 完成按鈕（手動觸發完成）
           GestureDetector(
             //onTap: _handleCompletion,
@@ -512,7 +520,7 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
               decoration: BoxDecoration(
-                color: const Color(0xFFFF4B4B),
+                color: Color(0xFFFF4B4B),
                 borderRadius: BorderRadius.circular(10),
               ),
               child: const Row(
@@ -563,12 +571,12 @@ class _SkeletonPainter extends CustomPainter {
     if (data.keypoints.isEmpty || data.scores.isEmpty) return;
 
     final bone = Paint()
-      ..color = const Color(0xFF00E5FF).withOpacity(0.8)
+      ..color = Color(0xFF00E5FF).withValues(alpha: 0.8)
       ..strokeWidth = 2.5
       ..style = PaintingStyle.stroke
       ..strokeCap = StrokeCap.round;
     final joint = Paint()
-      ..color = const Color(0xFF00E5FF)
+      ..color = Color(0xFF00E5FF)
       ..style = PaintingStyle.fill;
 
     for (final c in _skeletonConnections) {

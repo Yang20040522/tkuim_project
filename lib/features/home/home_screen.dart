@@ -1,6 +1,7 @@
 // lib/screens/home_screen.dart
 
 import 'package:flutter/material.dart';
+<<<<<<< HEAD:lib/screens/home_screen.dart
 import '../models/training_action.dart';
 import 'training_screen.dart';
 import 'body_test_screen.dart';
@@ -15,6 +16,22 @@ import '../actions/sit_to_stand_action.dart';
 import '../actions/lateral_step_action.dart';
 
 import '../actions/body_rehab_action.dart';
+=======
+import '../../models/training_action.dart';
+import '../rehab/training_screen.dart';
+import '../body_test/body_test_screen.dart';
+import '../history/history_screen.dart';
+import '../rehab/body_training_screen.dart';
+import '../../actions/standing_knee_raise_action.dart';
+import '../../actions/draw_circle_action.dart';
+import '../../actions/reach_action.dart';
+import '../../actions/raise_both_arms_action.dart';
+import '../../actions/elbow_forward_action.dart';
+import '../../actions/sit_to_stand_action.dart';
+import '../../actions/lateral_step_action.dart';
+
+import '../../actions/body_rehab_action.dart';
+>>>>>>> 86bf8de (更新專案):lib/features/home/home_screen.dart
 
 // 手部動作清單
 final _handActions = [
@@ -93,7 +110,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     Widget screen;
     if (act.type == ActionType.wipeBody) {
       screen = BodyTrainingScreen(
-        action: WipeBodyAction(difficulty: _mapDifficulty(diff.level)),
+        action: StandingKneeRaiseAction(difficulty: _mapDifficulty(diff.level)),
         trainingActionMeta: act,
         difficultyMeta: diff,
       );
@@ -148,7 +165,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF0D0F1A),
+      backgroundColor: Color(0xFF0D0F1A),
       body: FadeTransition(
         opacity: _fadeAnim,
         child: SafeArea(
@@ -254,12 +271,12 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     return AnimatedContainer(
       duration: const Duration(milliseconds: 250),
       decoration: BoxDecoration(
-        color: const Color(0xFF161824),
+        color: Color(0xFF161824),
         borderRadius: BorderRadius.circular(20),
         border: Border.all(
           color: isExpanded
-              ? const Color(0xFF4A65FF).withOpacity(0.5)
-              : const Color(0xFF252738),
+              ? Color(0xFF4A65FF).withValues(alpha: 0.5)
+              : Color(0xFF252738),
           width: isExpanded ? 1.5 : 1,
         ),
       ),
@@ -278,8 +295,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                     height: 40,
                     decoration: BoxDecoration(
                       color: isExpanded
-                          ? const Color(0xFF4A65FF).withOpacity(0.15)
-                          : const Color(0xFF1E2030),
+                          ? Color(0xFF4A65FF).withValues(alpha: 0.15)
+                          : Color(0xFF1E2030),
                       borderRadius: BorderRadius.circular(12),
                     ),
                     child: Center(
@@ -297,7 +314,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                           style: TextStyle(
                             color: isExpanded
                                 ? Colors.white
-                                : const Color(0xFFD0D2E0),
+                                : Color(0xFFD0D2E0),
                             fontSize: 15,
                             fontWeight: FontWeight.w800,
                           ),
@@ -396,7 +413,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
             width: 40,
             height: 3,
             decoration: BoxDecoration(
-              color: const Color(0xFF4A65FF),
+              color: Color(0xFF4A65FF),
               borderRadius: BorderRadius.circular(2),
             ),
           ),
@@ -427,19 +444,19 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
           color: isSelected
-              ? const Color(0xFF1E2B5E).withOpacity(0.9)
-              : const Color(0xFF1A1E30),
+              ? Color(0xFF1E2B5E).withValues(alpha: 0.9)
+              : Color(0xFF1A1E30),
           borderRadius: BorderRadius.circular(14),
           border: Border.all(
             color: isSelected
-                ? const Color(0xFF4A65FF)
-                : const Color(0xFF252738),
+                ? Color(0xFF4A65FF)
+                : Color(0xFF252738),
             width: isSelected ? 2 : 1,
           ),
           boxShadow: isSelected
               ? [
                   BoxShadow(
-                    color: const Color(0xFF4A65FF).withOpacity(0.2),
+                    color: Color(0xFF4A65FF).withValues(alpha: 0.2),
                     blurRadius: 12,
                     offset: const Offset(0, 3),
                   )
@@ -453,8 +470,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               height: 44,
               decoration: BoxDecoration(
                 color: isSelected
-                    ? const Color(0xFF4A65FF).withOpacity(0.2)
-                    : const Color(0xFF252738),
+                    ? Color(0xFF4A65FF).withValues(alpha: 0.2)
+                    : Color(0xFF252738),
                 borderRadius: BorderRadius.circular(12),
               ),
               child: Center(
@@ -472,7 +489,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                     style: TextStyle(
                       color: isSelected
                           ? Colors.white
-                          : const Color(0xFFD0D2E0),
+                          : Color(0xFFD0D2E0),
                       fontSize: 14,
                       fontWeight: FontWeight.w700,
                     ),
@@ -513,7 +530,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: const Color(0xFF2A3050)),
+          border: Border.all(color: Color(0xFF2A3050)),
           gradient: const LinearGradient(
             colors: [Color(0xFF161824), Color(0xFF1A2040)],
             begin: Alignment.topLeft,
@@ -526,10 +543,10 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               width: 44,
               height: 44,
               decoration: BoxDecoration(
-                color: const Color(0xFF00BCD4).withOpacity(0.15),
+                color: Color(0xFF00BCD4).withValues(alpha: 0.15),
                 borderRadius: BorderRadius.circular(12),
                 border: Border.all(
-                    color: const Color(0xFF00BCD4).withOpacity(0.3)),
+                    color: Color(0xFF00BCD4).withValues(alpha: 0.3)),
               ),
               child: const Center(
                 child: Text('🦴', style: TextStyle(fontSize: 22)),
@@ -585,13 +602,13 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                   const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
               decoration: BoxDecoration(
                 color: isSelected
-                    ? const Color(0xFF4A65FF)
-                    : const Color(0xFF161824),
+                    ? Color(0xFF4A65FF)
+                    : Color(0xFF161824),
                 borderRadius: BorderRadius.circular(12),
                 border: Border.all(
                   color: isSelected
-                      ? const Color(0xFF4A65FF)
-                      : const Color(0xFF252738),
+                      ? Color(0xFF4A65FF)
+                      : Color(0xFF252738),
                 ),
               ),
               child: Column(
@@ -601,7 +618,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                     style: TextStyle(
                       color: isSelected
                           ? Colors.white
-                          : const Color(0xFF8A8D9F),
+                          : Color(0xFF8A8D9F),
                       fontWeight: FontWeight.w700,
                       fontSize: 13,
                     ),
@@ -612,8 +629,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                     diff.description,
                     style: TextStyle(
                       color: isSelected
-                          ? Colors.white.withOpacity(0.7)
-                          : const Color(0xFF555770),
+                          ? Colors.white.withValues(alpha: 0.7)
+                          : Color(0xFF555770),
                       fontSize: 10,
                     ),
                     textAlign: TextAlign.center,
@@ -645,12 +662,12 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                   end: Alignment.centerRight,
                 )
               : null,
-          color: canStart ? null : const Color(0xFF1E2030),
+          color: canStart ? null : Color(0xFF1E2030),
           borderRadius: BorderRadius.circular(16),
           boxShadow: canStart
               ? [
                   BoxShadow(
-                    color: const Color(0xFF4A65FF).withOpacity(0.4),
+                    color: Color(0xFF4A65FF).withValues(alpha: 0.4),
                     blurRadius: 20,
                     offset: const Offset(0, 6),
                   )
@@ -663,14 +680,14 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
             children: [
               Icon(
                 Icons.play_arrow_rounded,
-                color: canStart ? Colors.white : const Color(0xFF555770),
+                color: canStart ? Colors.white : Color(0xFF555770),
                 size: 26,
               ),
               const SizedBox(width: 8),
               Text(
                 '開始 AI 訓練',
                 style: TextStyle(
-                  color: canStart ? Colors.white : const Color(0xFF555770),
+                  color: canStart ? Colors.white : Color(0xFF555770),
                   fontSize: 18,
                   fontWeight: FontWeight.w800,
                   letterSpacing: 0.5,
@@ -692,9 +709,9 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         width: double.infinity,
         height: 54,
         decoration: BoxDecoration(
-          color: const Color(0xFF161824),
+          color: Color(0xFF161824),
           borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: const Color(0xFF252738)),
+          border: Border.all(color: Color(0xFF252738)),
         ),
         child: const Center(
           child: Row(
@@ -737,10 +754,10 @@ class _BetaBadge extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
       decoration: BoxDecoration(
-        color: const Color(0xFF00BCD4).withOpacity(0.15),
+        color: Color(0xFF00BCD4).withValues(alpha: 0.15),
         borderRadius: BorderRadius.circular(6),
         border:
-            Border.all(color: const Color(0xFF00BCD4).withOpacity(0.4), width: 1),
+            Border.all(color: Color(0xFF00BCD4).withValues(alpha: 0.4), width: 1),
       ),
       child: const Text(
         'Beta',

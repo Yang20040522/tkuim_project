@@ -11,23 +11,25 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 
-import '../controllers/rehab_session_controller.dart';
-import '../models/training_action.dart';
-import '../services/history_service.dart';
-import '../services/mediapipe_model.dart';
+import '../../controllers/rehab_session_controller.dart';
+import '../../models/training_action.dart';
+import '../../services/history_service.dart';
+import '../../services/mediapipe_model.dart';
 
-import '../widgets/hand_overlay_widget.dart';
-import '../widgets/completion_dialog.dart';
-import '../widgets/training_stats_panel.dart';
-import '../widgets/training_overlays.dart';
-import '../services/pose_model_interface.dart';
+import '../../widgets/hand_overlay_widget.dart';
+import '../../widgets/completion_dialog.dart';
+import '../../widgets/training_stats_panel.dart';
+import '../../widgets/training_overlays.dart';
+import '../../services/pose_model_interface.dart';
 
 import 'body_training_screen.dart';
-import '../actions/wipe_body_action.dart';
-import '../actions/draw_circle_action.dart';
-import '../actions/reach_action.dart';
-import '../actions/raise_both_arms_action.dart';
-import '../actions/elbow_forward_action.dart';
+import '../../actions/standing_knee_raise_action.dart';
+import '../../actions/draw_circle_action.dart';
+import '../../actions/reach_action.dart';
+import '../../actions/raise_both_arms_action.dart';
+import '../../actions/elbow_forward_action.dart';
+
+import '../../actions/body_rehab_action.dart';
 
 import '../actions/body_rehab_action.dart';
 
@@ -148,7 +150,10 @@ class _TrainingScreenState extends State<TrainingScreen>
 
     if (!mounted || result == null) return;
 
+<<<<<<< HEAD:lib/screens/training_screen.dart
     print('完成對話框結果:${result.kind}');
+=======
+>>>>>>> 86bf8de (更新專案):lib/features/rehab/training_screen.dart
     // dialog 已關閉,Navigator 空閒,現在跳安全
     switch (result.kind) {
       case _CompletionKind.retry:
@@ -177,7 +182,7 @@ class _TrainingScreenState extends State<TrainingScreen>
     switch (action.type) {
       case ActionType.wipeBody:
         screen = BodyTrainingScreen(
-            action: WipeBodyAction(difficulty: _mapDifficulty(difficulty.level)));
+            action: StandingKneeRaiseAction(difficulty: _mapDifficulty(difficulty.level)));
 
       case ActionType.drawCircle:
         screen = BodyTrainingScreen(

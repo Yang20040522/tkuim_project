@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import '../models/training_action.dart';
-import '../services/history_service.dart';
+import '../../models/training_action.dart';
+import '../../services/history_service.dart';
 
 class HistoryScreen extends StatefulWidget {
   const HistoryScreen({super.key});
@@ -36,7 +36,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF0D0F1A),
+      backgroundColor: const Color(0xFFFFFFFF),
       body: SafeArea(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -65,12 +65,12 @@ class _HistoryScreenState extends State<HistoryScreen> {
               width: 40,
               height: 40,
               decoration: BoxDecoration(
-                color: const Color(0xFF161824),
+                color: const Color(0xFFF5F6FA),
                 borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: const Color(0xFF252738)),
+                border: Border.all(color: const Color(0xFFDDE0F0)),
               ),
               child: const Icon(Icons.arrow_back_ios_new,
-                  color: Colors.white, size: 16),
+                  color: const Color(0xFF374151), size: 16),
             ),
           ),
           const SizedBox(width: 16),
@@ -78,7 +78,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
             child: Text(
               '訓練進步曲線',
               style: TextStyle(
-                color: Colors.white,
+                color: const Color(0xFF1A1D2E),
                 fontSize: 22,
                 fontWeight: FontWeight.w900,
               ),
@@ -91,13 +91,13 @@ class _HistoryScreenState extends State<HistoryScreen> {
                 padding:
                     const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                 decoration: BoxDecoration(
-                  color: const Color(0xFF161824),
+                  color: const Color(0xFFF5F6FA),
                   borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: const Color(0xFF252738)),
+                  border: Border.all(color: const Color(0xFFDDE0F0)),
                 ),
                 child: const Text(
                   '清除',
-                  style: TextStyle(color: Color(0xFF8A8D9F), fontSize: 13),
+                  style: TextStyle(color: Color(0xFF6B7280), fontSize: 13),
                 ),
               ),
             ),
@@ -112,9 +112,9 @@ class _HistoryScreenState extends State<HistoryScreen> {
       child: Container(
         height: 200,
         decoration: BoxDecoration(
-          color: const Color(0xFF161824),
+          color: const Color(0xFFF5F6FA),
           borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: const Color(0xFF252738)),
+          border: Border.all(color: const Color(0xFFDDE0F0)),
         ),
         padding: const EdgeInsets.all(20),
         child: Column(
@@ -122,7 +122,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
           children: [
             const Text(
               '完美動作次數 (滿分 10)',
-              style: TextStyle(color: Color(0xFF8A8D9F), fontSize: 11),
+              style: TextStyle(color: Color(0xFF6B7280), fontSize: 11),
             ),
             const SizedBox(height: 12),
             Expanded(child: _drawChart()),
@@ -162,7 +162,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
           const Text(
             '歷史詳細紀錄',
             style: TextStyle(
-              color: Colors.white,
+              color: const Color(0xFF1A1D2E),
               fontSize: 16,
               fontWeight: FontWeight.w700,
             ),
@@ -206,13 +206,13 @@ class _HistoryScreenState extends State<HistoryScreen> {
             SizedBox(height: 16),
             Text(
               '尚無訓練紀錄',
-              style: TextStyle(color: Color(0xFF8A8D9F), fontSize: 16),
+              style: TextStyle(color: Color(0xFF6B7280), fontSize: 16),
             ),
             SizedBox(height: 8),
             Text(
               '完成第一次訓練後會顯示在這裡',
               style:
-                  TextStyle(color: Color(0xFF555770), fontSize: 13),
+                  TextStyle(color: Color(0xFF9CA3AF), fontSize: 13),
             ),
           ],
         ),
@@ -237,9 +237,9 @@ class _HistoryScreenState extends State<HistoryScreen> {
       margin: const EdgeInsets.only(bottom: 10),
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: const Color(0xFF161824),
+        color: const Color(0xFFF5F6FA),
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFF252738)),
+        border: Border.all(color: const Color(0xFFDDE0F0)),
       ),
       child: Row(
         children: [
@@ -272,7 +272,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
                 Text(
                   record.actionName,
                   style: const TextStyle(
-                    color: Colors.white,
+                    color: const Color(0xFF1A1D2E),
                     fontSize: 14,
                     fontWeight: FontWeight.w700,
                   ),
@@ -282,7 +282,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
                   '${record.timestamp}  •  Lv.${record.difficulty}  •  '
                   '$minutes:${seconds.toString().padLeft(2, '0')}',
                   style: const TextStyle(
-                      color: Color(0xFF8A8D9F), fontSize: 11),
+                      color: Color(0xFF6B7280), fontSize: 11),
                 ),
               ],
             ),
@@ -304,7 +304,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
               Text(
                 '$perfect / 10',
                 style: const TextStyle(
-                    color: Color(0xFF555770), fontSize: 11),
+                    color: Color(0xFF9CA3AF), fontSize: 11),
               ),
             ],
           ),
@@ -317,18 +317,18 @@ class _HistoryScreenState extends State<HistoryScreen> {
     showDialog(
       context: context,
       builder: (_) => AlertDialog(
-        backgroundColor: const Color(0xFF161824),
+        backgroundColor: const Color(0xFFF5F6FA),
         shape:
             RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: const Text('清除所有紀錄',
-            style: TextStyle(color: Colors.white)),
+            style: TextStyle(color: Color(0xFF1A1D2E))),
         content: const Text('這個操作無法復原，確定要清除嗎？',
-            style: TextStyle(color: Color(0xFF8A8D9F))),
+            style: TextStyle(color: Color(0xFF6B7280))),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(),
             child: const Text('取消',
-                style: TextStyle(color: Color(0xFF8A8D9F))),
+                style: TextStyle(color: Color(0xFF6B7280))),
           ),
           TextButton(
             onPressed: () {
@@ -358,7 +358,7 @@ class _ChartPainter extends CustomPainter {
 
     // 背景格線
     final gridPaint = Paint()
-      ..color = const Color(0xFF252738)
+      ..color = const Color(0xFFDDE0F0)
       ..strokeWidth = 1;
     for (int i = 0; i <= 5; i++) {
       final y = size.height - (i / 5) * size.height;

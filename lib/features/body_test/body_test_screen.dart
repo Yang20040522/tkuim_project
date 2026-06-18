@@ -4,8 +4,8 @@
 // ONNX 邏輯已移至 body_pose_engine.dart,本檔只負責 UI + 骨架繪製。
 
 import 'package:flutter/material.dart';
-import '../models/pose_data.dart';
-import '../services/body_pose_engine.dart';
+import '../../models/pose_data.dart';
+import '../../services/body_pose_engine.dart';
 import 'package:camera/camera.dart';
 
 // ── 骨骼連線定義 ─────────────────────────────────────────────────────
@@ -92,7 +92,7 @@ class _BodyTestScreenState extends State<BodyTestScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF0D0F1A),
+      backgroundColor: const Color(0xFFFFFFFF),
       body: SafeArea(
         child: Column(
           children: [
@@ -116,12 +116,12 @@ class _BodyTestScreenState extends State<BodyTestScreen> {
               width: 40,
               height: 40,
               decoration: BoxDecoration(
-                color: const Color(0xFF161824),
+                color: const Color(0xFFF5F6FA),
                 borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: const Color(0xFF252738)),
+                border: Border.all(color: const Color(0xFFDDE0F0)),
               ),
               child: const Icon(Icons.arrow_back_ios_new,
-                  color: Colors.white, size: 16),
+                  color: const Color(0xFF374151), size: 16),
             ),
           ),
           const SizedBox(width: 12),
@@ -134,7 +134,7 @@ class _BodyTestScreenState extends State<BodyTestScreen> {
                     Text(
                       '全身骨架偵測',
                       style: TextStyle(
-                        color: Colors.white,
+                        color: const Color(0xFF1A1D2E),
                         fontSize: 18,
                         fontWeight: FontWeight.w800,
                       ),
@@ -145,7 +145,7 @@ class _BodyTestScreenState extends State<BodyTestScreen> {
                 ),
                 Text(
                   'RTMPose Wholebody · 133 關鍵點',
-                  style: TextStyle(color: Color(0xFF8A8D9F), fontSize: 12),
+                  style: TextStyle(color: Color(0xFF6B7280), fontSize: 12),
                 ),
               ],
             ),
@@ -156,12 +156,12 @@ class _BodyTestScreenState extends State<BodyTestScreen> {
               width: 40,
               height: 40,
               decoration: BoxDecoration(
-                color: const Color(0xFF161824),
+                color: const Color(0xFFF5F6FA),
                 borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: const Color(0xFF252738)),
+                border: Border.all(color: const Color(0xFFDDE0F0)),
               ),
               child: const Icon(Icons.flip_camera_ios,
-                  color: Colors.white, size: 20),
+                  color: const Color(0xFF374151), size: 20),
             ),
           ),
         ],
@@ -220,7 +220,7 @@ class _BodyTestScreenState extends State<BodyTestScreen> {
                   child: Text(
                     '請站入鏡頭範圍內',
                     style: TextStyle(
-                      color: Colors.white,
+                      color: const Color(0xFF1A1D2E),
                       fontSize: 18,
                       fontWeight: FontWeight.w600,
                       shadows: [Shadow(blurRadius: 8, color: Colors.black)],
@@ -239,9 +239,9 @@ class _BodyTestScreenState extends State<BodyTestScreen> {
       margin: const EdgeInsets.all(16),
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
       decoration: BoxDecoration(
-        color: const Color(0xFF161824),
+        color: const Color(0xFFF5F6FA),
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFF252738)),
+        border: Border.all(color: const Color(0xFFDDE0F0)),
       ),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceAround,
@@ -254,19 +254,19 @@ class _BodyTestScreenState extends State<BodyTestScreen> {
                 ? const Color(0xFF4CAF50)
                 : const Color(0xFFFF9800),
           ),
-          Container(width: 1, height: 32, color: const Color(0xFF252738)),
+          Container(width: 1, height: 32, color: const Color(0xFFDDE0F0)),
           _buildStat(
             icon: Icons.analytics,
             label: '平均信心度',
             value: _avgScore > 0 ? _avgScore.toStringAsFixed(2) : '--',
             color: const Color(0xFF00BCD4),
           ),
-          Container(width: 1, height: 32, color: const Color(0xFF252738)),
+          Container(width: 1, height: 32, color: const Color(0xFFDDE0F0)),
           _buildStat(
             icon: Icons.camera_alt,
             label: '鏡頭',
             value: _engine.isFrontCamera ? '前鏡頭' : '後鏡頭',
-            color: const Color(0xFF8A8D9F),
+            color: const Color(0xFF6B7280),
           ),
         ],
       ),
@@ -294,7 +294,7 @@ class _BodyTestScreenState extends State<BodyTestScreen> {
         ),
         Text(
           label,
-          style: const TextStyle(color: Color(0xFF8A8D9F), fontSize: 10),
+          style: const TextStyle(color: Color(0xFF6B7280), fontSize: 10),
         ),
       ],
     );
