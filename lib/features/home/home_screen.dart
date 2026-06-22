@@ -1,10 +1,12 @@
 // lib/features/home/home_screen.dart
 //
 // 首頁(新版)— 儀表板風格 + 底部 5 tab
-// 「開始訓練」大卡片點下去 → ActionListScreen 選動作
+// 「今日準確度」「連續達成」接 HistoryService 真實資料
 
 import 'package:flutter/material.dart';
 
+import '../../models/training_action.dart';
+import '../../services/history_service.dart';
 import '../history/history_screen.dart';
 import '../training/action_list_screen.dart';
 
@@ -20,6 +22,14 @@ class _HomeScreenState extends State<HomeScreen>
   late AnimationController _fadeCtrl;
   late Animation<double> _fadeAnim;
 
+  // ─── 資料層(未來換資料庫只改 HistoryService 內部即可)
+  final HistoryService _historyService = HistoryService();
+
+  // ─── 顯示用狀態
+  String _accuracyText = '-- %';
+  String _accuracyFooter = '尚未開始訓練';
+  String _streakText = '0 天';
+
   @override
   void initState() {
     super.initState();
@@ -28,6 +38,8 @@ class _HomeScreenState extends State<HomeScreen>
       duration: const Duration(milliseconds: 600),
     )..forward();
     _fadeAnim = CurvedAnimation(parent: _fadeCtrl, curve: Curves.easeOut);
+
+    _loadStats();
   }
 
   @override
@@ -36,21 +48,89 @@ class _HomeScreenState extends State<HomeScreen>
     super.dispose();
   }
 
-  // ─── 操作:跳「選動作清單」頁 ─────────────────────────────
-  void _openActionList() {
-    Navigator.of(context).push(PageRouteBuilder(
+  // ═══ 載入統計 ═══════════════════════════════════════════════
+  // 未來接資料庫時,只動 HistoryService 內部即可,本方法不變
+  Future<void> _loadStats() async {
+    final records = await _historyService.getHistory();
+    if (!mounted) return;
+
+    final acc = _calcTodayAccuracy(records);
+    final streak = _calcStreak(records);
+
+    setState(() {
+      _accuracyText = acc.text;
+      _accuracyFooter = acc.footer;
+      _streakText = '$streak 天';
+    });
+  }
+
+  // 今日準確度:取今天所有 record,(10 - 平均 mistake) / 10 * 100
+  ({String text, String footer}) _calcTodayAccuracy(
+      List<TrainingRecord> records) {
+    final todayPrefix = _todayPrefix();
+    final today = records
+        .where((r) => r.timestamp.startsWith(todayPrefix))
+        .toList();
+
+    if (today.isEmpty) {
+      return (text: '-- %', footer: '尚未開始訓練');
+    }
+
+    final avgMistakes =
+        today.map((r) => r.mistakeLogs.length).reduce((a, b) => a + b) /
+            today.length;
+    final acc = ((10 - avgMistakes) / 10 * 100).clamp(0, 100).round();
+
+    return (text: '$acc %', footer: '今日完成 ${today.length} 組訓練');
+  }
+
+  // 連續達成:從今天往回算,每天至少 1 筆紀錄就 +1
+  int _calcStreak(List<TrainingRecord> records) {
+    if (records.isEmpty) return 0;
+
+    // 收集所有有訓練的日期(yyyy-MM-dd)
+    final days = records
+        .map((r) => r.timestamp.substring(0, 10))
+        .toSet();
+
+    int streak = 0;
+    DateTime check = DateTime.now();
+    while (true) {
+      final dayStr = _formatDate(check);
+      if (days.contains(dayStr)) {
+        streak++;
+        check = check.subtract(const Duration(days: 1));
+      } else {
+        break;
+      }
+    }
+    return streak;
+  }
+
+  String _todayPrefix() => _formatDate(DateTime.now());
+
+  String _formatDate(DateTime d) =>
+      '${d.year.toString().padLeft(4, '0')}-'
+      '${d.month.toString().padLeft(2, '0')}-'
+      '${d.day.toString().padLeft(2, '0')}';
+
+  // ─── 操作:跳「選動作清單」頁,回來後重整統計 ─────────
+  void _openActionList() async {
+    await Navigator.of(context).push(PageRouteBuilder(
       pageBuilder: (_, anim, __) => const ActionListScreen(),
       transitionsBuilder: (_, anim, __, child) =>
           FadeTransition(opacity: anim, child: child),
       transitionDuration: const Duration(milliseconds: 400),
     ));
+    if (mounted) _loadStats(); // 訓練回來重算
   }
 
-  // ─── 操作:跳歷史紀錄頁 ────────────────────────────────
-  void _openHistory() {
-    Navigator.of(context).push(
+  // ─── 操作:跳歷史紀錄頁,回來後重整統計(可能清過紀錄)
+  void _openHistory() async {
+    await Navigator.of(context).push(
       MaterialPageRoute(builder: (_) => const HistoryScreen()),
     );
+    if (mounted) _loadStats();
   }
 
   // ─── 操作:即將開放(鈴鐺、動作示範庫、底部 4 tab 共用)
@@ -72,7 +152,7 @@ class _HomeScreenState extends State<HomeScreen>
       body: FadeTransition(
         opacity: _fadeAnim,
         child: SafeArea(
-          bottom: false, // 底部 tab bar 自己處理 inset
+          bottom: false,
           child: SingleChildScrollView(
             padding: const EdgeInsets.fromLTRB(20, 16, 20, 32),
             child: Column(
@@ -184,22 +264,22 @@ class _HomeScreenState extends State<HomeScreen>
 
   // ─── 數據卡 × 2 ──────────────────────────────────────
   Widget _buildStatsRow() {
-    return const Row(
+    return Row(
       children: [
         Expanded(
           child: _StatCard(
             title: '今日準確度',
-            value: '-- %',
-            footer: '尚未開始訓練',
+            value: _accuracyText,
+            footer: _accuracyFooter,
             isPrimary: true,
           ),
         ),
-        SizedBox(width: 12),
+        const SizedBox(width: 12),
         Expanded(
           child: _StatCard(
             title: '連續達成 🔥',
-            value: '0 天',
-            footer: '保持下去!',
+            value: _streakText,
+            footer: _streakText == '0 天' ? '今天開始吧!' : '保持下去!',
             isPrimary: false,
           ),
         ),
@@ -207,7 +287,6 @@ class _HomeScreenState extends State<HomeScreen>
     );
   }
 
-  // ─── 區塊標題 ─────────────────────────────────────────
   Widget _buildSectionTitle(String text) {
     return Text(
       text,
@@ -219,7 +298,6 @@ class _HomeScreenState extends State<HomeScreen>
     );
   }
 
-  // ─── 中央「開始訓練」大卡片 ─────────────────────────
   Widget _buildMainTrainingCard() {
     return GestureDetector(
       onTap: _openActionList,
@@ -303,7 +381,6 @@ class _HomeScreenState extends State<HomeScreen>
     );
   }
 
-  // ─── 功能捷徑 × 2 ───────────────────────────────────
   Widget _buildShortcutsRow() {
     return Row(
       children: [
@@ -326,7 +403,6 @@ class _HomeScreenState extends State<HomeScreen>
     );
   }
 
-  // ─── 底部 5 tab ─────────────────────────────────────
   Widget _buildBottomNavBar() {
     return Container(
       decoration: BoxDecoration(
@@ -345,34 +421,20 @@ class _HomeScreenState extends State<HomeScreen>
           height: 64,
           child: Row(
             children: [
-              // 首頁(目前在,有底色)
+              _NavItem(label: '首頁', isActive: true, onTap: () {}),
               _NavItem(
-                label: '首頁',
-                isActive: true,
-                onTap: () {}, // 已在首頁
-              ),
-              // 數據
+                  label: '數據',
+                  isActive: false,
+                  onTap: () => _comingSoon('數據')),
+              _NavCenterButton(onTap: _openActionList),
               _NavItem(
-                label: '數據',
-                isActive: false,
-                onTap: () => _comingSoon('數據'),
-              ),
-              // 訓練(中間圓鈕)
-              _NavCenterButton(
-                onTap: _openActionList,
-              ),
-              // 計畫
+                  label: '計畫',
+                  isActive: false,
+                  onTap: () => _comingSoon('計畫')),
               _NavItem(
-                label: '計畫',
-                isActive: false,
-                onTap: () => _comingSoon('計畫'),
-              ),
-              // 個人
-              _NavItem(
-                label: '個人',
-                isActive: false,
-                onTap: () => _comingSoon('個人'),
-              ),
+                  label: '個人',
+                  isActive: false,
+                  onTap: () => _comingSoon('個人')),
             ],
           ),
         ),
@@ -383,7 +445,6 @@ class _HomeScreenState extends State<HomeScreen>
 
 // ═════════════════════════ 子元件 ═════════════════════════
 
-// 數據卡片(今日準確度 / 連續達成)
 class _StatCard extends StatelessWidget {
   final String title;
   final String value;
@@ -458,7 +519,6 @@ class _StatCard extends StatelessWidget {
   }
 }
 
-// 功能捷徑方塊
 class _ShortcutCard extends StatelessWidget {
   final String label;
   final Color iconBg;
@@ -515,7 +575,6 @@ class _ShortcutCard extends StatelessWidget {
   }
 }
 
-// 底部 nav 項目(左 2 + 右 2 共用)
 class _NavItem extends StatelessWidget {
   final String label;
   final bool isActive;
@@ -564,7 +623,6 @@ class _NavItem extends StatelessWidget {
   }
 }
 
-// 底部中央訓練圓鈕
 class _NavCenterButton extends StatelessWidget {
   final VoidCallback onTap;
 
