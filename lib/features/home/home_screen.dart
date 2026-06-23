@@ -23,8 +23,10 @@ class _HomeScreenState extends State<HomeScreen>
   late AnimationController _fadeCtrl;
   late Animation<double> _fadeAnim;
 
+  // ─── 資料層(未來換資料庫只改 HistoryService 內部即可)
   final HistoryService _historyService = HistoryService();
 
+  // ─── 顯示用狀態
   String _accuracyText = '-- %';
   String _accuracyFooter = '尚未開始訓練';
   String _streakText = '0 天';
@@ -47,6 +49,8 @@ class _HomeScreenState extends State<HomeScreen>
     super.dispose();
   }
 
+  // ═══ 載入統計 ═══════════════════════════════════════════════
+  // 未來接資料庫時,只動 HistoryService 內部即可,本方法不變
   Future<void> _loadStats() async {
     final records = await _historyService.getHistory();
     if (!mounted) return;
@@ -61,6 +65,7 @@ class _HomeScreenState extends State<HomeScreen>
     });
   }
 
+  // 今日準確度:取今天所有 record,(10 - 平均 mistake) / 10 * 100
   ({String text, String footer}) _calcTodayAccuracy(
       List<TrainingRecord> records) {
     final todayPrefix = _todayPrefix();
@@ -80,9 +85,11 @@ class _HomeScreenState extends State<HomeScreen>
     return (text: '$acc %', footer: '今日完成 ${today.length} 組訓練');
   }
 
+  // 連續達成:從今天往回算,每天至少 1 筆紀錄就 +1
   int _calcStreak(List<TrainingRecord> records) {
     if (records.isEmpty) return 0;
 
+    // 收集所有有訓練的日期(yyyy-MM-dd)
     final days = records
         .map((r) => r.timestamp.substring(0, 10))
         .toSet();
@@ -108,6 +115,7 @@ class _HomeScreenState extends State<HomeScreen>
       '${d.month.toString().padLeft(2, '0')}-'
       '${d.day.toString().padLeft(2, '0')}';
 
+  // ─── 操作:跳「選動作清單」頁,回來後重整統計 ─────────
   void _openActionList() async {
     await Navigator.of(context).push(PageRouteBuilder(
       pageBuilder: (_, anim, __) => const ActionListScreen(),
@@ -115,9 +123,10 @@ class _HomeScreenState extends State<HomeScreen>
           FadeTransition(opacity: anim, child: child),
       transitionDuration: const Duration(milliseconds: 400),
     ));
-    if (mounted) _loadStats();
+    if (mounted) _loadStats(); // 訓練回來重算
   }
 
+  // ─── 操作:跳歷史紀錄頁,回來後重整統計(可能清過紀錄)
   void _openHistory() async {
     await Navigator.of(context).push(
       MaterialPageRoute(builder: (_) => const HistoryScreen()),
@@ -132,6 +141,7 @@ class _HomeScreenState extends State<HomeScreen>
     );
   }
 
+  // ─── 操作:即將開放(鈴鐺、底部 4 tab 共用)
   void _comingSoon(String label) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -177,6 +187,7 @@ class _HomeScreenState extends State<HomeScreen>
     );
   }
 
+  // ─── 上方:歡迎詞 + 鈴鐺 ────────────────────────────────
   Widget _buildTopGreeting() {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -259,6 +270,7 @@ class _HomeScreenState extends State<HomeScreen>
     );
   }
 
+  // ─── 數據卡 × 2 ──────────────────────────────────────
   Widget _buildStatsRow() {
     return Row(
       children: [
