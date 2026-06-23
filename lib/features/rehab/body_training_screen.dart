@@ -4,6 +4,7 @@
 //  全身復健「共用畫面殼」
 //
 //  改動：加入完成後儲存紀錄 + 顯示 CompletionDialog（含選其他動作功能）
+//        ReachAction 訓練前先顯示左/右手選擇按鈕
 // ══════════════════════════════════════════════════════════════════
 
 import 'package:flutter/material.dart';
@@ -81,6 +82,11 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
   final DateTime _sessionStart = DateTime.now();
   bool _completionShown = false;
 
+  // 判斷目前 action 是否為 ReachAction 且尚未選手
+  bool get _waitingHandSelect =>
+      widget.action is ReachAction &&
+      !(widget.action as ReachAction).handSelected;
+
   @override
   void initState() {
     super.initState();
@@ -120,14 +126,9 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
         if (fb.leveledUp) _instruction = '難度提升，請繼續保持';
       });
 
-      // 有提示就念出來
       if (fb.prompt != null) {
         VoiceService.speak(fb.prompt!);
       }
-
-      // 全身動作目前沒有自動完成機制，可視需求加條件
-      // 若你希望達到某個次數就顯示完成，在這裡判斷
-      // 範例：if (_repCount >= 9 && !_completionShown) { _handleCompletion(); }
     }
   }
 
@@ -143,7 +144,6 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
     final durationSeconds =
         DateTime.now().difference(_sessionStart).inSeconds;
 
-    // 儲存紀錄
     if (widget.trainingActionMeta != null && widget.difficultyMeta != null) {
       HistoryService().saveRecord(TrainingRecord(
         timestamp: DateTime.now().toString().substring(0, 16),
@@ -164,7 +164,6 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
     final currentDiff = widget.difficultyMeta ??
         currentMeta.difficulties.first;
 
-    // 用 showDialog 的回傳值決定下一步,而不是 dialog 內部直接導航
     final result = await showDialog<_CompletionResult>(
       context: context,
       barrierDismissible: false,
@@ -185,8 +184,6 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
 
     if (!mounted || result == null) return;
 
-    print('完成對話框結果:${result.kind}');
-    // dialog 已經關了,現在才導航,Navigator 不會鎖
     switch (result.kind) {
       case _CompletionKind.retry:
         Navigator.of(context).pushReplacement(MaterialPageRoute(
@@ -215,15 +212,14 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
     final currentDiff = widget.difficultyMeta ??
         currentMeta.difficulties.first;
 
-    // 跟 _handleCompletion 一樣用 _CompletionResult 模式
     final result = await showDialog<_CompletionResult>(
       context: context,
       barrierDismissible: false,
       builder: (dialogCtx) => CompletionDialog(
-        isPaused: true,                           // ← 關鍵:暫停模式
-        repCount: 0,                              // 暫停模式不用,給 0
-        durationSeconds: 0,                       // 暫停模式不用,給 0
-        mistakeLogs: const [],                    // 暫停模式不用
+        isPaused: true,
+        repCount: 0,
+        durationSeconds: 0,
+        mistakeLogs: const [],
         currentAction: currentMeta,
         currentDifficulty: currentDiff,
         onRetry: () =>
@@ -239,7 +235,6 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
 
     switch (result.kind) {
       case _CompletionKind.retry:
-        // 「繼續訓練」= 重開這個動作的訓練畫面
         Navigator.of(context).pushReplacement(MaterialPageRoute(
           builder: (_) => BodyTrainingScreen(
             action: widget.action,
@@ -259,7 +254,6 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
 
   Future<void> _navigateToAction(
       TrainingAction action, DifficultyOption difficulty) async {
-    // 等舊相機/engine 完全釋放(關鍵:給 dispose 跑完的時間)
     await _engine.dispose();
     if (!mounted) return;
 
@@ -310,7 +304,7 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
     } else {
       screen = TrainingScreen(action: action, difficulty: difficulty);
     }
-    
+
     if (!mounted) return;
     Navigator.of(context).pushReplacement(MaterialPageRoute(builder: (_) => screen));
   }
@@ -414,7 +408,10 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
         child: Stack(
           fit: StackFit.expand,
           children: [
+            // 相機畫面
             CameraPreview(cam),
+
+            // 骨架
             ValueListenableBuilder<PoseData>(
               valueListenable: _engine.poseNotifier,
               builder: (_, data, __) {
@@ -428,6 +425,8 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
                 );
               },
             ),
+
+            // 身體不在鏡頭內提示
             if (!_bodyVisible)
               Container(
                 color: Colors.black.withValues(alpha: 0.3),
@@ -443,6 +442,86 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
                   ),
                 ),
               ),
+
+            // ── ReachAction 選手按鈕 ──────────────────────────
+            if (_waitingHandSelect)
+              Container(
+                color: Colors.black.withValues(alpha: 0.65),
+                child: Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Text(
+                        '請選擇要訓練的手',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 22,
+                          fontWeight: FontWeight.w700,
+                          shadows: [Shadow(blurRadius: 8, color: Colors.black)],
+                        ),
+                      ),
+                      const SizedBox(height: 36),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          _handButton('左手', () {
+                            setState(() {
+                              (widget.action as ReachAction).selectLeftHand();
+                              _feedback = '已選擇左手，請將手自然放下';
+                              _instruction = '';
+                            });
+                          }),
+                          const SizedBox(width: 28),
+                          _handButton('右手', () {
+                            setState(() {
+                              (widget.action as ReachAction).selectRightHand();
+                              _feedback = '已選擇右手，請將手自然放下';
+                              _instruction = '';
+                            });
+                          }),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // 選手大按鈕
+  Widget _handButton(String label, VoidCallback onTap) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: 120,
+        height: 120,
+        decoration: BoxDecoration(
+          color: const Color(0xFF4A65FF),
+          borderRadius: BorderRadius.circular(20),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.35),
+              blurRadius: 16,
+              offset: const Offset(0, 6),
+            ),
+          ],
+        ),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(Icons.back_hand, color: Colors.white, size: 42),
+            const SizedBox(height: 10),
+            Text(
+              label,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 20,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
           ],
         ),
       ),
@@ -506,14 +585,12 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
           _stat('目前難度', widget.action.difficultyLabel,
               const Color(0xFF00BCD4)),
           Container(width: 1, height: 32, color: const Color(0xFFDDE0F0)),
-          // 完成按鈕（手動觸發完成）
           GestureDetector(
-            //onTap: _handleCompletion,
             onTap: _handlePause,
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
               decoration: BoxDecoration(
-                color: Color(0xFFFF4B4B),
+                color: const Color(0xFFFF4B4B),
                 borderRadius: BorderRadius.circular(10),
               ),
               child: const Row(
@@ -564,12 +641,12 @@ class _SkeletonPainter extends CustomPainter {
     if (data.keypoints.isEmpty || data.scores.isEmpty) return;
 
     final bone = Paint()
-      ..color = Color(0xFF00E5FF).withValues(alpha: 0.8)
+      ..color = const Color(0xFF00E5FF).withValues(alpha: 0.8)
       ..strokeWidth = 2.5
       ..style = PaintingStyle.stroke
       ..strokeCap = StrokeCap.round;
     final joint = Paint()
-      ..color = Color(0xFF00E5FF)
+      ..color = const Color(0xFF00E5FF)
       ..style = PaintingStyle.fill;
 
     for (final c in _skeletonConnections) {
