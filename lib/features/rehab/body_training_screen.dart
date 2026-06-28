@@ -1,10 +1,12 @@
-// lib/screens/body_training_screen.dart
+// lib/features/rehab/body_training_screen.dart
 //
 // ══════════════════════════════════════════════════════════════════
 //  全身復健「共用畫面殼」
 //
-//  改動：加入完成後儲存紀錄 + 顯示 CompletionDialog（含選其他動作功能）
-//        ReachAction 訓練前先顯示左/右手選擇按鈕
+//  紀錄策略(方案 2 - 升級存 + 結束達標才存):
+//    ✓ 升級時自動存「上一個難度」的紀錄
+//    ✓ 按結束時,當前難度做 ≥3 下才存
+//    ✓ 都會跳完成 dialog
 // ══════════════════════════════════════════════════════════════════
 
 import 'package:flutter/material.dart';
@@ -27,6 +29,9 @@ import '../../actions/elbow_forward_action.dart';
 import '../../actions/sit_to_stand_action.dart';
 import '../../actions/lateral_step_action.dart';
 
+// 達標下限:當前難度做 ≥ 3 下,按結束才會存紀錄
+const int _kMinRepsToSave = 3;
+
 // RTMPose 133 點 → RehabJoint 對應表
 const Map<RehabJoint, int> _kJointIndex = {
   RehabJoint.leftShoulder: 5,
@@ -37,8 +42,6 @@ const Map<RehabJoint, int> _kJointIndex = {
   RehabJoint.rightWrist: 10,
   RehabJoint.leftHip: 11,
   RehabJoint.rightHip: 12,
-
-  // 下肢(新增)
   RehabJoint.leftKnee: 13,
   RehabJoint.rightKnee: 14,
   RehabJoint.leftAnkle: 15,
@@ -55,7 +58,6 @@ const _skeletonConnections = [
 class BodyTrainingScreen extends StatefulWidget {
   final BodyRehabAction action;
 
-  /// 用來儲存紀錄和 CompletionDialog 顯示，可選填
   final TrainingAction? trainingActionMeta;
   final DifficultyOption? difficultyMeta;
 
@@ -82,7 +84,13 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
   final DateTime _sessionStart = DateTime.now();
   bool _completionShown = false;
 
-  // 判斷目前 action 是否為 ReachAction 且尚未選手
+  // ─── 當前難度的追蹤 ───────────────────────────────────────
+  // 用來算「升級時」要存的這一階段的時長與次數
+  DateTime _currentLevelStart = DateTime.now();
+  int _currentLevelReps = 0;
+  // 升級時用來標記「剛升上來的難度」之前的等級(用來存紀錄)
+  RehabDifficulty _previousLevel = RehabDifficulty.easy;
+
   bool get _waitingHandSelect =>
       widget.action is ReachAction &&
       !(widget.action as ReachAction).handSelected;
@@ -91,6 +99,9 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
   void initState() {
     super.initState();
     _instruction = widget.action.initialHint;
+    _previousLevel = _mapDifficulty(
+      widget.difficultyMeta?.level ?? DifficultyLevel.level1,
+    );
     VoiceService.init();
     _start();
   }
@@ -121,9 +132,21 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
     if (mounted) {
       setState(() {
         _bodyVisible = visible;
-        if (fb.scored) _repCount++;
+        if (fb.scored) {
+          _repCount++;
+          _currentLevelReps++;
+        }
         if (fb.prompt != null) _feedback = fb.prompt!;
-        if (fb.leveledUp) _instruction = '難度提升，請繼續保持';
+
+        // ─── 升級 → 存「上一個難度」的紀錄 + 重設「當前難度」追蹤
+        if (fb.leveledUp) {
+          _saveCurrentLevelRecord();
+          // 升級後,當前難度往上推一階
+          _previousLevel = _nextLevel(_previousLevel);
+          _currentLevelStart = DateTime.now();
+          _currentLevelReps = 0;
+          _instruction = '難度提升,請繼續保持';
+        }
       });
 
       if (fb.prompt != null) {
@@ -132,29 +155,62 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
     }
   }
 
+  // ─── 存當前難度的紀錄(升級瞬間 + 結束達標時呼叫)─────
+  void _saveCurrentLevelRecord() {
+    if (widget.trainingActionMeta == null) return;
+
+    final durationSec =
+        DateTime.now().difference(_currentLevelStart).inSeconds;
+
+    HistoryService().saveRecord(TrainingRecord(
+      timestamp: DateTime.now().toString().substring(0, 16),
+      actionName: widget.trainingActionMeta!.name,
+      difficulty: _levelToInt(_previousLevel),
+      durationSeconds: durationSec,
+      mistakeLogs: const [],
+    ));
+  }
+
+  RehabDifficulty _nextLevel(RehabDifficulty current) {
+    switch (current) {
+      case RehabDifficulty.easy:
+        return RehabDifficulty.medium;
+      case RehabDifficulty.medium:
+        return RehabDifficulty.hard;
+      case RehabDifficulty.hard:
+        return RehabDifficulty.hard;
+    }
+  }
+
+  int _levelToInt(RehabDifficulty d) {
+    switch (d) {
+      case RehabDifficulty.easy:
+        return 1;
+      case RehabDifficulty.medium:
+        return 2;
+      case RehabDifficulty.hard:
+        return 3;
+    }
+  }
+
   Future<void> _switchCamera() async {
     await _engine.switchCamera();
     if (mounted) setState(() {});
   }
 
-  Future<void> _handleCompletion() async {
+  // ─── 按「結束」/ 達成所有難度 觸發 ─────────────────────
+  Future<void> _handlePause() async {
     if (_completionShown) return;
     _completionShown = true;
 
+    // 當前難度做 ≥ 3 下 → 存當前難度的紀錄
+    if (_currentLevelReps >= _kMinRepsToSave) {
+      // _previousLevel 已經是當前難度,直接存
+      _saveCurrentLevelRecord();
+    }
+
     final durationSeconds =
         DateTime.now().difference(_sessionStart).inSeconds;
-
-    if (widget.trainingActionMeta != null && widget.difficultyMeta != null) {
-      HistoryService().saveRecord(TrainingRecord(
-        timestamp: DateTime.now().toString().substring(0, 16),
-        actionName: widget.trainingActionMeta!.name,
-        difficulty: widget.trainingActionMeta!.difficulties
-                .indexOf(widget.difficultyMeta!) +
-            1,
-        durationSeconds: durationSeconds,
-        mistakeLogs: const [],
-      ));
-    }
 
     final currentMeta = widget.trainingActionMeta ??
         kTrainingActions.firstWhere(
@@ -170,55 +226,6 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
       builder: (dialogCtx) => CompletionDialog(
         repCount: _repCount,
         durationSeconds: durationSeconds,
-        mistakeLogs: const [],
-        currentAction: currentMeta,
-        currentDifficulty: currentDiff,
-        onRetry: () =>
-            Navigator.of(dialogCtx).pop(_CompletionResult.retry()),
-        onHome: () =>
-            Navigator.of(dialogCtx).pop(_CompletionResult.home()),
-        onStartNew: (a, d) =>
-            Navigator.of(dialogCtx).pop(_CompletionResult.startNew(a, d)),
-      ),
-    );
-
-    if (!mounted || result == null) return;
-
-    switch (result.kind) {
-      case _CompletionKind.retry:
-        Navigator.of(context).pushReplacement(MaterialPageRoute(
-          builder: (_) => BodyTrainingScreen(
-            action: widget.action,
-            trainingActionMeta: widget.trainingActionMeta,
-            difficultyMeta: widget.difficultyMeta,
-          ),
-        ));
-        break;
-      case _CompletionKind.home:
-        Navigator.of(context).pop();
-        break;
-      case _CompletionKind.startNew:
-        _navigateToAction(result.action!, result.difficulty!);
-        break;
-    }
-  }
-
-  Future<void> _handlePause() async {
-    final currentMeta = widget.trainingActionMeta ??
-        kTrainingActions.firstWhere(
-          (a) => a.name == widget.action.title,
-          orElse: () => kTrainingActions.first,
-        );
-    final currentDiff = widget.difficultyMeta ??
-        currentMeta.difficulties.first;
-
-    final result = await showDialog<_CompletionResult>(
-      context: context,
-      barrierDismissible: false,
-      builder: (dialogCtx) => CompletionDialog(
-        isPaused: true,
-        repCount: 0,
-        durationSeconds: 0,
         mistakeLogs: const [],
         currentAction: currentMeta,
         currentDifficulty: currentDiff,
@@ -408,10 +415,7 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
         child: Stack(
           fit: StackFit.expand,
           children: [
-            // 相機畫面
             CameraPreview(cam),
-
-            // 骨架
             ValueListenableBuilder<PoseData>(
               valueListenable: _engine.poseNotifier,
               builder: (_, data, __) {
@@ -425,8 +429,6 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
                 );
               },
             ),
-
-            // 身體不在鏡頭內提示
             if (!_bodyVisible)
               Container(
                 color: Colors.black.withValues(alpha: 0.3),
@@ -442,8 +444,6 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
                   ),
                 ),
               ),
-
-            // ── ReachAction 選手按鈕 ──────────────────────────
             if (_waitingHandSelect)
               Container(
                 color: Colors.black.withValues(alpha: 0.65),
@@ -467,7 +467,7 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
                           _handButton('左手', () {
                             setState(() {
                               (widget.action as ReachAction).selectLeftHand();
-                              _feedback = '已選擇左手，請將手自然放下';
+                              _feedback = '已選擇左手,請將手自然放下';
                               _instruction = '';
                             });
                           }),
@@ -475,7 +475,7 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
                           _handButton('右手', () {
                             setState(() {
                               (widget.action as ReachAction).selectRightHand();
-                              _feedback = '已選擇右手，請將手自然放下';
+                              _feedback = '已選擇右手,請將手自然放下';
                               _instruction = '';
                             });
                           }),
@@ -491,7 +491,6 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
     );
   }
 
-  // 選手大按鈕
   Widget _handButton(String label, VoidCallback onTap) {
     return GestureDetector(
       onTap: onTap,
