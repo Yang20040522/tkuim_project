@@ -34,14 +34,24 @@ class MediaPipeBridge(
     private var lastEventSendTime = 0L
     private val reusableMatrix = android.graphics.Matrix()
 
+    // 收尾旗標:設為 true 後相機幀不再送入 MediaPipe,避免 race condition
+    @Volatile
+    private var isClosing = false
+
     fun start() {
         setupMediaPipe()
         startCamera()
     }
 
     fun stop() {
+        // 1. 先設旗標,讓背景執行緒看到後立刻跳過
+        isClosing = true
+        // 2. 解綁相機
         cameraProvider?.unbindAll()
+        // 3. 關閉並清空 MediaPipe
         handLandmarker?.close()
+        handLandmarker = null
+        // 4. 關閉執行緒池
         cameraExecutor.shutdown()
     }
 
@@ -95,17 +105,31 @@ class MediaPipeBridge(
                 .build()
                 .also { analysis ->
                     analysis.setAnalyzer(cameraExecutor) { imageProxy ->
+                        // 收尾期間直接跳過,不送入 MediaPipe
+                        if (isClosing) {
+                            imageProxy.close()
+                            return@setAnalyzer
+                        }
                         if (isProcessing) {
                             imageProxy.close()
                             return@setAnalyzer
                         }
                         isProcessing = true
-                        val rotation = imageProxy.imageInfo.rotationDegrees
-                        val bitmap = imageProxy.toBitmap()
-                        val rotated = rotateBitmap(bitmap, rotation)
-                        val mpImage = BitmapImageBuilder(rotated).build()
-                        handLandmarker?.detectAsync(mpImage, SystemClock.uptimeMillis())
-                        imageProxy.close()
+                        try {
+                            val rotation = imageProxy.imageInfo.rotationDegrees
+                            val bitmap = imageProxy.toBitmap()
+                            val rotated = rotateBitmap(bitmap, rotation)
+                            val mpImage = BitmapImageBuilder(rotated).build()
+                            // 再次檢查 + 包 try-catch,雙重保險
+                            if (!isClosing) {
+                                handLandmarker?.detectAsync(mpImage, SystemClock.uptimeMillis())
+                            }
+                        } catch (e: Exception) {
+                            // 收尾期間殘留幀引發的例外,忽略即可
+                            isProcessing = false
+                        } finally {
+                            imageProxy.close()
+                        }
                     }
                 }
 
@@ -136,6 +160,9 @@ class MediaPipeBridge(
     }
 
     private fun processResult(result: HandLandmarkerResult) {
+        // 收尾期間不再回傳結果
+        if (isClosing) return
+
         val isFront = useFrontCamera
         val landmarks = if (result.landmarks().isNotEmpty()) result.landmarks()[0] else null
 
@@ -145,10 +172,12 @@ class MediaPipeBridge(
             if (now - lastEventSendTime > 32) {
                 lastEventSendTime = now
                 (context as? android.app.Activity)?.runOnUiThread {
-                    landmarkEventSink?.success(mapOf(
-                        "landmarks" to emptyList<Map<String, Float>>(),
-                        "handDetected" to false
-                    ))
+                    if (!isClosing) {
+                        landmarkEventSink?.success(mapOf(
+                            "landmarks" to emptyList<Map<String, Float>>(),
+                            "handDetected" to false
+                        ))
+                    }
                 }
             }
             return
@@ -183,10 +212,12 @@ class MediaPipeBridge(
         if (now - lastEventSendTime > 40) {
             lastEventSendTime = now
             (context as? android.app.Activity)?.runOnUiThread {
-                landmarkEventSink?.success(mapOf(
-                    "landmarks" to landmarkList,
-                    "handDetected" to true
-                ))
+                if (!isClosing) {
+                    landmarkEventSink?.success(mapOf(
+                        "landmarks" to landmarkList,
+                        "handDetected" to true
+                    ))
+                }
             }
         }
     }

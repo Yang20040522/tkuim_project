@@ -30,12 +30,12 @@ class TrainingTopBar extends StatelessWidget {
               width: 40,
               height: 40,
               decoration: BoxDecoration(
-                color: const Color(0xFF161824),
+                color: const Color(0xFFF5F6FA),
                 borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: const Color(0xFF252738)),
+                border: Border.all(color: const Color(0xFFDDE0F0)),
               ),
               child: const Icon(Icons.arrow_back_ios_new,
-                  color: Colors.white, size: 16),
+                  color: Color(0xFF374151), size: 16),
             ),
           ),
           const SizedBox(width: 12),
@@ -46,7 +46,7 @@ class TrainingTopBar extends StatelessWidget {
                 Text(
                   actionName,
                   style: const TextStyle(
-                    color: Colors.white,
+                    color: Color(0xFF1A1D2E),
                     fontSize: 18,
                     fontWeight: FontWeight.w800,
                   ),
@@ -54,7 +54,7 @@ class TrainingTopBar extends StatelessWidget {
                 Text(
                   difficultyDesc,
                   style: const TextStyle(
-                      color: Color(0xFF8A8D9F), fontSize: 12),
+                      color: Color(0xFF6B7280), fontSize: 12),
                 ),
               ],
             ),
@@ -65,12 +65,12 @@ class TrainingTopBar extends StatelessWidget {
               width: 40,
               height: 40,
               decoration: BoxDecoration(
-                color: const Color(0xFF161824),
+                color: const Color(0xFFF5F6FA),
                 borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: const Color(0xFF252738)),
+                border: Border.all(color: const Color(0xFFDDE0F0)),
               ),
               child: const Icon(Icons.flip_camera_ios,
-                  color: Colors.white, size: 20),
+                  color: Color(0xFF374151), size: 20),
             ),
           ),
         ],
@@ -97,9 +97,9 @@ class CoachCard extends StatelessWidget {
       margin: const EdgeInsets.fromLTRB(16, 8, 16, 0),
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       decoration: BoxDecoration(
-        color: const Color(0xFF161824),
+        color: const Color(0xFFF5F6FA),
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFF252738)),
+        border: Border.all(color: const Color(0xFFDDE0F0)),
       ),
       child: Row(
         children: [
@@ -113,7 +113,7 @@ class CoachCard extends StatelessWidget {
                 Text(
                   feedback,
                   style: const TextStyle(
-                    color: Colors.white,
+                    color: Color(0xFF1A1D2E),
                     fontSize: 15,
                     fontWeight: FontWeight.w700,
                   ),
@@ -133,7 +133,7 @@ class CoachCard extends StatelessWidget {
   }
 }
 
-// ── LoadingOverlay ────────────────────────────────────────────────────────────
+// ── LoadingOverlay(維持深色,因為是 loading 蓋住相機)─────────────────────
 
 class LoadingOverlay extends StatelessWidget {
   const LoadingOverlay({super.key});
@@ -160,7 +160,7 @@ class LoadingOverlay extends StatelessWidget {
   }
 }
 
-// ── NoHandOverlay ─────────────────────────────────────────────────────────────
+// ── NoHandOverlay(維持深色覆蓋層,提示對比夠)────────────────────────────
 
 class NoHandOverlay extends StatelessWidget {
   final Animation<double> pulseAnim;
@@ -209,7 +209,7 @@ class NoHandOverlay extends StatelessWidget {
   }
 }
 
-// ── CountdownOverlay ──────────────────────────────────────────────────────────
+// ── CountdownOverlay(維持深色圓圈,在相機上看得清楚)─────────────────────
 
 class CountdownOverlay extends StatelessWidget {
   final int seconds;

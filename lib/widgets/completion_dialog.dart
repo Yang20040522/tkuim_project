@@ -3,21 +3,21 @@
 import 'package:flutter/material.dart';
 import '../models/training_action.dart';
 
-// 手部動作清單（與 home_screen 同步）
+// 手部動作清單(與 home_screen 同步)
 const _handActions = [
   ActionType.turnPalm,
   ActionType.sidePinch,
-  ActionType.wristExtension,  // ✅ 補上翹手腕
-  ActionType.wristSideBend,   // ✅ 補上左右彎手腕
+  ActionType.wristExtension,
+  ActionType.wristSideBend,
 ];
 
-// 全身動作清單（與 home_screen 同步）
+// 全身動作清單(與 home_screen 同步)
 const _bodyActions = [
   ActionType.wipeBody,
   ActionType.drawCircle,
   ActionType.reach,
-  ActionType.raiseBothArms,   // ✅ 補上雙手抬舉
-  ActionType.elbowForward,    // ✅ 補上交扣手肘前伸
+  ActionType.raiseBothArms,
+  ActionType.elbowForward,
   ActionType.bodyTest,
 ];
 
@@ -32,7 +32,7 @@ class CompletionDialog extends StatelessWidget {
   final DifficultyOption currentDifficulty;
   final void Function(TrainingAction action, DifficultyOption difficulty) onStartNew;
 
-  /// 暫停模式:不顯示成績、標題改「已暫停」、隱藏失誤
+  /// 暫停模式:標題改「訓練暫停」、文案改成「剛剛做了 X 下,辛苦了」
   final bool isPaused;
 
   const CompletionDialog({
@@ -45,17 +45,17 @@ class CompletionDialog extends StatelessWidget {
     required this.currentAction,
     required this.currentDifficulty,
     required this.onStartNew,
-    this.isPaused = false,    // 預設 false,完成模式
+    this.isPaused = false,
   });
 
   @override
   Widget build(BuildContext context) {
-    final perfectCount = (10 - mistakeLogs.length).clamp(0, 10);
     final minutes = durationSeconds ~/ 60;
     final seconds = durationSeconds % 60;
+    final timeText = '$minutes:${seconds.toString().padLeft(2, '0')}';
 
     return Dialog(
-      backgroundColor: const Color(0xFF161824),
+      backgroundColor: Colors.white,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
       child: SingleChildScrollView(
         child: Padding(
@@ -66,40 +66,22 @@ class CompletionDialog extends StatelessWidget {
               Text(isPaused ? '⏸️' : '🎉', style: const TextStyle(fontSize: 48)),
               const SizedBox(height: 10),
               Text(
-                isPaused ? '已暫停' : '訓練完成！',
+                isPaused ? '訓練暫停' : '訓練完成',
                 style: const TextStyle(
-                    color: Colors.white,
+                    color: Color(0xFF1A1D2E),
                     fontSize: 24,
                     fontWeight: FontWeight.w900),
               ),
               const SizedBox(height: 18),
 
-              // ── 數據列(只在「完成模式」顯示)─────────────────────
-              if (!isPaused)
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                  children: [
-                    _statItem('完美動作', '$perfectCount / 10', const Color(0xFF4A65FF)),
-                    _statItem(
-                      '花費時間',
-                      '$minutes:${seconds.toString().padLeft(2, '0')}',
-                      const Color(0xFF4CAF50),
-                    ),
-                    _statItem(
-                      '失誤次數',
-                      '${mistakeLogs.length}',
-                      mistakeLogs.isEmpty
-                          ? const Color(0xFF4CAF50)
-                          : const Color(0xFFFF4B4B),
-                    ),
-                  ],
-                ),
+              // ── 資訊區:有溫度的文案 + 時長/難度 ───────────────────
+              _buildInfoBlock(timeText),
 
               const SizedBox(height: 22),
-              _divider(isPaused ? '想做什麼？' : '接下來要做什麼？'),
+              _divider(isPaused ? '想做什麼?' : '接下來要做什麼?'),
               const SizedBox(height: 14),
 
-              // ── 再來一組（相同動作+難度）───────────────────────────
+              // ── 再來一組(相同動作+難度)───────────────────────────
               _actionButton(
                 icon: '🔄',
                 label: isPaused ? '繼續訓練' : '再來一組',
@@ -109,7 +91,7 @@ class CompletionDialog extends StatelessWidget {
               ),
               const SizedBox(height: 10),
 
-              // ── 切換難度（相同動作的其他難度）──────────────────────
+              // ── 切換難度(相同動作的其他難度)──────────────────────
               if (currentAction.difficulties.length > 1) ...[
                 _divider('換個難度'),
                 const SizedBox(height: 10),
@@ -117,25 +99,16 @@ class CompletionDialog extends StatelessWidget {
                   action: currentAction,
                   currentDifficulty: currentDifficulty,
                   onSelect: (diff) => onStartNew(currentAction, diff),
-                  //onSelect: (diff) {
-                    //Navigator.of(context).pop();
-                    //onStartNew(currentAction, diff);
-                    
-                  //},
                 ),
                 const SizedBox(height: 10),
               ],
 
-              // ── 選其他動作（改成手部/全身兩個 Accordion）────────────
+              // ── 選其他動作(手部/全身兩個 Accordion)────────────────
               _divider('或換個動作'),
               const SizedBox(height: 10),
               _OtherActionsSection(
                 currentAction: currentAction,
                 onSelect: (action) => onStartNew(action, action.difficulties.first),
-                // onSelect: (action) {
-                  // Navigator.of(context).pop();
-                  // onStartNew(action, action.difficulties.first);
-                // },
               ),
 
               const SizedBox(height: 14),
@@ -147,14 +120,14 @@ class CompletionDialog extends StatelessWidget {
                 child: OutlinedButton(
                   onPressed: onHome,
                   style: OutlinedButton.styleFrom(
-                    side: const BorderSide(color: Color(0xFF252738)),
+                    side: const BorderSide(color: Color(0xFFDDE0F0)),
                     shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(14)),
                   ),
                   child: const Text(
                     '🏠 回到首頁',
                     style: TextStyle(
-                        color: Color(0xFFD0D2E0),
+                        color: Color(0xFF374151),
                         fontSize: 15,
                         fontWeight: FontWeight.w600),
                   ),
@@ -167,30 +140,76 @@ class CompletionDialog extends StatelessWidget {
     );
   }
 
-  Widget _statItem(String label, String value, Color color) {
-    return Column(
-      children: [
-        Text(value,
-            style: TextStyle(
-                color: color, fontSize: 22, fontWeight: FontWeight.w900)),
-        const SizedBox(height: 4),
-        Text(label,
-            style: const TextStyle(color: Color(0xFF8A8D9F), fontSize: 11)),
-      ],
+  // ─── 資訊區:有溫度的文案 + 時長 + 難度 ───────────────────
+  Widget _buildInfoBlock(String timeText) {
+    final mainText = isPaused
+        ? '你剛剛做了 $repCount 下,辛苦了'
+        : '恭喜完成 $repCount 下,做得很棒!';
+    final difficultyPrefix = isPaused ? '目前難度' : '通關難度';
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF5F6FA),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFFDDE0F0)),
+      ),
+      child: Column(
+        children: [
+          Text(
+            mainText,
+            style: const TextStyle(
+              color: Color(0xFF1A1D2E),
+              fontSize: 15,
+              fontWeight: FontWeight.w700,
+            ),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 10),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(Icons.timer_outlined,
+                  color: Color(0xFF6B7280), size: 14),
+              const SizedBox(width: 4),
+              Text(
+                '時長 $timeText',
+                style: const TextStyle(
+                    color: Color(0xFF6B7280), fontSize: 12),
+              ),
+              const SizedBox(width: 16),
+              Container(
+                width: 4,
+                height: 4,
+                decoration: const BoxDecoration(
+                  color: Color(0xFFB0B3C5),
+                  shape: BoxShape.circle,
+                ),
+              ),
+              const SizedBox(width: 16),
+              Text(
+                '$difficultyPrefix ${currentDifficulty.label}',
+                style: const TextStyle(
+                    color: Color(0xFF6B7280), fontSize: 12),
+              ),
+            ],
+          ),
+        ],
+      ),
     );
   }
 
   Widget _divider(String label) {
     return Row(
       children: [
-        Expanded(child: Container(height: 1, color: const Color(0xFF252738))),
+        Expanded(child: Container(height: 1, color: const Color(0xFFDDE0F0))),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 10),
           child: Text(label,
               style: const TextStyle(
-                  color: Color(0xFF555770), fontSize: 11)),
+                  color: Color(0xFF9CA3AF), fontSize: 11)),
         ),
-        Expanded(child: Container(height: 1, color: const Color(0xFF252738))),
+        Expanded(child: Container(height: 1, color: const Color(0xFFDDE0F0))),
       ],
     );
   }
@@ -228,7 +247,7 @@ class CompletionDialog extends StatelessWidget {
                         fontWeight: FontWeight.w700)),
                 Text(subtitle,
                     style: const TextStyle(
-                        color: Colors.white60, fontSize: 11)),
+                        color: Colors.white70, fontSize: 11)),
               ],
             ),
           ],
@@ -263,13 +282,13 @@ class _DifficultyRow extends StatelessWidget {
               padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 6),
               decoration: BoxDecoration(
                 color: isCurrent
-                    ? const Color(0xFF252738)
-                    : const Color(0xFF1A2240),
+                    ? const Color(0xFFEDEFF7)
+                    : const Color(0xFFF5F6FA),
                 borderRadius: BorderRadius.circular(10),
                 border: Border.all(
                   color: isCurrent
-                      ? const Color(0xFF555770)
-                      : const Color(0xFF4A65FF).withOpacity(0.6),
+                      ? const Color(0xFFDDE0F0)
+                      : const Color(0xFF4A65FF).withValues(alpha: 0.4),
                 ),
               ),
               child: Column(
@@ -278,8 +297,8 @@ class _DifficultyRow extends StatelessWidget {
                     diff.label,
                     style: TextStyle(
                       color: isCurrent
-                          ? const Color(0xFF555770)
-                          : Colors.white,
+                          ? const Color(0xFF9CA3AF)
+                          : const Color(0xFF1A1D2E),
                       fontSize: 12,
                       fontWeight: FontWeight.w700,
                     ),
@@ -288,7 +307,7 @@ class _DifficultyRow extends StatelessWidget {
                   if (isCurrent)
                     const Text('目前',
                         style: TextStyle(
-                            color: Color(0xFF555770), fontSize: 9)),
+                            color: Color(0xFF9CA3AF), fontSize: 9)),
                 ],
               ),
             ),
@@ -299,7 +318,7 @@ class _DifficultyRow extends StatelessWidget {
   }
 }
 
-// ── 其他動作選擇區（手部 + 全身兩個 Accordion）──────────────────────────────
+// ── 其他動作選擇區(手部 + 全身兩個 Accordion)──────────────────────────────
 class _OtherActionsSection extends StatefulWidget {
   final TrainingAction currentAction;
   final void Function(TrainingAction) onSelect;
@@ -320,7 +339,6 @@ class _OtherActionsSectionState extends State<_OtherActionsSection> {
   @override
   void initState() {
     super.initState();
-    // 預設展開目前動作所在的分類
     _handExpanded = _handActions.contains(widget.currentAction.type);
     _bodyExpanded = _bodyActions.contains(widget.currentAction.type);
   }
@@ -329,7 +347,6 @@ class _OtherActionsSectionState extends State<_OtherActionsSection> {
   Widget build(BuildContext context) {
     return Column(
       children: [
-        // ── 手部復健 Accordion ────────────────────────────────────
         _buildAccordion(
           title: '手部復健',
           icon: '🖐️',
@@ -342,8 +359,6 @@ class _OtherActionsSectionState extends State<_OtherActionsSection> {
               .toList(),
         ),
         const SizedBox(height: 8),
-
-        // ── 全身復健 Accordion ────────────────────────────────────
         _buildAccordion(
           title: '全身復健',
           icon: '🦴',
@@ -372,12 +387,12 @@ class _OtherActionsSectionState extends State<_OtherActionsSection> {
     return AnimatedContainer(
       duration: const Duration(milliseconds: 250),
       decoration: BoxDecoration(
-        color: const Color(0xFF1A1E30),
+        color: const Color(0xFFF5F6FA),
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
           color: isExpanded
-              ? const Color(0xFF4A65FF).withOpacity(0.5)
-              : const Color(0xFF252738),
+              ? const Color(0xFF4A65FF).withValues(alpha: 0.5)
+              : const Color(0xFFDDE0F0),
           width: isExpanded ? 1.5 : 1,
         ),
       ),
@@ -395,8 +410,8 @@ class _OtherActionsSectionState extends State<_OtherActionsSection> {
                     height: 36,
                     decoration: BoxDecoration(
                       color: isExpanded
-                          ? const Color(0xFF4A65FF).withOpacity(0.15)
-                          : const Color(0xFF252738),
+                          ? const Color(0xFF4A65FF).withValues(alpha: 0.15)
+                          : const Color(0xFFEDEFF7),
                       borderRadius: BorderRadius.circular(10),
                     ),
                     child: Center(
@@ -410,14 +425,14 @@ class _OtherActionsSectionState extends State<_OtherActionsSection> {
                         Text(title,
                             style: TextStyle(
                               color: isExpanded
-                                  ? Colors.white
-                                  : const Color(0xFFD0D2E0),
+                                  ? const Color(0xFF1A1D2E)
+                                  : const Color(0xFF374151),
                               fontSize: 13,
                               fontWeight: FontWeight.w800,
                             )),
                         Text(subtitle,
                             style: const TextStyle(
-                                color: Color(0xFF555770), fontSize: 10)),
+                                color: Color(0xFF9CA3AF), fontSize: 10)),
                       ],
                     ),
                   ),
@@ -425,7 +440,7 @@ class _OtherActionsSectionState extends State<_OtherActionsSection> {
                     turns: isExpanded ? 0.5 : 0,
                     duration: const Duration(milliseconds: 250),
                     child: const Icon(Icons.keyboard_arrow_down,
-                        color: Color(0xFF8A8D9F), size: 20),
+                        color: Color(0xFF6B7280), size: 20),
                   ),
                 ],
               ),
@@ -456,13 +471,13 @@ class _OtherActionsSectionState extends State<_OtherActionsSection> {
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
         decoration: BoxDecoration(
           color: isCurrent
-              ? const Color(0xFF252738)
-              : const Color(0xFF1A1E30),
+              ? const Color(0xFFEDEFF7)
+              : Colors.white,
           borderRadius: BorderRadius.circular(12),
           border: Border.all(
             color: isCurrent
-                ? const Color(0xFF555770)
-                : const Color(0xFF252738),
+                ? const Color(0xFFDDE0F0)
+                : const Color(0xFFDDE0F0),
           ),
         ),
         child: Row(
@@ -476,14 +491,14 @@ class _OtherActionsSectionState extends State<_OtherActionsSection> {
                   Text(action.name,
                       style: TextStyle(
                         color: isCurrent
-                            ? const Color(0xFF555770)
-                            : Colors.white,
+                            ? const Color(0xFF9CA3AF)
+                            : const Color(0xFF1A1D2E),
                         fontSize: 13,
                         fontWeight: FontWeight.w700,
                       )),
                   Text(action.description,
                       style: const TextStyle(
-                          color: Color(0xFF8A8D9F), fontSize: 10),
+                          color: Color(0xFF6B7280), fontSize: 10),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis),
                 ],
@@ -491,7 +506,7 @@ class _OtherActionsSectionState extends State<_OtherActionsSection> {
             ),
             if (isCurrent)
               const Text('目前',
-                  style: TextStyle(color: Color(0xFF555770), fontSize: 10))
+                  style: TextStyle(color: Color(0xFF9CA3AF), fontSize: 10))
             else
               const Icon(Icons.arrow_forward_ios,
                   color: Color(0xFF4A65FF), size: 13),

@@ -1,6 +1,7 @@
 // lib/features/demo/demo_library_screen.dart
 //
 // 動作示範庫 — 顯示 3D .glb 模型
+// 「伸手舉高訓練」:1 張卡片,點開有「左手 / 右手」tab 切換
 
 import 'package:flutter/material.dart';
 import 'package:model_viewer_plus/model_viewer_plus.dart';
@@ -15,6 +16,9 @@ class DemoLibraryScreen extends StatefulWidget {
 class _DemoLibraryScreenState extends State<DemoLibraryScreen>
     with SingleTickerProviderStateMixin {
   bool _expanded = false;
+  // 0 = 左手, 1 = 右手
+  int _handTab = 0;
+
   late final AnimationController _controller;
   late final Animation<double> _expandAnim;
 
@@ -108,14 +112,14 @@ class _DemoLibraryScreenState extends State<DemoLibraryScreen>
               ),
               child: Row(
                 children: [
-                  const Text('🖐️', style: TextStyle(fontSize: 22)),
+                  const Text('🙋', style: TextStyle(fontSize: 22)),
                   const SizedBox(width: 12),
                   const Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          '手腕旋轉示範',
+                          '伸手舉高訓練示範',
                           style: TextStyle(
                             color: Color(0xFF1A1D2E),
                             fontSize: 15,
@@ -123,14 +127,13 @@ class _DemoLibraryScreenState extends State<DemoLibraryScreen>
                           ),
                         ),
                         Text(
-                          '拖曳旋轉・雙指縮放',
-                          style:
-                              TextStyle(color: Color(0xFF6B7280), fontSize: 12),
+                          '左右手可切換・拖曳旋轉・雙指縮放',
+                          style: TextStyle(
+                              color: Color(0xFF6B7280), fontSize: 12),
                         ),
                       ],
                     ),
                   ),
-                  // 箭頭隨展開狀態旋轉
                   AnimatedRotation(
                     turns: _expanded ? 0.5 : 0,
                     duration: const Duration(milliseconds: 320),
@@ -146,30 +149,89 @@ class _DemoLibraryScreenState extends State<DemoLibraryScreen>
             ),
           ),
 
-          // ── 展開的 3D 模型區塊 ──────────────────────────
+          // ── 展開區塊:tab + 3D 模型 ──────────────────────
           SizeTransition(
             sizeFactor: _expandAnim,
             axisAlignment: -1,
             child: Padding(
               padding: const EdgeInsets.only(top: 12),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(20),
-                child: SizedBox(
-                  height: 380,
-                  child: ModelViewer(
-                    src: 'assets/models/turn_Left_hand.glb',
-                    alt: '手腕旋轉示範',
-                    autoRotate: true,
-                    autoRotateDelay: 1000,
-                    autoPlay: true,
-                    cameraControls: true,
-                    backgroundColor: const Color(0xFF1A1D2E),
+              child: Column(
+                children: [
+                  _buildHandTab(),
+                  const SizedBox(height: 10),
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(20),
+                    child: SizedBox(
+                      height: 380,
+                      // key 加上 _handTab → 切換時讓 ModelViewer 重建
+                      child: ModelViewer(
+                        key: ValueKey(_handTab),
+                        src: _handTab == 0
+                            ? 'assets/models/turn_Right_hand.glb'
+                            : 'assets/models/turn_Left_hand.glb',
+                        alt: _handTab == 0 ? '左手舉高示範' : '右手舉高示範',
+                        autoRotate: true,
+                        autoRotateDelay: 1000,
+                        autoPlay: true,
+                        cameraControls: true,
+                        backgroundColor: const Color(0xFF1A1D2E),
+                      ),
+                    ),
                   ),
-                ),
+                ],
               ),
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  // ─── 左手 / 右手 切換 tab ─────────────────────────────
+  Widget _buildHandTab() {
+    return Container(
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFDDE0F0)),
+      ),
+      child: Row(
+        children: [
+          _tabButton('左手', 0),
+          _tabButton('右手', 1),
+        ],
+      ),
+    );
+  }
+
+  Widget _tabButton(String label, int idx) {
+    final isActive = _handTab == idx;
+    return Expanded(
+      child: GestureDetector(
+        onTap: () => setState(() => _handTab = idx),
+        behavior: HitTestBehavior.opaque,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
+          padding: const EdgeInsets.symmetric(vertical: 10),
+          decoration: BoxDecoration(
+            color:
+                isActive ? const Color(0xFF4A65FF) : Colors.transparent,
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Center(
+            child: Text(
+              label,
+              style: TextStyle(
+                color: isActive
+                    ? Colors.white
+                    : const Color(0xFF6B7280),
+                fontSize: 14,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+        ),
       ),
     );
   }

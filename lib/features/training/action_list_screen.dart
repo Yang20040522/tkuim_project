@@ -83,8 +83,14 @@ class _ActionListScreenState extends State<ActionListScreen> with TickerProvider
       return;
     }
     setState(() {
-      _selectedAction = action;
-      _selectedDifficulty = action.difficulties.first;
+      // 再點同一張卡 → 取消選中
+      if (_selectedAction?.type == action.type) {
+        _selectedAction = null;
+        _selectedDifficulty = null;
+      } else {
+        _selectedAction = action;
+        _selectedDifficulty = action.difficulties.first;
+      }
     });
   }
 

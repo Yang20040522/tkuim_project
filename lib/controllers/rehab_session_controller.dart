@@ -174,6 +174,19 @@ class RehabSessionController implements RehabActionCallback {
     await model.flipCamera();
   }
 
+  // 等資源真的釋放完才返回,給切換動作時用
+  // 等資源真的釋放完才返回,給切換動作時用
+  Future<void> disposeAsync() async {
+    _actionLogic.dispose();
+    await _frameSub?.cancel();
+    model.stop();   // ← 拿掉 await
+    // 給 Kotlin 端時間清理
+    await Future.delayed(const Duration(milliseconds: 200));
+    model.dispose();  // ← 拿掉 await
+    if (!_stateCtrl.isClosed) await _stateCtrl.close();
+  }
+
+
   void dispose() {
     _actionLogic.dispose();
     _frameSub?.cancel();

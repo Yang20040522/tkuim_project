@@ -224,6 +224,7 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
       context: context,
       barrierDismissible: false,
       builder: (dialogCtx) => CompletionDialog(
+        isPaused: true,
         repCount: _repCount,
         durationSeconds: durationSeconds,
         mistakeLogs: const [],
@@ -568,42 +569,48 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
   }
 
   Widget _buildStatsBar() {
+  return Padding(
+    padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+    child: Row(
+      children: [
+        Expanded(child: _statCard('完成次數', '$_repCount')),
+        const SizedBox(width: 12),
+        Expanded(
+            child: _statCard('目前難度', widget.action.difficultyLabel)),
+        const SizedBox(width: 12),
+        _buildStopButton(),
+      ],
+    ),
+  );
+}
+
+  Widget _statCard(String label, String value) {
     return Container(
-      margin: const EdgeInsets.all(16),
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
       decoration: BoxDecoration(
-        color: const Color(0xFFF5F6FA),
+        color: Colors.white,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFFDDE0F0)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.08),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
       ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceAround,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _stat('完成次數', '$_repCount', const Color(0xFF4CAF50)),
-          Container(width: 1, height: 32, color: const Color(0xFFDDE0F0)),
-          _stat('目前難度', widget.action.difficultyLabel,
-              const Color(0xFF00BCD4)),
-          Container(width: 1, height: 32, color: const Color(0xFFDDE0F0)),
-          GestureDetector(
-            onTap: _handlePause,
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-              decoration: BoxDecoration(
-                color: const Color(0xFFFF4B4B),
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: const Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(Icons.stop_rounded, color: Colors.white, size: 16),
-                  SizedBox(width: 4),
-                  Text('結束',
-                      style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 13,
-                          fontWeight: FontWeight.w700)),
-                ],
-              ),
+          Text(label,
+              style: const TextStyle(
+                  color: Color(0xFF8A8D9F), fontSize: 11)),
+          const SizedBox(height: 4),
+          Text(
+            value,
+            style: const TextStyle(
+              color: Color(0xFF1A1D2E),
+              fontSize: 22,
+              fontWeight: FontWeight.w900,
             ),
           ),
         ],
@@ -611,18 +618,25 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
     );
   }
 
-  Widget _stat(String label, String value, Color color) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Text(value,
-            style: TextStyle(
-                color: color, fontSize: 18, fontWeight: FontWeight.w800)),
-        const SizedBox(height: 4),
-        Text(label,
-            style: const TextStyle(
-                color: Color(0xFF6B7280), fontSize: 10)),
-      ],
+  Widget _buildStopButton() {
+    return GestureDetector(
+      onTap: _handlePause,
+      child: Container(
+        width: 60,
+        height: 60,
+        decoration: BoxDecoration(
+          color: const Color(0xFFFF4B4B),
+          borderRadius: BorderRadius.circular(20),
+          boxShadow: [
+            BoxShadow(
+              color: const Color(0xFFFF4B4B).withValues(alpha: 0.4),
+              blurRadius: 16,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        child: const Icon(Icons.stop_rounded, color: Colors.white, size: 28),
+      ),
     );
   }
 }

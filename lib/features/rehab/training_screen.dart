@@ -169,36 +169,81 @@ class _TrainingScreenState extends State<TrainingScreen>
     }
   }
 
+  // ─── 按紅色「結束」鍵觸發 ─────────────────────────────────
+  Future<void> _handlePause() async {
+    if (_completionShown) return;
+    if (!_isInitialized) return;
+    _completionShown = true;
+
+    final state = _controller.currentState;
+
+    final result = await showDialog<_CompletionResult>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogCtx) => CompletionDialog(
+        isPaused: true,
+        repCount: state.repCount,
+        durationSeconds: state.durationSeconds,
+        mistakeLogs: state.mistakeLogs,
+        currentAction: widget.action,
+        currentDifficulty: widget.difficulty,
+        onRetry: () =>
+            Navigator.of(dialogCtx).pop(_CompletionResult.retry()),
+        onHome: () =>
+            Navigator.of(dialogCtx).pop(_CompletionResult.home()),
+        onStartNew: (a, d) =>
+            Navigator.of(dialogCtx).pop(_CompletionResult.startNew(a, d)),
+      ),
+    );
+
+    if (!mounted || result == null) return;
+
+    switch (result.kind) {
+      case _CompletionKind.retry:
+        Navigator.of(context).pushReplacement(MaterialPageRoute(
+          builder: (_) => TrainingScreen(
+            action: widget.action,
+            difficulty: widget.difficulty,
+          ),
+        ));
+        break;
+      case _CompletionKind.home:
+        Navigator.of(context).pop();
+        break;
+      case _CompletionKind.startNew:
+        _navigateToAction(result.action!, result.difficulty!);
+        break;
+    }
+  }
+
   /// 根據動作類型導航到對應畫面
   /// - 全身動作 → BodyTrainingScreen
   /// - 手部動作（包含新的 wristExtension / wristSideBend）→ TrainingScreen
-  void _navigateToAction(TrainingAction action, DifficultyOption difficulty) {
+  Future<void> _navigateToAction(TrainingAction action, DifficultyOption difficulty) async {
+    // 切動作前先等舊資源完全釋放,避免相機/MediaPipe 時序錯亂
+    await _controller.disposeAsync();
+    if (!mounted) return;
+    
     Widget screen;
-
     switch (action.type) {
       case ActionType.wipeBody:
         screen = BodyTrainingScreen(
             action: StandingKneeRaiseAction(difficulty: _mapDifficulty(difficulty.level)));
-
       case ActionType.drawCircle:
         screen = BodyTrainingScreen(
             action: DrawCircleAction(difficulty: _mapDifficulty(difficulty.level)));
-
       case ActionType.reach:
         screen = BodyTrainingScreen(
             action: ReachAction(difficulty: _mapDifficulty(difficulty.level)));
-
       case ActionType.raiseBothArms:
         screen = BodyTrainingScreen(action: RaiseBothArmsAction());
-
       case ActionType.elbowForward:
         screen = BodyTrainingScreen(action: ElbowForwardAction());
-
       default:
-        // 所有手部動作（turnPalm, sidePinch, wristExtension, wristSideBend）
         screen = TrainingScreen(action: action, difficulty: difficulty);
     }
-
+    
+    if (!mounted) return;
     Navigator.of(context).pushReplacement(MaterialPageRoute(builder: (_) => screen));
   }
 
@@ -297,7 +342,9 @@ class _TrainingScreenState extends State<TrainingScreen>
                 actionType: widget.action.type,
                 repCount: s.repCount,
                 accuracy: s.accuracy,
-                onStopPressed: () => Navigator.of(context).pop(),
+                //onStopPressed: () => Navigator.of(context).pop(),
+                onStopPressed: _handlePause,
+                
               ),
             ),
           ],
