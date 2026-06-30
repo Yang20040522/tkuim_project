@@ -109,6 +109,12 @@ class BodyPoseEngine {
   List<Offset> _smoothedKeypoints = [];
   bool _disposed = false;
 
+  // 目前正在跑的那一次推論(runAsync 還沒回來前不能 release session/runOpts)
+  // dispose() 必須先等這個 Future 完成,才能釋放 ONNX 資源,
+  // 不然背景執行緒還在用 mutex 時被 release/destroy,就會炸 native crash
+  // (FORTIFY: pthread_mutex_lock called on a destroyed mutex)。
+  Future<void>? _pendingInference;
+
   // 對外:骨架資料 (畫骨架的人監聽這個)
   final ValueNotifier<PoseData> poseNotifier =
       ValueNotifier(PoseData.empty());
@@ -217,7 +223,7 @@ class BodyPoseEngine {
     );
 
     final converted = convertYUV(input);
-    _runInference(converted);
+    _pendingInference = _runInference(converted);
   }
 
   // ── ONNX 推論 + 解碼 + EMA (搬自 body_test_screen,邏輯相同) ──────
@@ -305,8 +311,7 @@ class BodyPoseEngine {
       }
       // 散熱節能鎖 (與 body_test_screen 相同:休息 20ms)
       Future.delayed(const Duration(milliseconds: 20), () {
-        //_processing = false;
-        if (!_disposed) _processing = false;
+        _processing = false;
       });
     }
   }
@@ -314,7 +319,7 @@ class BodyPoseEngine {
   // ── 釋放 ──────────────────────────────────────────────────────────
   Future<void> dispose() async {
     if (_disposed) return;       // 防重複 dispose
-    _disposed = true;
+    _disposed = true;            // 先擋住 _onFrame,不會再啟動新的推論
 
     try {
       if (_cam?.value.isStreamingImages == true) {
@@ -326,7 +331,18 @@ class BodyPoseEngine {
       await _cam?.dispose();
     } catch (_) {}
     _cam = null;
-    
+
+    // 關鍵修正:等目前「正在跑」的那一次推論真的跑完,
+    // 才可以 release session / runOpts。
+    // 不等的話,runAsync() 還在背景執行緒跑,session 卻被 release 掉,
+    // ONNX Runtime 內部 mutex 被銷毀時還在被使用 → native SIGABRT 閃退。
+    // 加 timeout 是保險,避免極端情況卡住 dispose 不回傳。
+    if (_pendingInference != null) {
+      try {
+        await _pendingInference!.timeout(const Duration(seconds: 3));
+      } catch (_) {}
+    }
+
     try {
       _runOpts?.release();
     } catch (_) {}

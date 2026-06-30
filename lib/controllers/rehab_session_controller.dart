@@ -174,6 +174,31 @@ class RehabSessionController implements RehabActionCallback {
     await model.flipCamera();
   }
 
+  // 等資源真的釋放完才返回,給切換動作時用
+  // 改動:stop()/dispose() 補回 await + try-catch,
+  //      並拉長延遲到 350ms,避免新畫面的 PlatformView(相機)
+  //      在舊的 Kotlin 端資源(MediaPipe/相機)還沒釋放完就被建立,導致畫面卡死。
+  Future<void> disposeAsync() async {
+    _actionLogic.dispose();
+    await _frameSub?.cancel();
+
+    try {
+      await model.stop();
+    } catch (_) {
+      // 即使原生端拋錯也不要卡住流程,確保一定會往下走
+    }
+
+    // 給 Kotlin 端時間完整清理相機 / MediaPipe 資源
+    await Future.delayed(const Duration(milliseconds: 350));
+
+    try {
+      model.dispose();
+    } catch (_) {}
+
+    if (!_stateCtrl.isClosed) await _stateCtrl.close();
+  }
+
+
   void dispose() {
     _actionLogic.dispose();
     _frameSub?.cancel();

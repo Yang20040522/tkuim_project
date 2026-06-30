@@ -101,8 +101,26 @@ class _TrainingScreenState extends State<TrainingScreen>
     });
   }
 
+  // ── 切換畫面用:不做轉場動畫 ───────────────────────────────────
+  // 原因:相機預覽是 Android hybrid composition 的 PlatformView,
+  //      如果用一般的轉場動畫(MaterialPageRoute)疊著相機畫面做合成,
+  //      偶爾會把舊畫面(例如剛關掉的對話框)當成靜止畫面卡住疊在新畫面上。
+  //      改用零時長的 PageRouteBuilder,直接切換不做動畫合成,避免殘影。
+  void _pushReplacementNoAnimation(Widget screen) {
+    Navigator.of(context).pushReplacement(PageRouteBuilder(
+      transitionDuration: Duration.zero,
+      reverseTransitionDuration: Duration.zero,
+      pageBuilder: (_, __, ___) => screen,
+    ));
+  }
+
   Future<void> _onPlatformViewCreated() async {
     await _controller.start();
+    // start() 完成只代表原生端「收到指令」,相機 Surface 實際開始輸出畫面
+    // 通常會再晚一點點。這段空窗期如果直接拿掉 LoadingOverlay,
+    // 會露出前一個畫面的殘影。多等一小段緩衝時間蓋住這個空窗期,
+    // 確保使用者看到的是真正的相機畫面,而不是殘影。
+    await Future.delayed(const Duration(milliseconds: 400));
     if (mounted) setState(() => _isInitialized = true);
   }
 
@@ -153,11 +171,54 @@ class _TrainingScreenState extends State<TrainingScreen>
     // dialog 已關閉,Navigator 空閒,現在跳安全
     switch (result.kind) {
       case _CompletionKind.retry:
-        Navigator.of(context).pushReplacement(MaterialPageRoute(
-          builder: (_) => TrainingScreen(
-            action: widget.action,
-            difficulty: widget.difficulty,
-          ),
+        _pushReplacementNoAnimation(TrainingScreen(
+          action: widget.action,
+          difficulty: widget.difficulty,
+        ));
+        break;
+      case _CompletionKind.home:
+        Navigator.of(context).pop();
+        break;
+      case _CompletionKind.startNew:
+        _navigateToAction(result.action!, result.difficulty!);
+        break;
+    }
+  }
+
+  // ─── 按紅色「結束」鍵觸發 ─────────────────────────────────
+  Future<void> _handlePause() async {
+    if (_completionShown) return;
+    if (!_isInitialized) return;
+    _completionShown = true;
+
+    final state = _controller.currentState;
+
+    final result = await showDialog<_CompletionResult>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogCtx) => CompletionDialog(
+        isPaused: true,
+        repCount: state.repCount,
+        durationSeconds: state.durationSeconds,
+        mistakeLogs: state.mistakeLogs,
+        currentAction: widget.action,
+        currentDifficulty: widget.difficulty,
+        onRetry: () =>
+            Navigator.of(dialogCtx).pop(_CompletionResult.retry()),
+        onHome: () =>
+            Navigator.of(dialogCtx).pop(_CompletionResult.home()),
+        onStartNew: (a, d) =>
+            Navigator.of(dialogCtx).pop(_CompletionResult.startNew(a, d)),
+      ),
+    );
+
+    if (!mounted || result == null) return;
+
+    switch (result.kind) {
+      case _CompletionKind.retry:
+        _pushReplacementNoAnimation(TrainingScreen(
+          action: widget.action,
+          difficulty: widget.difficulty,
         ));
         break;
       case _CompletionKind.home:
@@ -172,34 +233,37 @@ class _TrainingScreenState extends State<TrainingScreen>
   /// 根據動作類型導航到對應畫面
   /// - 全身動作 → BodyTrainingScreen
   /// - 手部動作（包含新的 wristExtension / wristSideBend）→ TrainingScreen
-  void _navigateToAction(TrainingAction action, DifficultyOption difficulty) {
-    Widget screen;
+  Future<void> _navigateToAction(TrainingAction action, DifficultyOption difficulty) async {
+    // 先等一個完整 frame,確保剛關閉的對話框(barrier)真的從畫面樹上移除,
+    // 不會跟接下來要建立的新相機 PlatformView 同框合成,避免殘影卡畫面。
+    await WidgetsBinding.instance.endOfFrame;
+    if (!mounted) return;
 
+    // 切動作前先等舊資源完全釋放,避免相機/MediaPipe 時序錯亂
+    await _controller.disposeAsync();
+    if (!mounted) return;
+    
+    Widget screen;
     switch (action.type) {
       case ActionType.wipeBody:
         screen = BodyTrainingScreen(
             action: StandingKneeRaiseAction(difficulty: _mapDifficulty(difficulty.level)));
-
       case ActionType.drawCircle:
         screen = BodyTrainingScreen(
             action: DrawCircleAction(difficulty: _mapDifficulty(difficulty.level)));
-
       case ActionType.reach:
         screen = BodyTrainingScreen(
             action: ReachAction(difficulty: _mapDifficulty(difficulty.level)));
-
       case ActionType.raiseBothArms:
         screen = BodyTrainingScreen(action: RaiseBothArmsAction());
-
       case ActionType.elbowForward:
         screen = BodyTrainingScreen(action: ElbowForwardAction());
-
       default:
-        // 所有手部動作（turnPalm, sidePinch, wristExtension, wristSideBend）
         screen = TrainingScreen(action: action, difficulty: difficulty);
     }
-
-    Navigator.of(context).pushReplacement(MaterialPageRoute(builder: (_) => screen));
+    
+    if (!mounted) return;
+    _pushReplacementNoAnimation(screen);
   }
 
   RehabDifficulty _mapDifficulty(DifficultyLevel level) {
@@ -297,7 +361,9 @@ class _TrainingScreenState extends State<TrainingScreen>
                 actionType: widget.action.type,
                 repCount: s.repCount,
                 accuracy: s.accuracy,
-                onStopPressed: () => Navigator.of(context).pop(),
+                //onStopPressed: () => Navigator.of(context).pop(),
+                onStopPressed: _handlePause,
+                
               ),
             ),
           ],
