@@ -198,7 +198,6 @@ class RehabSessionController implements RehabActionCallback {
     if (!_stateCtrl.isClosed) await _stateCtrl.close();
   }
 
-
   void dispose() {
     _actionLogic.dispose();
     _frameSub?.cancel();
