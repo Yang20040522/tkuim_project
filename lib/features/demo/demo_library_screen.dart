@@ -5,6 +5,7 @@
 
 import 'package:flutter/material.dart';
 import 'package:model_viewer_plus/model_viewer_plus.dart';
+import 'bone_viewer_screen.dart'; // 即時骨架連動測試頁面
 
 class DemoLibraryScreen extends StatefulWidget {
   const DemoLibraryScreen({super.key});
@@ -95,11 +96,14 @@ class _DemoLibraryScreenState extends State<DemoLibraryScreen>
   }
 
   Widget _buildBody() {
+    // ── 整個 body 是一個 Padding，裡面放一個 Column ──
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
       child: Column(
+        // ── Column 的 children 清單開始 ──
         children: [
-          // ── 可點擊的卡片 header ──────────────────────────
+
+          // ① 可點擊的卡片 header（點了展開/收起 3D 模型）
           GestureDetector(
             onTap: _toggle,
             child: Container(
@@ -134,6 +138,7 @@ class _DemoLibraryScreenState extends State<DemoLibraryScreen>
                       ],
                     ),
                   ),
+                  // 箭頭圖示，展開時旋轉 180 度
                   AnimatedRotation(
                     turns: _expanded ? 0.5 : 0,
                     duration: const Duration(milliseconds: 320),
@@ -148,8 +153,9 @@ class _DemoLibraryScreenState extends State<DemoLibraryScreen>
               ),
             ),
           ),
+          // ① 結束
 
-          // ── 展開區塊:tab + 3D 模型 ──────────────────────
+          // ② 展開區塊：tab 切換 + 3D 模型（高度動畫）
           SizeTransition(
             sizeFactor: _expandAnim,
             axisAlignment: -1,
@@ -157,13 +163,15 @@ class _DemoLibraryScreenState extends State<DemoLibraryScreen>
               padding: const EdgeInsets.only(top: 12),
               child: Column(
                 children: [
+                  // 左手 / 右手 tab
                   _buildHandTab(),
                   const SizedBox(height: 10),
+                  // 3D 模型檢視器
                   ClipRRect(
                     borderRadius: BorderRadius.circular(20),
                     child: SizedBox(
                       height: 380,
-                      // key 加上 _handTab → 切換時讓 ModelViewer 重建
+                      // ValueKey(_handTab) → 切換 tab 時強制重建 ModelViewer
                       child: ModelViewer(
                         key: ValueKey(_handTab),
                         src: _handTab == 0
@@ -182,7 +190,46 @@ class _DemoLibraryScreenState extends State<DemoLibraryScreen>
               ),
             ),
           ),
+          // ② 結束
+
+          // ③ 間距
+          const SizedBox(height: 12),
+
+          // ④ 即時骨架連動入口按鈕（測試用）
+          GestureDetector(
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const BoneViewerScreen()),
+            ),
+            child: Container(
+              width: double.infinity,
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+              decoration: BoxDecoration(
+                color: const Color(0xFF1A1D2E),
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: const Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.accessibility_new,
+                      color: Color(0xFF00E5FF), size: 20),
+                  SizedBox(width: 8),
+                  Text(
+                    '即時骨架連動（測試）',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          // ④ 結束
+
         ],
+        // ── Column 的 children 清單結束 ──
       ),
     );
   }
@@ -215,8 +262,9 @@ class _DemoLibraryScreenState extends State<DemoLibraryScreen>
           duration: const Duration(milliseconds: 200),
           padding: const EdgeInsets.symmetric(vertical: 10),
           decoration: BoxDecoration(
-            color:
-                isActive ? const Color(0xFF4A65FF) : Colors.transparent,
+            color: isActive
+                ? const Color(0xFF4A65FF)
+                : Colors.transparent,
             borderRadius: BorderRadius.circular(10),
           ),
           child: Center(
