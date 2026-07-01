@@ -5,7 +5,7 @@
     <uses-feature android:name="android.hardware.camera"/>
 
     <application
-        android:label="flutter_body"
+        android:label="RehabAssist"
         android:name="${applicationName}"
         android:usesCleartextTraffic="true"
         android:icon="@mipmap/ic_launcher">
