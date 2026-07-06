@@ -47,7 +47,8 @@ class _BoneViewerScreenState extends State<BoneViewerScreen> {
 
   void _onPoseUpdate() {
     final data = _engine.poseNotifier.value;
-    final angles = _mapper.computeAngles(data);
+    //final angles = _mapper.computeAngles(data);
+    final angles = _mapper.computeAngles(data, isFrontCamera: _engine.isFrontCamera);
 
     if (mounted) {
       setState(() => _currentAngles = angles);
