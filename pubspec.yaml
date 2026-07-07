@@ -15,6 +15,7 @@ dependencies:
   flutter_tts: ^4.2.5
   model_viewer_plus: ^1.10.0
   flutter_inappwebview: ^6.1.5
+  audioplayers: ^6.0.0
 
 dev_dependencies:
   flutter_test:
@@ -30,6 +31,7 @@ flutter:
     - assets/models/
     - assets/viewer/
     - assets/icon/
+    - assets/audio/
 
 
 flutter_launcher_icons:

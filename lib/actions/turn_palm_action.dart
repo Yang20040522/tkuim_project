@@ -9,6 +9,7 @@ import 'dart:async';
 import '../services/mediapipe_service.dart';
 import 'base_rehab_action.dart';
 import 'rehab_action_callback.dart';
+import '../services/hand_voice_service.dart';
 
 enum _Stage { stage1, transitioning, stage2 }
 
@@ -151,6 +152,7 @@ class TurnPalmAction extends BaseRehabAction {
         _resetCountdown();
       }
       callback.onFeedbackChanged('⚠️ 棍子歪了！', '請拉正短棍，對齊虛線');
+      HandVoiceService.speak('歪了');
     }
   }
 
@@ -205,6 +207,7 @@ class TurnPalmAction extends BaseRehabAction {
         callback.onCountdownChanged(
             isCountingDown: false, seconds: 0, isDone: true);
         callback.onFeedbackChanged('開始翻掌！', '請握住短棍，輕輕向內轉');
+        HandVoiceService.speak('開始');
         callback.onStatsChanged(repCount: 0);
       } else {
         final remain = 3 - (elapsed ~/ 1000);
@@ -279,6 +282,7 @@ class TurnPalmAction extends BaseRehabAction {
           _currentRepMaxWobble = 0.0;
 
           callback.onFeedbackChanged('✅ 完成一次！(本次: $score 分)', '很好，現在請向外轉');
+          HandVoiceService.speak('完成一次');
           callback.onStatsChanged(repCount: _repCount);
           callback.onStatsChanged(progress: 0, speedState: 0);
 
@@ -289,6 +293,7 @@ class TurnPalmAction extends BaseRehabAction {
               final durationSeconds =
                   DateTime.now().difference(_sessionStartTime).inSeconds;
               callback.onFeedbackChanged('🎉 訓練結束！', '辛苦了');
+              HandVoiceService.speak('訓練結束');
               callback.onTrainingComplete(
                 repCount: _repCount,
                 durationSeconds: durationSeconds,
@@ -300,6 +305,7 @@ class TurnPalmAction extends BaseRehabAction {
           _lastRepTime = now;
           _mistakeLogs.add('未計入次數：動作過快');
           callback.onFeedbackChanged('⚠️ 動作太快', '請慢慢轉動');
+          HandVoiceService.speak('太快');
         }
       } else {
         callback.onFeedbackChanged('✅ 已向內轉', '很好，請向外轉');
