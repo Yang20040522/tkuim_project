@@ -9,6 +9,7 @@ import 'dart:math';
 import '../services/mediapipe_service.dart';
 import 'base_rehab_action.dart';
 import 'rehab_action_callback.dart';
+import '../services/hand_voice_service.dart';
 
 class WristSideBendAction extends BaseRehabAction {
   int _repCount = 0;
@@ -155,12 +156,14 @@ class WristSideBendAction extends BaseRehabAction {
               '✅ 完成一組左右來回！(本次得分: $score 分)',
               '很好，接下來請再向右彎',
             );
+            HandVoiceService.speak('完成一次');
             callback.onStatsChanged(repCount: _repCount);
 
             if (_repCount >= 10) _finish();
           } else {
             _mistakeLogs.add('未計入：左右切換速度過快，未達復健擴展效果');
             callback.onFeedbackChanged('⚠️ 動作太快', '請依建側手慢慢引導，穩定擺動');
+            HandVoiceService.speak('太快');
           }
           _lastConfirmedState = 'LEFT_DONE';
         } else {
@@ -205,12 +208,14 @@ class WristSideBendAction extends BaseRehabAction {
               '✅ 完成一組左右來回！(本次得分: $score 分)',
               '做得好！接下來再向左彎',
             );
+            HandVoiceService.speak('完成一次');
             callback.onStatsChanged(repCount: _repCount);
 
             if (_repCount >= 10) _finish();
           } else {
             _mistakeLogs.add('未計入：換側速度過急');
             callback.onFeedbackChanged('⚠️ 擺動太快', '請放慢速度，體會關卡延展');
+            HandVoiceService.speak('太快');
           }
           _lastConfirmedState = 'RIGHT_DONE';
         } else {

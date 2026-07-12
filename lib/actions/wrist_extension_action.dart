@@ -14,6 +14,7 @@ import 'dart:math' as math;
 import '../services/mediapipe_service.dart';
 import 'base_rehab_action.dart';
 import 'rehab_action_callback.dart';
+import '../services/hand_voice_service.dart';
 
 class WristExtensionAction extends BaseRehabAction {
   int _repCount = 0;
@@ -157,6 +158,7 @@ class WristExtensionAction extends BaseRehabAction {
           _lastRepTime = DateTime.now();
           _mistakeLogs.add('未計入：動作太快');
           callback.onFeedbackChanged('⚠️ 動作太快', '請放慢，慢慢翹過去');
+          HandVoiceService.speak('太快');
         }
       } else {
         // 從中立或開始直接翹上來，提示下一步
@@ -217,6 +219,7 @@ class WristExtensionAction extends BaseRehabAction {
     final durationSeconds =
         DateTime.now().difference(_sessionStartTime).inSeconds;
     callback.onFeedbackChanged('🎉 完成 10 次！訓練結束', '辛苦了，做得很好！');
+    HandVoiceService.speak('訓練結束');
     callback.onTrainingComplete(
       repCount: _repCount,
       durationSeconds: durationSeconds,

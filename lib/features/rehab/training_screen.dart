@@ -244,20 +244,38 @@ class _TrainingScreenState extends State<TrainingScreen>
     if (!mounted) return;
     
     Widget screen;
+    final diff = _mapDifficulty(difficulty.level);
     switch (action.type) {
       case ActionType.wipeBody:
         screen = BodyTrainingScreen(
-            action: StandingKneeRaiseAction(difficulty: _mapDifficulty(difficulty.level)));
+          action: StandingKneeRaiseAction(difficulty: diff),
+          trainingActionMeta: action,
+          difficultyMeta: difficulty,
+        );
       case ActionType.drawCircle:
         screen = BodyTrainingScreen(
-            action: DrawCircleAction(difficulty: _mapDifficulty(difficulty.level)));
+          action: DrawCircleAction(difficulty: diff),
+          trainingActionMeta: action,
+          difficultyMeta: difficulty,
+        );
       case ActionType.reach:
         screen = BodyTrainingScreen(
-            action: ReachAction(difficulty: _mapDifficulty(difficulty.level)));
+          action: ReachAction(difficulty: diff),
+          trainingActionMeta: action,
+          difficultyMeta: difficulty,
+        );
       case ActionType.raiseBothArms:
-        screen = BodyTrainingScreen(action: RaiseBothArmsAction());
+        screen = BodyTrainingScreen(
+          action: RaiseBothArmsAction(difficulty: diff),
+          trainingActionMeta: action,
+          difficultyMeta: difficulty,
+        );
       case ActionType.elbowForward:
-        screen = BodyTrainingScreen(action: ElbowForwardAction());
+        screen = BodyTrainingScreen(
+          action: ElbowForwardAction(difficulty: diff),
+          trainingActionMeta: action,
+          difficultyMeta: difficulty,
+        );
       default:
         screen = TrainingScreen(action: action, difficulty: difficulty);
     }

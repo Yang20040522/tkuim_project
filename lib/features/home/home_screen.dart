@@ -10,6 +10,7 @@ import '../../services/history_service.dart';
 import '../history/history_screen.dart';
 import '../training/action_list_screen.dart';
 import '../demo/demo_library_screen.dart';   // ← 新增
+import '../plan/plan_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -438,7 +439,10 @@ class _HomeScreenState extends State<HomeScreen>
               _NavItem(
                   label: '計畫',
                   isActive: false,
-                  onTap: () => _comingSoon('計畫')),
+                  onTap: () => Navigator.of(context).push(
+                    MaterialPageRoute(builder: (_) => const PlanScreen()),
+                  ),
+                ),
               _NavItem(
                   label: '個人',
                   isActive: false,

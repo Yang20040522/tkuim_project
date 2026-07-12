@@ -7,6 +7,7 @@ plugins {
 android {
     namespace = "com.example.flutter_body"
     compileSdk = 36  // ← 改這裡
+    ndkVersion = "28.2.13676358"
 
     defaultConfig {
         applicationId = "com.example.flutter_body"

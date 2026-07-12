@@ -7,6 +7,7 @@ import 'dart:async';
 import '../services/mediapipe_service.dart';
 import 'base_rehab_action.dart';
 import 'rehab_action_callback.dart';
+import '../services/hand_voice_service.dart';
 
 class SidePinchAction extends BaseRehabAction {
   final int difficulty; // 1=初階 2=中階 3=進階
@@ -125,12 +126,14 @@ class SidePinchAction extends BaseRehabAction {
 
           callback.onFeedbackChanged('✅ 捏緊了！(本次: $score 分)', '請將手指完全打開');
           callback.onStatsChanged(repCount: _repCount);
+          HandVoiceService.speak('捏緊了');
 
           if (_repCount >= 10) _checkLevelUp();
         } else {
           _lastRepTime = DateTime.now();
           _mistakeLogs.add('未計入次數：開合動作過快');
           callback.onFeedbackChanged('⚠️ 動作太快', '請放慢速度，重新打開');
+          HandVoiceService.speak('太快');
         }
       } else {
         callback.onFeedbackChanged('✅ 捏緊完成', '請將手指完全打開');
@@ -192,6 +195,7 @@ class SidePinchAction extends BaseRehabAction {
       callback.onCountdownChanged(
           isCountingDown: false, seconds: 0, isDone: true);
       callback.onFeedbackChanged('開始！', '請先將手指完全打開');
+      HandVoiceService.speak('開始');
     }
   }
 
@@ -203,6 +207,7 @@ class SidePinchAction extends BaseRehabAction {
       final durationSeconds =
           DateTime.now().difference(_sessionStartTime).inSeconds;
       callback.onFeedbackChanged('🎉 訓練結束！', '辛苦了');
+      HandVoiceService.speak('訓練結束');
       callback.onTrainingComplete(
         repCount: _repCount,
         durationSeconds: durationSeconds,
