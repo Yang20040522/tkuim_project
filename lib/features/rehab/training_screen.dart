@@ -5,7 +5,13 @@
 //
 //  改動：CompletionDialog 加入 onStartNew callback，
 //        支援完成後直接選其他動作或切換難度。
+//  ✅ 訓練開始/結束自動錄影,結束時詢問是否保留
+//  ✅ 新增:按下停止鍵先跳「暫停選單」(繼續 / 結束),
+//     選「繼續」時呼叫 controller.resume(),完全接續原本的次數與狀態;
+//     只有選「結束」才會進入原本的完整結束流程(停止錄影、存紀錄、跳完成畫面)。
 // ══════════════════════════════════════════════════════════════════
+
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
@@ -15,6 +21,7 @@ import '../../controllers/rehab_session_controller.dart';
 import '../../models/training_action.dart';
 import '../../services/history_service.dart';
 import '../../services/mediapipe_model.dart';
+import '../../services/screen_recorder_service.dart';
 
 import '../../widgets/hand_overlay_widget.dart';
 import '../../widgets/completion_dialog.dart';
@@ -47,6 +54,8 @@ class TrainingScreen extends StatefulWidget {
   State<TrainingScreen> createState() => _TrainingScreenState();
 }
 
+enum _PauseChoice { resume, end }
+
 class _TrainingScreenState extends State<TrainingScreen>
     with TickerProviderStateMixin {
 
@@ -54,6 +63,12 @@ class _TrainingScreenState extends State<TrainingScreen>
 
   bool _isInitialized = false;
   bool _completionShown = false;
+
+  // 是否正暫停中(暫停選單開啟期間為 true)
+  bool _isPaused = false;
+
+  // 停止錄影後、使用者尚未決定去留前的暫存路徑
+  String? _pendingVideoPath;
 
   late AnimationController _pulseCtrl;
   late Animation<double> _pulseAnim;
@@ -102,10 +117,6 @@ class _TrainingScreenState extends State<TrainingScreen>
   }
 
   // ── 切換畫面用:不做轉場動畫 ───────────────────────────────────
-  // 原因:相機預覽是 Android hybrid composition 的 PlatformView,
-  //      如果用一般的轉場動畫(MaterialPageRoute)疊著相機畫面做合成,
-  //      偶爾會把舊畫面(例如剛關掉的對話框)當成靜止畫面卡住疊在新畫面上。
-  //      改用零時長的 PageRouteBuilder,直接切換不做動畫合成,避免殘影。
   void _pushReplacementNoAnimation(Widget screen) {
     Navigator.of(context).pushReplacement(PageRouteBuilder(
       transitionDuration: Duration.zero,
@@ -116,16 +127,24 @@ class _TrainingScreenState extends State<TrainingScreen>
 
   Future<void> _onPlatformViewCreated() async {
     await _controller.start();
-    // start() 完成只代表原生端「收到指令」,相機 Surface 實際開始輸出畫面
-    // 通常會再晚一點點。這段空窗期如果直接拿掉 LoadingOverlay,
-    // 會露出前一個畫面的殘影。多等一小段緩衝時間蓋住這個空窗期,
-    // 確保使用者看到的是真正的相機畫面,而不是殘影。
     await Future.delayed(const Duration(milliseconds: 400));
     if (mounted) setState(() => _isInitialized = true);
+
+    // 錄影是附加功能,失敗不應影響訓練本身
+    ScreenRecorderService.startRecording();
   }
 
   @override
   void dispose() {
+    // 保險:如果畫面被意外關掉而沒有走到完整結束流程,錄影可能還在跑,
+    // 這裡補一次停止並直接刪除暫存檔(視為不保留)。
+    if (!_completionShown) {
+      ScreenRecorderService.stopRecording().then((path) {
+        if (path != null) {
+          File(path).delete().catchError((e) => File(path));
+        }
+      });
+    }
     _controller.dispose();
     _pulseCtrl.dispose();
     _slideCtrl.dispose();
@@ -138,37 +157,40 @@ class _TrainingScreenState extends State<TrainingScreen>
   }
 
   Future<void> _handleCompletion(RehabSessionState state) async {
-    // 儲存紀錄
+    _pendingVideoPath = await ScreenRecorderService.stopRecording();
+
+    final result = await showDialog<_CompletionResult>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogCtx) => CompletionDialog(
+        repCount: state.repCount,
+        durationSeconds: state.durationSeconds,
+        mistakeLogs: state.mistakeLogs,
+        currentAction: widget.action,
+        currentDifficulty: widget.difficulty,
+        hasVideo: _pendingVideoPath != null,
+        onVideoDecision: _handleVideoDecision,
+        onRetry: () =>
+            Navigator.of(dialogCtx).pop(_CompletionResult.retry()),
+        onHome: () =>
+            Navigator.of(dialogCtx).pop(_CompletionResult.home()),
+        onStartNew: (a, d) =>
+            Navigator.of(dialogCtx).pop(_CompletionResult.startNew(a, d)),
+      ),
+    );
+
+    // 儲存紀錄(此時 _pendingVideoPath 已經依照使用者的保留/不保留決定更新過)
     HistoryService().saveRecord(TrainingRecord(
       timestamp: DateTime.now().toString().substring(0, 16),
       actionName: widget.action.name,
       difficulty: widget.action.difficulties.indexOf(widget.difficulty) + 1,
       durationSeconds: state.durationSeconds,
       mistakeLogs: state.mistakeLogs,
+      videoPath: _pendingVideoPath,
     ));
-
-    // dialog 不直接導航,而是回傳「使用者選了什麼」
-    final result = await showDialog<_CompletionResult>(
-      context: context,
-      barrierDismissible: false,
-      builder: (dialogCtx) => CompletionDialog(
-        repCount: state.repCount,
-        durationSeconds: state.durationSeconds,
-        mistakeLogs: state.mistakeLogs,
-        currentAction: widget.action,
-        currentDifficulty: widget.difficulty,
-        onRetry: () =>
-            Navigator.of(dialogCtx).pop(_CompletionResult.retry()),
-        onHome: () =>
-            Navigator.of(dialogCtx).pop(_CompletionResult.home()),
-        onStartNew: (a, d) =>
-            Navigator.of(dialogCtx).pop(_CompletionResult.startNew(a, d)),
-      ),
-    );
 
     if (!mounted || result == null) return;
 
-    // dialog 已關閉,Navigator 空閒,現在跳安全
     switch (result.kind) {
       case _CompletionKind.retry:
         _pushReplacementNoAnimation(TrainingScreen(
@@ -185,24 +207,54 @@ class _TrainingScreenState extends State<TrainingScreen>
     }
   }
 
-  // ─── 按紅色「結束」鍵觸發 ─────────────────────────────────
-  Future<void> _handlePause() async {
-    if (_completionShown) return;
-    if (!_isInitialized) return;
+  // ─── 按停止鍵觸發:先跳「暫停選單」,不動任何狀態或錄影 ─────────
+  Future<void> _handleStopButtonTap() async {
+    if (_completionShown || !_isInitialized || _isPaused) return;
+
+    setState(() => _isPaused = true);
+    _controller.pause();
+
+    final choice = await showDialog<_PauseChoice>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogCtx) => _PauseMenuDialog(
+        onResume: () => Navigator.of(dialogCtx).pop(_PauseChoice.resume),
+        onEnd: () => Navigator.of(dialogCtx).pop(_PauseChoice.end),
+      ),
+    );
+
+    if (!mounted) return;
+
+    if (choice != _PauseChoice.end) {
+      // 選「繼續」,或用其他方式關掉選單(一律視為繼續)
+      _controller.resume();
+      setState(() => _isPaused = false);
+      return;
+    }
+
+    // 選「結束」→ 進入原本的完整結束流程
+    await _handleRealEnd();
+  }
+
+  // ─── 真正的結束流程(停止錄影、存紀錄、跳完成 dialog)─────
+  Future<void> _handleRealEnd() async {
     _completionShown = true;
 
     final state = _controller.currentState;
+    _pendingVideoPath = await ScreenRecorderService.stopRecording();
 
     final result = await showDialog<_CompletionResult>(
       context: context,
       barrierDismissible: false,
       builder: (dialogCtx) => CompletionDialog(
-        isPaused: true,
+        isPaused: false,
         repCount: state.repCount,
         durationSeconds: state.durationSeconds,
         mistakeLogs: state.mistakeLogs,
         currentAction: widget.action,
         currentDifficulty: widget.difficulty,
+        hasVideo: _pendingVideoPath != null,
+        onVideoDecision: _handleVideoDecision,
         onRetry: () =>
             Navigator.of(dialogCtx).pop(_CompletionResult.retry()),
         onHome: () =>
@@ -211,6 +263,15 @@ class _TrainingScreenState extends State<TrainingScreen>
             Navigator.of(dialogCtx).pop(_CompletionResult.startNew(a, d)),
       ),
     );
+
+    HistoryService().saveRecord(TrainingRecord(
+      timestamp: DateTime.now().toString().substring(0, 16),
+      actionName: widget.action.name,
+      difficulty: widget.action.difficulties.indexOf(widget.difficulty) + 1,
+      durationSeconds: state.durationSeconds,
+      mistakeLogs: state.mistakeLogs,
+      videoPath: _pendingVideoPath,
+    ));
 
     if (!mounted || result == null) return;
 
@@ -227,19 +288,23 @@ class _TrainingScreenState extends State<TrainingScreen>
       case _CompletionKind.startNew:
         _navigateToAction(result.action!, result.difficulty!);
         break;
+    }
+  }
+
+  // dialog 裡使用者選「保留/不保留」時呼叫;不保留就把暫存檔刪掉
+  void _handleVideoDecision(bool keep) {
+    if (!keep && _pendingVideoPath != null) {
+      final path = _pendingVideoPath!;
+      _pendingVideoPath = null;
+      File(path).delete().catchError((e) => File(path));
     }
   }
 
   /// 根據動作類型導航到對應畫面
-  /// - 全身動作 → BodyTrainingScreen
-  /// - 手部動作（包含新的 wristExtension / wristSideBend）→ TrainingScreen
   Future<void> _navigateToAction(TrainingAction action, DifficultyOption difficulty) async {
-    // 先等一個完整 frame,確保剛關閉的對話框(barrier)真的從畫面樹上移除,
-    // 不會跟接下來要建立的新相機 PlatformView 同框合成,避免殘影卡畫面。
     await WidgetsBinding.instance.endOfFrame;
     if (!mounted) return;
 
-    // 切動作前先等舊資源完全釋放,避免相機/MediaPipe 時序錯亂
     await _controller.disposeAsync();
     if (!mounted) return;
     
@@ -361,6 +426,21 @@ class _TrainingScreenState extends State<TrainingScreen>
                         NoHandOverlay(pulseAnim: _pulseAnim),
                       if (s.isCountingDown && !s.countdownDone)
                         CountdownOverlay(seconds: s.countdownSeconds),
+                      if (_isPaused)
+                        Container(
+                          color: Colors.black.withOpacity(0.4),
+                          child: const Center(
+                            child: Text(
+                              '⏸ 已暫停',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 20,
+                                fontWeight: FontWeight.w700,
+                                shadows: [Shadow(blurRadius: 8, color: Colors.black)],
+                              ),
+                            ),
+                          ),
+                        ),
                     ],
                   ),
                 ),
@@ -379,9 +459,90 @@ class _TrainingScreenState extends State<TrainingScreen>
                 actionType: widget.action.type,
                 repCount: s.repCount,
                 accuracy: s.accuracy,
-                //onStopPressed: () => Navigator.of(context).pop(),
-                onStopPressed: _handlePause,
-                
+                onStopPressed: _handleStopButtonTap,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ── 暫停選單 dialog:只有「繼續」跟「結束」兩個選項 ──────────────
+class _PauseMenuDialog extends StatelessWidget {
+  final VoidCallback onResume;
+  final VoidCallback onEnd;
+
+  const _PauseMenuDialog({
+    required this.onResume,
+    required this.onEnd,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      backgroundColor: Colors.white,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text('⏸️', style: TextStyle(fontSize: 48)),
+            const SizedBox(height: 10),
+            const Text(
+              '訓練已暫停',
+              style: TextStyle(
+                color: Color(0xFF1A1D2E),
+                fontSize: 20,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+            const SizedBox(height: 6),
+            const Text(
+              '要接續剛剛的訓練,還是結束呢?',
+              style: TextStyle(color: Color(0xFF6B7280), fontSize: 13),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 22),
+            SizedBox(
+              width: double.infinity,
+              height: 52,
+              child: ElevatedButton(
+                onPressed: onResume,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF4A65FF),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14)),
+                ),
+                child: const Text(
+                  '▶️ 繼續訓練',
+                  style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w700),
+                ),
+              ),
+            ),
+            const SizedBox(height: 10),
+            SizedBox(
+              width: double.infinity,
+              height: 48,
+              child: OutlinedButton(
+                onPressed: onEnd,
+                style: OutlinedButton.styleFrom(
+                  side: const BorderSide(color: Color(0xFFDDE0F0)),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14)),
+                ),
+                child: const Text(
+                  '結束訓練',
+                  style: TextStyle(
+                      color: Color(0xFFFF4B4B),
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600),
+                ),
               ),
             ),
           ],

@@ -21,7 +21,7 @@ const _bodyActions = [
   ActionType.bodyTest,
 ];
 
-class CompletionDialog extends StatelessWidget {
+class CompletionDialog extends StatefulWidget {
   final int repCount;
   final int durationSeconds;
   final List<String> mistakeLogs;
@@ -35,6 +35,12 @@ class CompletionDialog extends StatelessWidget {
   /// 暫停模式:標題改「訓練暫停」、文案改成「剛剛做了 X 下,辛苦了」
   final bool isPaused;
 
+  /// 這次訓練是否有錄到影片(沒有的話不顯示保留詢問區塊)
+  final bool hasVideo;
+
+  /// 使用者選擇保留(true)或不保留(false)這段錄影時呼叫
+  final void Function(bool keep)? onVideoDecision;
+
   const CompletionDialog({
     super.key,
     required this.repCount,
@@ -46,12 +52,27 @@ class CompletionDialog extends StatelessWidget {
     required this.currentDifficulty,
     required this.onStartNew,
     this.isPaused = false,
+    this.hasVideo = false,
+    this.onVideoDecision,
   });
 
   @override
+  State<CompletionDialog> createState() => _CompletionDialogState();
+}
+
+class _CompletionDialogState extends State<CompletionDialog> {
+  // null = 尚未決定,true = 保留,false = 不保留
+  bool? _keepVideo;
+
+  void _selectKeepVideo(bool keep) {
+    setState(() => _keepVideo = keep);
+    widget.onVideoDecision?.call(keep);
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final minutes = durationSeconds ~/ 60;
-    final seconds = durationSeconds % 60;
+    final minutes = widget.durationSeconds ~/ 60;
+    final seconds = widget.durationSeconds % 60;
     final timeText = '$minutes:${seconds.toString().padLeft(2, '0')}';
 
     return Dialog(
@@ -63,10 +84,10 @@ class CompletionDialog extends StatelessWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Text(isPaused ? '⏸️' : '🎉', style: const TextStyle(fontSize: 48)),
+              Text(widget.isPaused ? '⏸️' : '🎉', style: const TextStyle(fontSize: 48)),
               const SizedBox(height: 10),
               Text(
-                isPaused ? '訓練暫停' : '訓練完成',
+                widget.isPaused ? '訓練暫停' : '訓練完成',
                 style: const TextStyle(
                     color: Color(0xFF1A1D2E),
                     fontSize: 24,
@@ -77,28 +98,34 @@ class CompletionDialog extends StatelessWidget {
               // ── 資訊區:有溫度的文案 + 時長/難度 ───────────────────
               _buildInfoBlock(timeText),
 
+              // ── 保留錄影詢問區塊 ─────────────────────────────────
+              if (widget.hasVideo) ...[
+                const SizedBox(height: 14),
+                _buildVideoKeepBlock(),
+              ],
+
               const SizedBox(height: 22),
-              _divider(isPaused ? '想做什麼?' : '接下來要做什麼?'),
+              _divider(widget.isPaused ? '想做什麼?' : '接下來要做什麼?'),
               const SizedBox(height: 14),
 
               // ── 再來一組(相同動作+難度)───────────────────────────
               _actionButton(
                 icon: '🔄',
-                label: isPaused ? '繼續訓練' : '再來一組',
-                subtitle: '${currentAction.name} · ${currentDifficulty.label}',
+                label: widget.isPaused ? '繼續訓練' : '再來一組',
+                subtitle: '${widget.currentAction.name} · ${widget.currentDifficulty.label}',
                 color: const Color(0xFF4A65FF),
-                onTap: onRetry,
+                onTap: widget.onRetry,
               ),
               const SizedBox(height: 10),
 
               // ── 切換難度(相同動作的其他難度)──────────────────────
-              if (currentAction.difficulties.length > 1) ...[
+              if (widget.currentAction.difficulties.length > 1) ...[
                 _divider('換個難度'),
                 const SizedBox(height: 10),
                 _DifficultyRow(
-                  action: currentAction,
-                  currentDifficulty: currentDifficulty,
-                  onSelect: (diff) => onStartNew(currentAction, diff),
+                  action: widget.currentAction,
+                  currentDifficulty: widget.currentDifficulty,
+                  onSelect: (diff) => widget.onStartNew(widget.currentAction, diff),
                 ),
                 const SizedBox(height: 10),
               ],
@@ -107,8 +134,8 @@ class CompletionDialog extends StatelessWidget {
               _divider('或換個動作'),
               const SizedBox(height: 10),
               _OtherActionsSection(
-                currentAction: currentAction,
-                onSelect: onStartNew,
+                currentAction: widget.currentAction,
+                onSelect: widget.onStartNew,
               ),
 
               const SizedBox(height: 14),
@@ -118,7 +145,7 @@ class CompletionDialog extends StatelessWidget {
                 width: double.infinity,
                 height: 48,
                 child: OutlinedButton(
-                  onPressed: onHome,
+                  onPressed: widget.onHome,
                   style: OutlinedButton.styleFrom(
                     side: const BorderSide(color: Color(0xFFDDE0F0)),
                     shape: RoundedRectangleBorder(
@@ -142,10 +169,10 @@ class CompletionDialog extends StatelessWidget {
 
   // ─── 資訊區:有溫度的文案 + 時長 + 難度 ───────────────────
   Widget _buildInfoBlock(String timeText) {
-    final mainText = isPaused
-        ? '你剛剛做了 $repCount 下,辛苦了'
-        : '恭喜完成 $repCount 下,做得很棒!';
-    final difficultyPrefix = isPaused ? '目前難度' : '通關難度';
+    final mainText = widget.isPaused
+        ? '你剛剛做了 ${widget.repCount} 下,辛苦了'
+        : '恭喜完成 ${widget.repCount} 下,做得很棒!';
+    final difficultyPrefix = widget.isPaused ? '目前難度' : '通關難度';
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
@@ -188,13 +215,111 @@ class CompletionDialog extends StatelessWidget {
               ),
               const SizedBox(width: 16),
               Text(
-                '$difficultyPrefix ${currentDifficulty.label}',
+                '$difficultyPrefix ${widget.currentDifficulty.label}',
                 style: const TextStyle(
                     color: Color(0xFF6B7280), fontSize: 12),
               ),
             ],
           ),
         ],
+      ),
+    );
+  }
+
+  // ─── 保留錄影詢問區塊 ───────────────────────────────────
+  Widget _buildVideoKeepBlock() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF0F2FF),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFF4A65FF).withValues(alpha: 0.3)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Row(
+            children: [
+              Icon(Icons.videocam_outlined, color: Color(0xFF4A65FF), size: 18),
+              SizedBox(width: 8),
+              Text(
+                '這次訓練錄了一段影片',
+                style: TextStyle(
+                    color: Color(0xFF1A1D2E),
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          const Text(
+            '要保留這段錄影嗎?保留後可以在歷史紀錄裡回放。',
+            style: TextStyle(color: Color(0xFF6B7280), fontSize: 11),
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(
+                child: _videoChoiceButton(
+                  label: '保留',
+                  icon: Icons.check_circle_outline,
+                  selected: _keepVideo == true,
+                  onTap: () => _selectKeepVideo(true),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _videoChoiceButton(
+                  label: '不保留',
+                  icon: Icons.delete_outline,
+                  selected: _keepVideo == false,
+                  onTap: () => _selectKeepVideo(false),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _videoChoiceButton({
+    required String label,
+    required IconData icon,
+    required bool selected,
+    required VoidCallback onTap,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
+        padding: const EdgeInsets.symmetric(vertical: 10),
+        decoration: BoxDecoration(
+          color: selected ? const Color(0xFF4A65FF) : Colors.white,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(
+            color: selected
+                ? const Color(0xFF4A65FF)
+                : const Color(0xFFDDE0F0),
+          ),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(icon,
+                size: 16,
+                color: selected ? Colors.white : const Color(0xFF6B7280)),
+            const SizedBox(width: 6),
+            Text(
+              label,
+              style: TextStyle(
+                color: selected ? Colors.white : const Color(0xFF374151),
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -336,7 +461,6 @@ class _OtherActionsSectionState extends State<_OtherActionsSection> {
   late bool _handExpanded;
   late bool _bodyExpanded;
 
-  // 被點選、尚未確認切換的動作(點下後展開難度選擇 + 確認列,不直接切換)
   TrainingAction? _pendingAction;
   DifficultyOption? _pendingDifficulty;
 
@@ -485,7 +609,6 @@ class _OtherActionsSectionState extends State<_OtherActionsSection> {
     );
   }
 
-  // 一個動作項目 = tile,若該動作正被選取(pending)則在下方插入「選難度 + 確認」面板
   List<Widget> _buildActionTileGroup(TrainingAction action) {
     final isPending = _pendingAction?.type == action.type;
     return [
@@ -552,7 +675,6 @@ class _OtherActionsSectionState extends State<_OtherActionsSection> {
     );
   }
 
-  // ── 點選動作後出現的「選難度 + 確認切換」面板 ───────────────────────────
   Widget _buildConfirmPanel(TrainingAction action) {
     final selected = _pendingDifficulty ?? action.difficulties.first;
 

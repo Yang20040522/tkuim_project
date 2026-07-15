@@ -2,6 +2,8 @@
 //
 // 動作判斷邏輯已全部移至 Dart（side_pinch_action / turn_palm_action）
 // trainingStream 不再使用，KT 只負責送 landmark
+//
+// ✅ 新增:pause()/resume(),支援「暫停選單」真正的接續(不重建、不歸零)
 
 import 'dart:async';
 import 'package:flutter/material.dart';
@@ -108,6 +110,9 @@ class RehabSessionController implements RehabActionCallback {
   RehabSessionState _state = const RehabSessionState();
   RehabSessionState get currentState => _state;
 
+  // 暫停中:frame 監聽會直接忽略新的一幀,凍結畫面與計次
+  bool _isPaused = false;
+
   RehabSessionController({
     required this.model,
     required this.action,
@@ -150,6 +155,8 @@ class RehabSessionController implements RehabActionCallback {
 
     // 只訂閱 frameStream，不再訂閱 trainingStream
     _frameSub = model.frameStream.listen((frame) {
+      if (_isPaused) return; // 暫停中:忽略這一幀,不更新畫面、不計次
+
       _emit(_state.copyWith(
         handLandmarks: frame.handLandmarks,
         handDetected: frame.handDetected,
@@ -166,6 +173,19 @@ class RehabSessionController implements RehabActionCallback {
     ));
   }
 
+  // ─── 暫停 / 繼續 ─────────────────────────────────────────────────
+  // 暫停時相機/原生偵測仍在背景運作,但這裡直接忽略每一幀的結果,
+  // 不更新畫面、不餵進動作判斷邏輯,達到「凍結進度」的效果。
+  // 繼續時單純把旗標關掉,下一幀開始就會照原本邏輯接續處理,
+  // 不需要重新 start()、不會遺失或錯亂目前的 rep 數與狀態。
+  void pause() {
+    _isPaused = true;
+  }
+
+  void resume() {
+    _isPaused = false;
+  }
+
   Future<void> flipCamera() async {
     _emit(_state.copyWith(handLandmarks: [], handDetected: false, bodyLandmarks: []));
     if (_actionLogic is TurnPalmAction) {
@@ -175,9 +195,6 @@ class RehabSessionController implements RehabActionCallback {
   }
 
   // 等資源真的釋放完才返回,給切換動作時用
-  // 改動:stop()/dispose() 補回 await + try-catch,
-  //      並拉長延遲到 350ms,避免新畫面的 PlatformView(相機)
-  //      在舊的 Kotlin 端資源(MediaPipe/相機)還沒釋放完就被建立,導致畫面卡死。
   Future<void> disposeAsync() async {
     _actionLogic.dispose();
     await _frameSub?.cancel();

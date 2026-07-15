@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../models/training_action.dart';
 import '../../services/history_service.dart';
+import 'video_playback_screen.dart';
 
 // ── 分類定義（與 action_list_screen.dart 保持一致）──
 //
@@ -567,6 +568,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
     final minutes = record.durationSeconds ~/ 60;
     final seconds = record.durationSeconds % 60;
     final hasMistakes = record.mistakeLogs.isNotEmpty;
+    final hasVideo = record.videoPath != null;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
@@ -576,73 +578,117 @@ class _HistoryScreenState extends State<HistoryScreen> {
         borderRadius: BorderRadius.circular(16),
         border: Border.all(color: const Color(0xFFDDE0F0)),
       ),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Container(
-            width: 44,
-            height: 44,
-            decoration: BoxDecoration(
-              color: hasMistakes
-                  ? const Color(0xFFFF4B4B).withOpacity(0.15)
-                  : const Color(0xFF4CAF50).withOpacity(0.15),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Center(
-              child: Text(
-                '$perfect',
-                style: TextStyle(
+          Row(
+            children: [
+              Container(
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(
                   color: hasMistakes
-                      ? const Color(0xFFFF4B4B)
-                      : const Color(0xFF4CAF50),
-                  fontSize: 20,
-                  fontWeight: FontWeight.w900,
+                      ? const Color(0xFFFF4B4B).withOpacity(0.15)
+                      : const Color(0xFF4CAF50).withOpacity(0.15),
+                  borderRadius: BorderRadius.circular(12),
                 ),
-              ),
-            ),
-          ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  record.actionName,
-                  style: const TextStyle(
-                    color: Color(0xFF1A1D2E),
-                    fontSize: 14,
-                    fontWeight: FontWeight.w700,
+                child: Center(
+                  child: Text(
+                    '$perfect',
+                    style: TextStyle(
+                      color: hasMistakes
+                          ? const Color(0xFFFF4B4B)
+                          : const Color(0xFF4CAF50),
+                      fontSize: 20,
+                      fontWeight: FontWeight.w900,
+                    ),
                   ),
                 ),
-                const SizedBox(height: 3),
-                Text(
-                  '${record.timestamp}  •  Lv.${record.difficulty}  •  '
-                  '$minutes:${seconds.toString().padLeft(2, '0')}',
-                  style: const TextStyle(
-                      color: Color(0xFF6B7280), fontSize: 11),
-                ),
-              ],
-            ),
-          ),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              Text(
-                hasMistakes ? '❌ ${record.mistakeLogs.length} 次失誤' : '✅ 完美',
-                style: TextStyle(
-                  color: hasMistakes
-                      ? const Color(0xFFFF4B4B)
-                      : const Color(0xFF4CAF50),
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      record.actionName,
+                      style: const TextStyle(
+                        color: Color(0xFF1A1D2E),
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      '${record.timestamp}  •  Lv.${record.difficulty}  •  '
+                      '$minutes:${seconds.toString().padLeft(2, '0')}',
+                      style: const TextStyle(
+                          color: Color(0xFF6B7280), fontSize: 11),
+                    ),
+                  ],
                 ),
               ),
-              const SizedBox(height: 2),
-              Text(
-                '$perfect / 10',
-                style: const TextStyle(color: Color(0xFF9CA3AF), fontSize: 11),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Text(
+                    hasMistakes ? '❌ ${record.mistakeLogs.length} 次失誤' : '✅ 完美',
+                    style: TextStyle(
+                      color: hasMistakes
+                          ? const Color(0xFFFF4B4B)
+                          : const Color(0xFF4CAF50),
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    '$perfect / 10',
+                    style: const TextStyle(color: Color(0xFF9CA3AF), fontSize: 11),
+                  ),
+                ],
               ),
             ],
           ),
+
+          // ── 播放錄影按鈕(只有存在 videoPath 才顯示)───────────────
+          if (hasVideo) ...[
+            const SizedBox(height: 10),
+            GestureDetector(
+              onTap: () => Navigator.of(context).push(MaterialPageRoute(
+                builder: (_) => VideoPlaybackScreen(
+                  videoPath: record.videoPath!,
+                  title: '${record.actionName} · ${record.timestamp}',
+                ),
+              )),
+              child: Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF4A65FF).withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(
+                      color: const Color(0xFF4A65FF).withOpacity(0.3)),
+                ),
+                child: const Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.play_circle_outline,
+                        color: Color(0xFF4A65FF), size: 18),
+                    SizedBox(width: 6),
+                    Text(
+                      '播放錄影',
+                      style: TextStyle(
+                        color: Color(0xFF4A65FF),
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
         ],
       ),
     );

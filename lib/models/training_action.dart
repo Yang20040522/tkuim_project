@@ -1,6 +1,7 @@
 // lib/models/training_action.dart
 //
 // ✅ 新增：raiseBothArms, elbowForward, wristExtension, wristSideBend
+// ✅ TrainingRecord 新增 videoPath 欄位(訓練錄影)
 
 enum ActionType {
   turnPalm,
@@ -213,7 +214,7 @@ const List<TrainingAction> kTrainingActions = [
           description: '手腕左右來回彎曲，完成 10 次'),
     ],
   ),
-  TrainingAction(                        // ← 從這裡開始貼
+  TrainingAction(
     type: ActionType.sitToStand,
     name: '坐站訓練',
     emoji: '🪑',
@@ -261,6 +262,7 @@ class TrainingRecord {
   final int difficulty;
   final int durationSeconds;
   final List<String> mistakeLogs;
+  final String? videoPath; // 訓練錄影檔案路徑,null 代表沒錄或使用者選擇不保留
 
   TrainingRecord({
     required this.timestamp,
@@ -268,6 +270,7 @@ class TrainingRecord {
     required this.difficulty,
     required this.durationSeconds,
     required this.mistakeLogs,
+    this.videoPath,
   });
 
   Map<String, dynamic> toJson() => {
@@ -276,6 +279,7 @@ class TrainingRecord {
         'difficulty': difficulty,
         'durationSeconds': durationSeconds,
         'mistakeLogs': mistakeLogs,
+        'videoPath': videoPath,
       };
 
   factory TrainingRecord.fromJson(Map<String, dynamic> json) => TrainingRecord(
@@ -284,5 +288,16 @@ class TrainingRecord {
         difficulty: json['difficulty'] ?? 1,
         durationSeconds: json['durationSeconds'] ?? 0,
         mistakeLogs: List<String>.from(json['mistakeLogs'] ?? []),
+        videoPath: json['videoPath'] as String?,
+      );
+
+  /// 複製一份紀錄,只替換 videoPath(用於「先存紀錄、後補影片路徑」的情境)
+  TrainingRecord copyWithVideoPath(String? path) => TrainingRecord(
+        timestamp: timestamp,
+        actionName: actionName,
+        difficulty: difficulty,
+        durationSeconds: durationSeconds,
+        mistakeLogs: mistakeLogs,
+        videoPath: path,
       );
 }
