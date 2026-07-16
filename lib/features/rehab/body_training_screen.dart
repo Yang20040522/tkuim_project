@@ -347,43 +347,64 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
     final diff = _mapDifficulty(difficulty.level);
     if (action.type == ActionType.wipeBody) {
       screen = BodyTrainingScreen(
-        action: StandingKneeRaiseAction(difficulty: diff),
+        action: StandingKneeRaiseAction(
+          difficulty: diff,
+          targetCount: difficulty.targetReps,
+        ),
         trainingActionMeta: action,
         difficultyMeta: difficulty,
       );
     } else if (action.type == ActionType.drawCircle) {
       screen = BodyTrainingScreen(
-        action: DrawCircleAction(difficulty: diff),
+        action: DrawCircleAction(
+          difficulty: diff,
+          targetCount: difficulty.targetReps,
+        ),
         trainingActionMeta: action,
         difficultyMeta: difficulty,
       );
     } else if (action.type == ActionType.reach) {
       screen = BodyTrainingScreen(
-        action: ReachAction(difficulty: diff),
+        action: ReachAction(
+          difficulty: diff,
+          targetCount: difficulty.targetReps,
+        ),
         trainingActionMeta: action,
         difficultyMeta: difficulty,
       );
     } else if (action.type == ActionType.raiseBothArms) {
       screen = BodyTrainingScreen(
-        action: RaiseBothArmsAction(difficulty: diff),
+        action: RaiseBothArmsAction(
+          difficulty: diff,
+          targetCount: difficulty.targetReps,
+        ),
         trainingActionMeta: action,
         difficultyMeta: difficulty,
       );
     } else if (action.type == ActionType.elbowForward) {
       screen = BodyTrainingScreen(
-        action: ElbowForwardAction(difficulty: diff),
+        action: ElbowForwardAction(
+          difficulty: diff,
+          targetCount: difficulty.targetReps,
+        ),
         trainingActionMeta: action,
         difficultyMeta: difficulty,
       );
     } else if (action.type == ActionType.sitToStand) {
       screen = BodyTrainingScreen(
-        action: SitToStandAction(difficulty: diff),
+        action: SitToStandAction(
+          difficulty: diff,
+          targetCount: difficulty.targetReps,
+        ),
         trainingActionMeta: action,
         difficultyMeta: difficulty,
       );
     } else if (action.type == ActionType.lateralStep) {
       screen = BodyTrainingScreen(
-        action: LateralStepAction(difficulty: diff),
+        action: LateralStepAction(
+          difficulty: diff,
+          targetCount: difficulty.targetReps,
+        ),
         trainingActionMeta: action,
         difficultyMeta: difficulty,
       );

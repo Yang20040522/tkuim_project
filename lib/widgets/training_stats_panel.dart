@@ -1,4 +1,6 @@
 // lib/widgets/training_stats_panel.dart
+//
+// ✅ 新增:targetReps 參數,顯示動態目標次數而非寫死 10
 
 import 'package:flutter/material.dart';
 import '../models/training_action.dart';
@@ -9,6 +11,7 @@ class TrainingStatsPanel extends StatelessWidget {
   final int countdownSeconds;
   final ActionType actionType;
   final int repCount;
+  final int targetReps;   // ← 新增
   final double accuracy;
   final VoidCallback onStopPressed;
 
@@ -19,6 +22,7 @@ class TrainingStatsPanel extends StatelessWidget {
     required this.countdownSeconds,
     required this.actionType,
     required this.repCount,
+    this.targetReps = 10,   // ← 新增,預設 10
     required this.accuracy,
     required this.onStopPressed,
   });
@@ -56,7 +60,7 @@ class TrainingStatsPanel extends StatelessWidget {
       valueColor = const Color(0xFF8A8D9F);
     } else {
       label = '完成次數';
-      value = '$repCount / 10';
+      value = '$repCount / $targetReps';   // ← 改這行,用動態值
       valueColor = const Color(0xFF2C3040);
     }
 

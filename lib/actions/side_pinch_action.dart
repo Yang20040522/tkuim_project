@@ -11,6 +11,7 @@ import '../services/hand_voice_service.dart';
 
 class SidePinchAction extends BaseRehabAction {
   final int difficulty; // 1=初階 2=中階 3=進階
+  final int targetReps;   // ← 新增
 
   final List<String> _mistakeLogs = [];
   DateTime _sessionStartTime = DateTime.now();
@@ -36,6 +37,7 @@ class SidePinchAction extends BaseRehabAction {
   SidePinchAction({
     required RehabActionCallback callback,
     this.difficulty = 1,
+    this.targetReps = 10,   // ← 新增
   }) : super(callback) {
     _startLevel(difficulty);
   }
@@ -128,7 +130,7 @@ class SidePinchAction extends BaseRehabAction {
           callback.onStatsChanged(repCount: _repCount);
           HandVoiceService.speak('捏緊了');
 
-          if (_repCount >= 10) _checkLevelUp();
+          if (_repCount >= targetReps) _checkLevelUp();
         } else {
           _lastRepTime = DateTime.now();
           _mistakeLogs.add('未計入次數：開合動作過快');

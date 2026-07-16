@@ -1,10 +1,32 @@
 // lib/features/demo/demo_library_screen.dart
-//
-// 動作示範庫 — 顯示 3D .glb 模型
 
 import 'package:flutter/material.dart';
 import 'package:model_viewer_plus/model_viewer_plus.dart';
 import 'bone_viewer_screen.dart';
+
+// ── 動作分類 ──────────────────────────────────────────────
+enum DemoCategory { all, arm, fullBody }
+
+// ── 動作資料模型 ──────────────────────────────────────────
+class _DemoItem {
+  final String emoji;
+  final String title;
+  final String subtitle;
+  final List<String> tabLabels;
+  final List<String> modelSrcs;
+  final List<String> modelAlts;
+  final DemoCategory category;
+
+  const _DemoItem({
+    required this.emoji,
+    required this.title,
+    required this.subtitle,
+    required this.tabLabels,
+    required this.modelSrcs,
+    required this.modelAlts,
+    required this.category,
+  });
+}
 
 class DemoLibraryScreen extends StatefulWidget {
   const DemoLibraryScreen({super.key});
@@ -15,77 +37,94 @@ class DemoLibraryScreen extends StatefulWidget {
 
 class _DemoLibraryScreenState extends State<DemoLibraryScreen>
     with TickerProviderStateMixin {
-  // ── 手部卡片狀態 ──
-  bool _handExpanded = false;
-  int _handTab = 0;
-  late final AnimationController _handController;
-  late final Animation<double> _handExpandAnim;
 
-  // ── 腳部卡片狀態 ──
-  bool _legExpanded = false;
-  int _legTab = 0;
-  late final AnimationController _legController;
-  late final Animation<double> _legExpandAnim;
+  DemoCategory _selectedCategory = DemoCategory.all;
 
-  // ── 畫圓卡片狀態 ──
-  bool _circleExpanded = false;
-  int _circleTab = 0;
-  late final AnimationController _circleController;
-  late final Animation<double> _circleExpandAnim;
+  // ── 所有動作資料 ──────────────────────────────────────────
+  final List<_DemoItem> _items = const [
+    _DemoItem(
+      emoji: '🙋',
+      title: '伸手舉高訓練',
+      subtitle: '左右手可切換・拖曳旋轉・雙指縮放',
+      tabLabels: ['左手', '右手'],
+      modelSrcs: [
+        'assets/models/turn_Right_hand.glb',
+        'assets/models/turn_Left_hand.glb',
+      ],
+      modelAlts: ['左手舉高示範', '右手舉高示範'],
+      category: DemoCategory.arm,
+    ),
+    _DemoItem(
+      emoji: '🔄',
+      title: '手臂畫圓訓練',
+      subtitle: '右手示範・拖曳旋轉・雙指縮放',
+      tabLabels: ['右手'],
+      modelSrcs: ['assets/models/arm_circle_right.glb'],
+      modelAlts: ['右手畫圓示範'],
+      category: DemoCategory.arm,
+    ),
+    _DemoItem(
+      emoji: '🙌',
+      title: '雙手抬舉訓練',
+      subtitle: '拖曳旋轉・雙指縮放',
+      tabLabels: ['示範'],
+      modelSrcs: ['assets/models/Both_Arms_Arise.glb'],
+      modelAlts: ['雙手抬舉示範'],
+      category: DemoCategory.fullBody,
+    ),
+    _DemoItem(
+      emoji: '🦵',
+      title: '站立抬腿訓練',
+      subtitle: '左右腳可切換・拖曳旋轉・雙指縮放',
+      tabLabels: ['左腳', '右腳'],
+      modelSrcs: [
+        'assets/models/Standing_Leg_Raise_Right.glb',
+        'assets/models/Standing_Leg_Raise_left.glb',
+      ],
+      modelAlts: ['左腳抬腿示範', '右腳抬腿示範'],
+      category: DemoCategory.fullBody,
+    ),
+  ];
+
+  // ── 每張卡片的展開狀態 & tab index ──────────────────────
+  late final List<bool> _expanded;
+  late final List<int> _tabIndex;
+  late final List<AnimationController> _controllers;
+  late final List<Animation<double>> _anims;
 
   @override
   void initState() {
     super.initState();
-    _handController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 320),
+    _expanded = List.filled(_items.length, false);
+    _tabIndex = List.filled(_items.length, 0);
+    _controllers = List.generate(
+      _items.length,
+      (_) => AnimationController(
+        vsync: this,
+        duration: const Duration(milliseconds: 320),
+      ),
     );
-    _handExpandAnim = CurvedAnimation(
-      parent: _handController,
-      curve: Curves.easeInOut,
-    );
-
-    _legController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 320),
-    );
-    _legExpandAnim = CurvedAnimation(
-      parent: _legController,
-      curve: Curves.easeInOut,
-    );
-
-    _circleController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 320),
-    );
-    _circleExpandAnim = CurvedAnimation(
-      parent: _circleController,
-      curve: Curves.easeInOut,
-    );
+    _anims = _controllers
+        .map((c) => CurvedAnimation(parent: c, curve: Curves.easeInOut))
+        .toList();
   }
 
   @override
   void dispose() {
-    _handController.dispose();
-    _legController.dispose();
-    _circleController.dispose();
+    for (final c in _controllers) {
+      c.dispose();
+    }
     super.dispose();
   }
 
-  void _toggleHand() {
-    setState(() => _handExpanded = !_handExpanded);
-    _handExpanded ? _handController.forward() : _handController.reverse();
+  void _toggle(int idx) {
+    setState(() => _expanded[idx] = !_expanded[idx]);
+    _expanded[idx] ? _controllers[idx].forward() : _controllers[idx].reverse();
   }
 
-  void _toggleLeg() {
-    setState(() => _legExpanded = !_legExpanded);
-    _legExpanded ? _legController.forward() : _legController.reverse();
-  }
-
-  void _toggleCircle() {
-    setState(() => _circleExpanded = !_circleExpanded);
-    _circleExpanded ? _circleController.forward() : _circleController.reverse();
-  }
+  List<_DemoItem> get _filteredItems => _selectedCategory == DemoCategory.all
+      ? _items
+      : _items.where((item) => item.category == _selectedCategory).toList();
 
   @override
   Widget build(BuildContext context) {
@@ -95,6 +134,7 @@ class _DemoLibraryScreenState extends State<DemoLibraryScreen>
         child: Column(
           children: [
             _buildTopBar(context),
+            _buildCategoryTabs(),
             Expanded(child: _buildBody()),
           ],
         ),
@@ -134,68 +174,93 @@ class _DemoLibraryScreenState extends State<DemoLibraryScreen>
     );
   }
 
+  // ── 分類 tab ───────────────────────────────────────────
+  Widget _buildCategoryTabs() {
+    final tabs = [
+      (category: DemoCategory.all, label: '全部', icon: Icons.grid_view_rounded),
+      (category: DemoCategory.arm, label: '手部', icon: Icons.back_hand_outlined),
+      (category: DemoCategory.fullBody, label: '全身', icon: Icons.accessibility_new),
+    ];
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+      child: Row(
+        children: tabs.map((tab) {
+          final isActive = _selectedCategory == tab.category;
+          return Expanded(
+            child: GestureDetector(
+              onTap: () => setState(() => _selectedCategory = tab.category),
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 200),
+                margin: const EdgeInsets.symmetric(horizontal: 4),
+                padding: const EdgeInsets.symmetric(vertical: 10),
+                decoration: BoxDecoration(
+                  color: isActive
+                      ? const Color(0xFF4A65FF)
+                      : Colors.white,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: isActive
+                        ? const Color(0xFF4A65FF)
+                        : const Color(0xFFDDE0F0),
+                  ),
+                  boxShadow: isActive
+                      ? [
+                          BoxShadow(
+                            color: const Color(0xFF4A65FF).withValues(alpha: 0.25),
+                            blurRadius: 8,
+                            offset: const Offset(0, 3),
+                          ),
+                        ]
+                      : [],
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      tab.icon,
+                      size: 18,
+                      color: isActive ? Colors.white : const Color(0xFF6B7280),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      tab.label,
+                      style: TextStyle(
+                        color: isActive ? Colors.white : const Color(0xFF6B7280),
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          );
+        }).toList(),
+      ),
+    );
+  }
+
   Widget _buildBody() {
+    final filtered = _filteredItems;
+
     return SingleChildScrollView(
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
       child: Column(
         children: [
+          // 動作卡片列表
+          ...filtered.map((item) {
+            final idx = _items.indexOf(item);
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: _buildDemoCard(
+                item: item,
+                idx: idx,
+              ),
+            );
+          }),
 
-          // ① 手部卡片
-          _buildDemoCard(
-            emoji: '🙋',
-            title: '伸手舉高訓練示範',
-            subtitle: '左右手可切換・拖曳旋轉・雙指縮放',
-            expanded: _handExpanded,
-            onTap: _toggleHand,
-            expandAnim: _handExpandAnim,
-            tabLabels: const ['左手', '右手'],
-            currentTab: _handTab,
-            onTabChanged: (i) => setState(() => _handTab = i),
-            modelSrc: _handTab == 0
-                ? 'assets/models/turn_Right_hand.glb'
-                : 'assets/models/turn_Left_hand.glb',
-            modelAlt: _handTab == 0 ? '左手舉高示範' : '右手舉高示範',
-          ),
-
-          const SizedBox(height: 12),
-
-          // ② 腳部卡片
-          _buildDemoCard(
-            emoji: '🦵',
-            title: '站立抬腿訓練示範',
-            subtitle: '左右腳可切換・拖曳旋轉・雙指縮放',
-            expanded: _legExpanded,
-            onTap: _toggleLeg,
-            expandAnim: _legExpandAnim,
-            tabLabels: const ['左腳', '右腳'],
-            currentTab: _legTab,
-            onTabChanged: (i) => setState(() => _legTab = i),
-            modelSrc: _legTab == 0
-                ? 'assets/models/Standing_Leg_Raise_Right.glb'
-                : 'assets/models/Standing_Leg_Raise_left.glb',
-            modelAlt: _legTab == 0 ? '左腳抬腿示範' : '右腳抬腿示範',
-          ),
-
-          const SizedBox(height: 12),
-
-          // ③ 畫圓卡片（右手示範，左手即將開放）
-          _buildDemoCard(
-            emoji: '🔄',
-            title: '手臂畫圓訓練示範',
-            subtitle: '右手示範・拖曳旋轉・雙指縮放',
-            expanded: _circleExpanded,
-            onTap: _toggleCircle,
-            expandAnim: _circleExpandAnim,
-            tabLabels: const ['右手'],
-            currentTab: _circleTab,
-            onTabChanged: (i) => setState(() => _circleTab = i),
-            modelSrc: 'assets/models/arm_circle_right.glb',
-            modelAlt: '右手畫圓示範',
-          ),
-
-          const SizedBox(height: 12),
-
-          // ④ 即時骨架連動入口
+          // 即時骨架連動入口
           GestureDetector(
             onTap: () => Navigator.of(context).push(
               MaterialPageRoute(builder: (_) => const BoneViewerScreen()),
@@ -204,51 +269,73 @@ class _DemoLibraryScreenState extends State<DemoLibraryScreen>
               width: double.infinity,
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
               decoration: BoxDecoration(
-                color: const Color(0xFF1A1D2E),
+                gradient: const LinearGradient(
+                  colors: [Color(0xFF1A1D2E), Color(0xFF2D3250)],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
                 borderRadius: BorderRadius.circular(16),
+                boxShadow: [
+                  BoxShadow(
+                    color: const Color(0xFF1A1D2E).withValues(alpha: 0.3),
+                    blurRadius: 12,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
               ),
-              child: const Row(
+              child: Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Icon(Icons.accessibility_new,
+                  const Icon(Icons.accessibility_new,
                       color: Color(0xFF00E5FF), size: 20),
-                  SizedBox(width: 8),
-                  Text(
-                    '即時骨架連動（測試）',
+                  const SizedBox(width: 8),
+                  const Text(
+                    '即時骨架連動',
                     style: TextStyle(
                       color: Colors.white,
                       fontSize: 14,
                       fontWeight: FontWeight.w700,
                     ),
                   ),
+                  const SizedBox(width: 6),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: const BoxDecoration(
+                      color: Color(0xFF00E5FF),
+                      borderRadius: BorderRadius.all(Radius.circular(6)),
+                    ),
+                    child: const Text(
+                      'BETA',
+                      style: TextStyle(
+                        color: Color(0xFF1A1D2E),
+                        fontSize: 9,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ),
                 ],
               ),
             ),
           ),
-
         ],
       ),
     );
   }
 
-  // ── 共用卡片 widget ──────────────────────────────────────
   Widget _buildDemoCard({
-    required String emoji,
-    required String title,
-    required String subtitle,
-    required bool expanded,
-    required VoidCallback onTap,
-    required Animation<double> expandAnim,
-    required List<String> tabLabels,
-    required int currentTab,
-    required ValueChanged<int> onTabChanged,
-    required String modelSrc,
-    required String modelAlt,
+    required _DemoItem item,
+    required int idx,
   }) {
+    final expanded = _expanded[idx];
+    final currentTab = _tabIndex[idx];
+    final modelSrc = item.modelSrcs[currentTab.clamp(0, item.modelSrcs.length - 1)];
+    final modelAlt = item.modelAlts[currentTab.clamp(0, item.modelAlts.length - 1)];
+
     return Column(
       children: [
+        // header
         GestureDetector(
-          onTap: onTap,
+          onTap: () => _toggle(idx),
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
             decoration: BoxDecoration(
@@ -258,43 +345,66 @@ class _DemoLibraryScreenState extends State<DemoLibraryScreen>
             ),
             child: Row(
               children: [
-                Text(emoji, style: const TextStyle(fontSize: 22)),
+                Container(
+                  width: 44, height: 44,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF0F2FF),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Center(
+                    child: Text(item.emoji,
+                        style: const TextStyle(fontSize: 22)),
+                  ),
+                ),
                 const SizedBox(width: 12),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(title,
+                      Text(item.title,
                           style: const TextStyle(
                             color: Color(0xFF1A1D2E),
                             fontSize: 15,
                             fontWeight: FontWeight.w700,
                           )),
-                      Text(subtitle,
+                      const SizedBox(height: 2),
+                      Text(item.subtitle,
                           style: const TextStyle(
                               color: Color(0xFF6B7280), fontSize: 12)),
                     ],
                   ),
                 ),
-                AnimatedRotation(
-                  turns: expanded ? 0.5 : 0,
-                  duration: const Duration(milliseconds: 320),
-                  curve: Curves.easeInOut,
-                  child: const Icon(Icons.keyboard_arrow_down,
-                      color: Color(0xFF6B7280), size: 22),
+                Container(
+                  width: 32, height: 32,
+                  decoration: BoxDecoration(
+                    color: expanded
+                        ? const Color(0xFF4A65FF)
+                        : const Color(0xFFF5F6FA),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: AnimatedRotation(
+                    turns: expanded ? 0.5 : 0,
+                    duration: const Duration(milliseconds: 320),
+                    curve: Curves.easeInOut,
+                    child: Icon(Icons.keyboard_arrow_down,
+                        color: expanded ? Colors.white : const Color(0xFF6B7280),
+                        size: 20),
+                  ),
                 ),
               ],
             ),
           ),
         ),
+
+        // 展開區塊
         SizeTransition(
-          sizeFactor: expandAnim,
+          sizeFactor: _anims[idx],
           axisAlignment: -1,
           child: Padding(
-            padding: const EdgeInsets.only(top: 12),
+            padding: const EdgeInsets.only(top: 10),
             child: Column(
               children: [
-                if (tabLabels.length > 1)
+                if (item.tabLabels.length > 1)
                   Container(
                     padding: const EdgeInsets.all(4),
                     decoration: BoxDecoration(
@@ -303,15 +413,17 @@ class _DemoLibraryScreenState extends State<DemoLibraryScreen>
                       border: Border.all(color: const Color(0xFFDDE0F0)),
                     ),
                     child: Row(
-                      children: List.generate(tabLabels.length, (i) {
+                      children: List.generate(item.tabLabels.length, (i) {
                         final isActive = currentTab == i;
                         return Expanded(
                           child: GestureDetector(
-                            onTap: () => onTabChanged(i),
+                            onTap: () =>
+                                setState(() => _tabIndex[idx] = i),
                             behavior: HitTestBehavior.opaque,
                             child: AnimatedContainer(
                               duration: const Duration(milliseconds: 200),
-                              padding: const EdgeInsets.symmetric(vertical: 10),
+                              padding:
+                                  const EdgeInsets.symmetric(vertical: 10),
                               decoration: BoxDecoration(
                                 color: isActive
                                     ? const Color(0xFF4A65FF)
@@ -320,7 +432,7 @@ class _DemoLibraryScreenState extends State<DemoLibraryScreen>
                               ),
                               child: Center(
                                 child: Text(
-                                  tabLabels[i],
+                                  item.tabLabels[i],
                                   style: TextStyle(
                                     color: isActive
                                         ? Colors.white
@@ -336,7 +448,7 @@ class _DemoLibraryScreenState extends State<DemoLibraryScreen>
                       }),
                     ),
                   ),
-                if (tabLabels.length > 1) const SizedBox(height: 10),
+                if (item.tabLabels.length > 1) const SizedBox(height: 10),
                 ClipRRect(
                   borderRadius: BorderRadius.circular(20),
                   child: SizedBox(

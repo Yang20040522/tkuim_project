@@ -20,7 +20,7 @@ enum _RaiseState { waitReady, raising, holding, lowering }
 class RaiseBothArmsAction implements BodyRehabAction {
   RehabDifficulty difficulty;
   int successCount = 0;
-  static const int _targetCount = 5;
+  int _targetCount = 5;
 
   // ── 角度門檻(髖-肩-手腕)─────────────────────────────────
   static const double _restAngle = 30.0;           // 雙手垂放
@@ -40,7 +40,10 @@ class RaiseBothArmsAction implements BodyRehabAction {
   DateTime _holdStartTime = DateTime.now();
   DateTime _lowerStartTime = DateTime.now();
 
-  RaiseBothArmsAction({this.difficulty = RehabDifficulty.easy});
+  RaiseBothArmsAction({
+    this.difficulty = RehabDifficulty.easy,
+    int targetCount = 5,
+  }) : _targetCount = targetCount;
 
   // ── 合約 ──────────────────────────────────────────────
   @override

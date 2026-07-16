@@ -20,7 +20,7 @@ enum _ReachState { waitStart, reachingUp, holding, pullingDown }
 class ReachAction implements BodyRehabAction {
   RehabDifficulty difficulty;
   int successCount = 0;
-  static const int _targetCount = 5;   // 升級門檻 5 次
+  int _targetCount = 5;   // 升級門檻(可自訂)
 
   // ── 角度門檻(髖-肩-手腕)─────────────────────────────────
   static const double _restAngle = 30.0;         // 手垂下身側(寬鬆)
@@ -37,7 +37,10 @@ class ReachAction implements BodyRehabAction {
   DateTime _holdStartTime = DateTime.now();
   DateTime _lastRepTime = DateTime.fromMillisecondsSinceEpoch(0);
 
-  ReachAction({this.difficulty = RehabDifficulty.easy});
+  ReachAction({
+    this.difficulty = RehabDifficulty.easy,
+    int targetCount = 5,
+  }) : _targetCount = targetCount;
 
   // ── 按鈕呼叫:選擇左手或右手 ────────────────────────────
   bool get handSelected => _activeWrist != null;

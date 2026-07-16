@@ -15,6 +15,7 @@ class WristSideBendAction extends BaseRehabAction {
   int _repCount = 0;
   bool _isTransitioning = false;
   bool _countdownDone = false;
+  final int targetReps;
 
   final List<String> _stateBuffer = [];
   String _lastConfirmedState = '';
@@ -39,7 +40,10 @@ class WristSideBendAction extends BaseRehabAction {
   bool _hasHeldEnough = false;
   static const int _requiredHoldMs = 1000; // 需在最大角度停留 1 秒
 
-  WristSideBendAction({required RehabActionCallback callback}) : super(callback) {
+  WristSideBendAction({
+    required RehabActionCallback callback,
+    this.targetReps = 10,   // ← 新增
+  }) : super(callback) {
     _init();
   }
 
@@ -159,7 +163,7 @@ class WristSideBendAction extends BaseRehabAction {
             HandVoiceService.speak('完成一次');
             callback.onStatsChanged(repCount: _repCount);
 
-            if (_repCount >= 10) _finish();
+            if (_repCount >= targetReps) _finish();
           } else {
             _mistakeLogs.add('未計入：左右切換速度過快，未達復健擴展效果');
             callback.onFeedbackChanged('⚠️ 動作太快', '請依建側手慢慢引導，穩定擺動');

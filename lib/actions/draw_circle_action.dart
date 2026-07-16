@@ -10,7 +10,7 @@ import 'body_rehab_action.dart';
 class DrawCircleAction implements BodyRehabAction {
   RehabDifficulty difficulty;
   int successCount = 0;
-  final int targetCount = 3;
+  int targetCount;   // 拿掉 final
 
   double _sweptAngle = 0.0;
   double _lastAngle = double.nan;
@@ -20,7 +20,10 @@ class DrawCircleAction implements BodyRehabAction {
 
   DateTime _lastVoiceTime = DateTime.now();
 
-  DrawCircleAction({this.difficulty = RehabDifficulty.easy});
+  DrawCircleAction({
+    this.difficulty = RehabDifficulty.easy,
+    this.targetCount = 3,   // 用原本的預設值
+  });
 
   // ── 合約要求 ──────────────────────────────────────────────
   @override

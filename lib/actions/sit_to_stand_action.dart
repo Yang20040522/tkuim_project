@@ -18,13 +18,16 @@ enum _SquatState { standing, squattingDown, holding, standingUp }
 class SitToStandAction implements BodyRehabAction {
   RehabDifficulty difficulty;
   int _successCount = 0;
-  static const int _targetCount = 8;
+  int _targetCount = 8;
 
   _SquatState _state = _SquatState.standing;
   DateTime _lastSpeakTime = DateTime.fromMillisecondsSinceEpoch(0);
   DateTime _holdStartTime = DateTime.now();
 
-  SitToStandAction({this.difficulty = RehabDifficulty.easy});
+  SitToStandAction({
+    this.difficulty = RehabDifficulty.easy,
+    int targetCount = 8,
+  }) : _targetCount = targetCount;
 
   // ── BodyRehabAction 合約 ────────────────────────────
 

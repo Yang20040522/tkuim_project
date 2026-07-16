@@ -20,14 +20,17 @@ enum _StepState { standing, steppingOut, holding, returning }
 class LateralStepAction implements BodyRehabAction {
   RehabDifficulty difficulty;
   int _successCount = 0;
-  static const int _targetCount = 8;
+  int _targetCount = 8;
 
   _StepState _state = _StepState.standing;
   String? _activeSide; // 'LEFT' / 'RIGHT' / null
   DateTime _lastSpeakTime = DateTime.fromMillisecondsSinceEpoch(0);
   DateTime _holdStartTime = DateTime.now();
 
-  LateralStepAction({this.difficulty = RehabDifficulty.easy});
+  LateralStepAction({
+    this.difficulty = RehabDifficulty.easy,
+    int targetCount = 8,
+  }) : _targetCount = targetCount;
 
   // ── BodyRehabAction 合約 ────────────────────────────
 

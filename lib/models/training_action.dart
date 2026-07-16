@@ -2,6 +2,7 @@
 //
 // ✅ 新增：raiseBothArms, elbowForward, wristExtension, wristSideBend
 // ✅ TrainingRecord 新增 videoPath 欄位(訓練錄影)
+// ✅ DifficultyOption 新增 targetReps 欄位,每難度各自預設次數(初階多、進階少)
 
 enum ActionType {
   turnPalm,
@@ -40,12 +41,21 @@ class DifficultyOption {
   final DifficultyLevel level;
   final String label;
   final String description;
+  final int targetReps;
 
   const DifficultyOption({
     required this.level,
     required this.label,
     required this.description,
+    this.targetReps = 10,
   });
+
+  DifficultyOption copyWithReps(int reps) => DifficultyOption(
+        level: level,
+        label: label,
+        description: description,
+        targetReps: reps,
+      );
 }
 
 const List<TrainingAction> kTrainingActions = [
@@ -58,11 +68,13 @@ const List<TrainingAction> kTrainingActions = [
       DifficultyOption(
           level: DifficultyLevel.level1,
           label: 'Level 1',
-          description: '初階 — 容錯較高'),
+          description: '初階 — 容錯較高',
+          targetReps: 10),
       DifficultyOption(
           level: DifficultyLevel.level2,
           label: 'Level 2',
-          description: '中階 — 要求嚴格'),
+          description: '中階 — 要求嚴格',
+          targetReps: 8),
     ],
   ),
   TrainingAction(
@@ -74,15 +86,18 @@ const List<TrainingAction> kTrainingActions = [
       DifficultyOption(
           level: DifficultyLevel.level1,
           label: 'Level 1',
-          description: '初階 — 微幅側捏'),
+          description: '初階 — 微幅側捏',
+          targetReps: 10),
       DifficultyOption(
           level: DifficultyLevel.level2,
           label: 'Level 2',
-          description: '中階 — 標準動作'),
+          description: '中階 — 標準動作',
+          targetReps: 8),
       DifficultyOption(
           level: DifficultyLevel.level3,
           label: 'Level 3',
-          description: '進階 — 連擊模式'),
+          description: '進階 — 連擊模式',
+          targetReps: 6),
     ],
   ),
   TrainingAction(
@@ -94,15 +109,18 @@ const List<TrainingAction> kTrainingActions = [
       DifficultyOption(
           level: DifficultyLevel.level1,
           label: '初級',
-          description: '抬膝幅度小 — 高容錯'),
+          description: '抬膝幅度小 — 高容錯',
+          targetReps: 10),
       DifficultyOption(
           level: DifficultyLevel.level2,
           label: '中級',
-          description: '抬膝至腰部高度，嚴格檢測身體晃動'),
+          description: '抬膝至腰部高度，嚴格檢測身體晃動',
+          targetReps: 8),
       DifficultyOption(
           level: DifficultyLevel.level3,
           label: '高級',
-          description: '抬膝過腰並定格 2 秒'),
+          description: '抬膝過腰並定格 2 秒',
+          targetReps: 6),
     ],
   ),
   TrainingAction(
@@ -112,11 +130,14 @@ const List<TrainingAction> kTrainingActions = [
     description: '訓練肩關節活動度與手臂畫圓控制',
     difficulties: [
       DifficultyOption(
-          level: DifficultyLevel.level1, label: '初級', description: '小圓 — 高容錯'),
+          level: DifficultyLevel.level1, label: '初級', description: '小圓 — 高容錯',
+          targetReps: 10),
       DifficultyOption(
-          level: DifficultyLevel.level2, label: '中級', description: '標準圓'),
+          level: DifficultyLevel.level2, label: '中級', description: '標準圓',
+          targetReps: 8),
       DifficultyOption(
-          level: DifficultyLevel.level3, label: '高級', description: '大圓 — 要求手臂完全伸直'),
+          level: DifficultyLevel.level3, label: '高級', description: '大圓 — 要求手臂完全伸直',
+          targetReps: 6),
     ],
   ),
   TrainingAction(
@@ -126,11 +147,14 @@ const List<TrainingAction> kTrainingActions = [
     description: '訓練肩關節上舉活動度與肌肉控制',
     difficulties: [
       DifficultyOption(
-          level: DifficultyLevel.level1, label: '初級', description: '舉過肩膀即可'),
+          level: DifficultyLevel.level1, label: '初級', description: '舉過肩膀即可',
+          targetReps: 10),
       DifficultyOption(
-          level: DifficultyLevel.level2, label: '中級', description: '舉過頭頂'),
+          level: DifficultyLevel.level2, label: '中級', description: '舉過頭頂',
+          targetReps: 8),
       DifficultyOption(
-          level: DifficultyLevel.level3, label: '高級', description: '舉過頭頂並定格 3 秒'),
+          level: DifficultyLevel.level3, label: '高級', description: '舉過頭頂並定格 3 秒',
+          targetReps: 6),
     ],
   ),
   TrainingAction(
@@ -140,7 +164,8 @@ const List<TrainingAction> kTrainingActions = [
     description: 'RTMPose 全身 133 關鍵點即時追蹤',
     difficulties: [
       DifficultyOption(
-          level: DifficultyLevel.level1, label: 'Beta', description: '測試模式'),
+          level: DifficultyLevel.level1, label: 'Beta', description: '測試模式',
+          targetReps: 10),
     ],
   ),
 
@@ -155,15 +180,18 @@ const List<TrainingAction> kTrainingActions = [
       DifficultyOption(
           level: DifficultyLevel.level1,
           label: '初級',
-          description: '抬到肩膀水平即可'),
+          description: '抬到肩膀水平即可',
+          targetReps: 10),
       DifficultyOption(
           level: DifficultyLevel.level2,
           label: '中級',
-          description: '抬過頭頂並撐住 2 秒'),
+          description: '抬過頭頂並撐住 2 秒',
+          targetReps: 8),
       DifficultyOption(
           level: DifficultyLevel.level3,
           label: '高級',
-          description: '抬到最高位置撐住 3 秒'),
+          description: '抬到最高位置撐住 3 秒',
+          targetReps: 6),
     ],
   ),
   TrainingAction(
@@ -175,15 +203,18 @@ const List<TrainingAction> kTrainingActions = [
       DifficultyOption(
           level: DifficultyLevel.level1,
           label: '初級',
-          description: '手肘伸到接近 130 度'),
+          description: '手肘伸到接近 130 度',
+          targetReps: 10),
       DifficultyOption(
           level: DifficultyLevel.level2,
           label: '中級',
-          description: '手肘伸直到 150 度並撐住 2 秒'),
+          description: '手肘伸直到 150 度並撐住 2 秒',
+          targetReps: 8),
       DifficultyOption(
           level: DifficultyLevel.level3,
           label: '高級',
-          description: '手肘完全伸直並撐住 3 秒'),
+          description: '手肘完全伸直並撐住 3 秒',
+          targetReps: 6),
     ],
   ),
   TrainingAction(
@@ -195,11 +226,13 @@ const List<TrainingAction> kTrainingActions = [
       DifficultyOption(
           level: DifficultyLevel.level1,
           label: 'Level 1',
-          description: '空手 — 手腕上下彎曲'),
+          description: '空手 — 手腕上下彎曲',
+          targetReps: 10),
       DifficultyOption(
           level: DifficultyLevel.level2,
           label: 'Level 2',
-          description: '拿水壺 — 加重訓練，幅度要求更大'),
+          description: '拿水壺 — 加重訓練，幅度要求更大',
+          targetReps: 8),
     ],
   ),
   TrainingAction(
@@ -211,7 +244,8 @@ const List<TrainingAction> kTrainingActions = [
       DifficultyOption(
           level: DifficultyLevel.level1,
           label: '標準',
-          description: '手腕左右來回彎曲，完成 10 次'),
+          description: '手腕左右來回彎曲，完成 10 次',
+          targetReps: 10),
     ],
   ),
   TrainingAction(
@@ -223,15 +257,18 @@ const List<TrainingAction> kTrainingActions = [
       DifficultyOption(
           level: DifficultyLevel.level1,
           label: '初級',
-          description: '微蹲 — 膝蓋彎曲到 140 度'),
+          description: '微蹲 — 膝蓋彎曲到 140 度',
+          targetReps: 10),
       DifficultyOption(
           level: DifficultyLevel.level2,
           label: '中級',
-          description: '半蹲 — 大腿接近平行地面'),
+          description: '半蹲 — 大腿接近平行地面',
+          targetReps: 8),
       DifficultyOption(
           level: DifficultyLevel.level3,
           label: '高級',
-          description: '半蹲撐住 3 秒'),
+          description: '半蹲撐住 3 秒',
+          targetReps: 6),
     ],
   ),
   TrainingAction(
@@ -243,15 +280,18 @@ const List<TrainingAction> kTrainingActions = [
       DifficultyOption(
           level: DifficultyLevel.level1,
           label: '初級',
-          description: '微跨 — 膝蓋彎曲到 140 度'),
+          description: '微跨 — 膝蓋彎曲到 140 度',
+          targetReps: 10),
       DifficultyOption(
           level: DifficultyLevel.level2,
           label: '中級',
-          description: '半蹲側弓步'),
+          description: '半蹲側弓步',
+          targetReps: 8),
       DifficultyOption(
           level: DifficultyLevel.level3,
           label: '高級',
-          description: '深側弓步撐住 2 秒'),
+          description: '深側弓步撐住 2 秒',
+          targetReps: 6),
     ],
   ),
 ];

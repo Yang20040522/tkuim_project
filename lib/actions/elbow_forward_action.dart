@@ -20,7 +20,7 @@ enum _ElbowState { waitReady, extending, holding, retracting }
 class ElbowForwardAction implements BodyRehabAction {
   RehabDifficulty difficulty;
   int successCount = 0;
-  static const int _targetCount = 5;
+  int _targetCount = 5;
 
   // ── 角度門檻(肩-肘-腕)─────────────────────────────────
   static const double _retractAngle = 90.0;        // 起點:手肘彎曲
@@ -40,7 +40,10 @@ class ElbowForwardAction implements BodyRehabAction {
   DateTime _holdStartTime = DateTime.now();
   DateTime _retractStartTime = DateTime.now();
 
-  ElbowForwardAction({this.difficulty = RehabDifficulty.easy});
+  ElbowForwardAction({
+    this.difficulty = RehabDifficulty.easy,
+    int targetCount = 5,
+  }) : _targetCount = targetCount;
 
   // ── 合約 ──────────────────────────────────────────────
   @override

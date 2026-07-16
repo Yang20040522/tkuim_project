@@ -38,6 +38,7 @@ class RehabSessionState {
 
   final int durationSeconds;
   final List<String> mistakeLogs;
+  final int targetReps;   // ← 新增
 
   const RehabSessionState({
     this.handLandmarks = const [],
@@ -55,6 +56,7 @@ class RehabSessionState {
     this.countdownDone = false,
     this.durationSeconds = 0,
     this.mistakeLogs = const [],
+    this.targetReps = 10,   // ← 新增
   });
 
   RehabSessionState copyWith({
@@ -73,6 +75,7 @@ class RehabSessionState {
     bool? countdownDone,
     int? durationSeconds,
     List<String>? mistakeLogs,
+    int? targetReps,   // ← 新增
   }) {
     return RehabSessionState(
       handLandmarks: handLandmarks ?? this.handLandmarks,
@@ -90,6 +93,7 @@ class RehabSessionState {
       countdownDone: countdownDone ?? this.countdownDone,
       durationSeconds: durationSeconds ?? this.durationSeconds,
       mistakeLogs: mistakeLogs ?? this.mistakeLogs,
+      targetReps: targetReps ?? this.targetReps,   // ← 新增
     );
   }
 }
@@ -119,22 +123,36 @@ class RehabSessionController implements RehabActionCallback {
     required this.difficulty,
   }) {
     final diffIdx = action.difficulties.indexOf(difficulty) + 1;
+    _state = _state.copyWith(targetReps: difficulty.targetReps);   // ← 新加這行
 
     switch (action.type) {
       case ActionType.turnPalm:
-        _actionLogic = TurnPalmAction(callback: this);
+        _actionLogic = TurnPalmAction(
+          callback: this,
+          targetReps: difficulty.targetReps,   // ← 新增
+        );
 
       case ActionType.wristExtension:
-        _actionLogic = WristExtensionAction(callback: this);
+        _actionLogic = WristExtensionAction(
+          callback: this,
+          targetReps: difficulty.targetReps,   // ← 新增
+        );
         // 有 3 秒倒數，countdownDone 由 action 自己透過 onCountdownChanged 設定
 
       case ActionType.wristSideBend:
-        _actionLogic = WristSideBendAction(callback: this);
+        _actionLogic = WristSideBendAction(
+          callback: this,
+          targetReps: difficulty.targetReps,   // ← 新增
+        );
         // 有 3 秒倒數，countdownDone 由 action 自己透過 onCountdownChanged 設定
 
       default:
         // sidePinch 及其他手部動作
-        _actionLogic = SidePinchAction(callback: this, difficulty: diffIdx);
+        _actionLogic = SidePinchAction(
+          callback: this,
+          difficulty: diffIdx,
+          targetReps: difficulty.targetReps,   // ← 新增
+        );
         _state = _state.copyWith(countdownDone: true);
     }
   }

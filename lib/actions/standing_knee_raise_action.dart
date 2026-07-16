@@ -12,13 +12,15 @@ import 'body_rehab_action.dart';
 class StandingKneeRaiseAction implements BodyRehabAction {
   RehabDifficulty difficulty;
   int successCount = 0;
-  final int targetCount = 3;
+  int targetCount;
 
   bool _hasTriggeredRaise = false;
   DateTime _lastVoiceTime = DateTime.now();
 
-  // 以左腳為主要換側抬腳範例，可根據需求動態調整
-  StandingKneeRaiseAction({this.difficulty = RehabDifficulty.easy});
+  StandingKneeRaiseAction({
+    this.difficulty = RehabDifficulty.easy,
+    this.targetCount = 3,
+  });
 
   // ── 合約要求 ──────────────────────────────────────────────
   @override

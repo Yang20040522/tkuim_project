@@ -2,6 +2,8 @@
 //
 // 動作清單頁 — 原本是 home_screen 的內容
 // 從新首頁的「開始訓練」大卡片點下去進來
+//
+// ✅ 新增:目標次數輸入框,使用者可自訂訓練次數
 
 import 'package:flutter/material.dart';
 
@@ -53,6 +55,9 @@ class _ActionListScreenState extends State<ActionListScreen> with TickerProvider
   bool _handExpanded = false;
   bool _bodyExpanded = false;
 
+  // ── 新增:目標次數輸入框控制器 ──
+  final TextEditingController _repsController = TextEditingController(text: '10');
+
   late AnimationController _fadeCtrl;
   late Animation<double> _fadeAnim;
 
@@ -69,6 +74,7 @@ class _ActionListScreenState extends State<ActionListScreen> with TickerProvider
   @override
   void dispose() {
     _fadeCtrl.dispose();
+    _repsController.dispose();   // ← 新增
     super.dispose();
   }
 
@@ -90,55 +96,82 @@ class _ActionListScreenState extends State<ActionListScreen> with TickerProvider
       } else {
         _selectedAction = action;
         _selectedDifficulty = action.difficulties.first;
+        _repsController.text = '${_selectedDifficulty!.targetReps}';   // ← 新增
       }
     });
   }
 
   void _startTraining({TrainingAction? action, DifficultyOption? difficulty}) {
     final act = action ?? _selectedAction;
-    final diff = difficulty ?? _selectedDifficulty;
+    var diff = difficulty ?? _selectedDifficulty;
     if (act == null || diff == null) return;
+
+    final customReps = int.tryParse(_repsController.text);
+    if (customReps != null && customReps > 0) {
+      diff = diff.copyWithReps(customReps);
+    }
 
     Widget screen;
     if (act.type == ActionType.wipeBody) {
       screen = BodyTrainingScreen(
-        action: StandingKneeRaiseAction(difficulty: _mapDifficulty(diff.level)),
+        action: StandingKneeRaiseAction(
+          difficulty: _mapDifficulty(diff.level),
+          targetCount: diff.targetReps,
+        ),
         trainingActionMeta: act,
         difficultyMeta: diff,
       );
     } else if (act.type == ActionType.drawCircle) {
       screen = BodyTrainingScreen(
-        action: DrawCircleAction(difficulty: _mapDifficulty(diff.level)),
+        action: DrawCircleAction(
+          difficulty: _mapDifficulty(diff.level),
+          targetCount: diff.targetReps,
+        ),
         trainingActionMeta: act,
         difficultyMeta: diff,
       );
     } else if (act.type == ActionType.reach) {
       screen = BodyTrainingScreen(
-        action: ReachAction(difficulty: _mapDifficulty(diff.level)),
+        action: ReachAction(
+          difficulty: _mapDifficulty(diff.level),
+          targetCount: diff.targetReps,
+        ),
         trainingActionMeta: act,
         difficultyMeta: diff,
       );
     } else if (act.type == ActionType.raiseBothArms) {
       screen = BodyTrainingScreen(
-        action: RaiseBothArmsAction(difficulty: _mapDifficulty(diff.level)),
+        action: RaiseBothArmsAction(
+          difficulty: _mapDifficulty(diff.level),
+          targetCount: diff.targetReps,
+        ),
         trainingActionMeta: act,
         difficultyMeta: diff,
       );
     } else if (act.type == ActionType.elbowForward) {
       screen = BodyTrainingScreen(
-        action: ElbowForwardAction(difficulty: _mapDifficulty(diff.level)),
+        action: ElbowForwardAction(
+          difficulty: _mapDifficulty(diff.level),
+          targetCount: diff.targetReps,
+        ),
         trainingActionMeta: act,
         difficultyMeta: diff,
       );
     } else if (act.type == ActionType.sitToStand) {
       screen = BodyTrainingScreen(
-        action: SitToStandAction(difficulty: _mapDifficulty(diff.level)),
+        action: SitToStandAction(
+          difficulty: _mapDifficulty(diff.level),
+          targetCount: diff.targetReps,
+        ),
         trainingActionMeta: act,
         difficultyMeta: diff,
       );
     } else if (act.type == ActionType.lateralStep) {
       screen = BodyTrainingScreen(
-        action: LateralStepAction(difficulty: _mapDifficulty(diff.level)),
+        action: LateralStepAction(
+          difficulty: _mapDifficulty(diff.level),
+          targetCount: diff.targetReps,
+        ),
         trainingActionMeta: act,
         difficultyMeta: diff,
       );
@@ -229,6 +262,8 @@ class _ActionListScreenState extends State<ActionListScreen> with TickerProvider
                         _buildSectionLabel('選擇難度等級'),
                         const SizedBox(height: 10),
                         _buildDifficultySelector(),
+                        const SizedBox(height: 12),
+                        _buildRepsInput(),          // ← 新增
                         const SizedBox(height: 20),
                         _buildStartButton(),
                         const SizedBox(height: 12),
@@ -557,7 +592,10 @@ class _ActionListScreenState extends State<ActionListScreen> with TickerProvider
         final isSelected = _selectedDifficulty?.level == diff.level;
         return Expanded(
           child: GestureDetector(
-            onTap: () => setState(() => _selectedDifficulty = diff),
+            onTap: () => setState(() {
+              _selectedDifficulty = diff;
+              _repsController.text = '${diff.targetReps}';   // ← 新增
+            }),
             child: AnimatedContainer(
               duration: const Duration(milliseconds: 150),
               margin: const EdgeInsets.only(right: 8),
@@ -606,6 +644,56 @@ class _ActionListScreenState extends State<ActionListScreen> with TickerProvider
           ),
         );
       }).toList(),
+    );
+  }
+
+  // ── 新增:目標次數輸入框 ─────────────────────────────
+  Widget _buildRepsInput() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF5F6FA),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFFDDE0F0)),
+      ),
+      child: Row(
+        children: [
+          const Text(
+            '目標次數',
+            style: TextStyle(
+                color: Color(0xFF374151),
+                fontSize: 14,
+                fontWeight: FontWeight.w600),
+          ),
+          const Spacer(),
+          SizedBox(
+            width: 64,
+            child: TextField(
+              controller: _repsController,
+              keyboardType: TextInputType.number,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w800,
+                  color: Color(0xFF1A1D2E)),
+              decoration: InputDecoration(
+                isDense: true,
+                contentPadding: const EdgeInsets.symmetric(vertical: 8),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  borderSide: const BorderSide(color: Color(0xFFDDE0F0)),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  borderSide: const BorderSide(color: Color(0xFF4A65FF)),
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 6),
+          const Text('下', style: TextStyle(color: Color(0xFF6B7280), fontSize: 13)),
+        ],
+      ),
     );
   }
 

@@ -16,6 +16,7 @@ enum _Stage { stage1, transitioning, stage2 }
 class TurnPalmAction extends BaseRehabAction {
   final bool overlayMirrored;
   final int startingLevel;
+  final int targetReps;   // ← 新增
 
   int _currentLevel = 1;
   _Stage _currentStage = _Stage.stage1;
@@ -55,6 +56,7 @@ class TurnPalmAction extends BaseRehabAction {
     required RehabActionCallback callback,
     this.overlayMirrored = false,
     this.startingLevel = 1,
+    this.targetReps = 10,   // ← 新增
   }) : super(callback) {
     _startLevel(startingLevel);
   }
@@ -286,7 +288,7 @@ class TurnPalmAction extends BaseRehabAction {
           callback.onStatsChanged(repCount: _repCount);
           callback.onStatsChanged(progress: 0, speedState: 0);
 
-          if (_repCount >= 10) {
+          if (_repCount >= targetReps) {
             if (_currentLevel == 1 && score >= 80) {
               _startLevel(2);
             } else {

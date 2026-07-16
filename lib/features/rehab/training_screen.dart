@@ -458,6 +458,7 @@ class _TrainingScreenState extends State<TrainingScreen>
                 countdownSeconds: s.countdownSeconds,
                 actionType: widget.action.type,
                 repCount: s.repCount,
+                targetReps: s.targetReps,   // ← 新增
                 accuracy: s.accuracy,
                 onStopPressed: _handleStopButtonTap,
               ),

@@ -20,6 +20,7 @@ class WristExtensionAction extends BaseRehabAction {
   int _repCount = 0;
   bool _isTransitioning = false;
   bool _countdownDone = false;
+  final int targetReps;   // ← 新增
 
   final List<String> _stateBuffer = [];
   String _lastConfirmedState = '';
@@ -38,7 +39,10 @@ class WristExtensionAction extends BaseRehabAction {
   int _lastCountdownSec = -1;
   Timer? _transitionTimer;
 
-  WristExtensionAction({required RehabActionCallback callback}) : super(callback) {
+  WristExtensionAction({
+    required RehabActionCallback callback,
+    this.targetReps = 10,
+  }) : super(callback) {
     _init();
   }
 
@@ -153,7 +157,7 @@ class WristExtensionAction extends BaseRehabAction {
           );
           callback.onStatsChanged(repCount: _repCount);
 
-          if (_repCount >= 10) _finish();
+          if (_repCount >= targetReps) _finish();
         } else {
           _lastRepTime = DateTime.now();
           _mistakeLogs.add('未計入：動作太快');
