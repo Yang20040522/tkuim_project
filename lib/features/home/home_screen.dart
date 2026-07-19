@@ -11,6 +11,7 @@ import '../history/history_screen.dart';
 import '../training/action_list_screen.dart';
 import '../demo/demo_library_screen.dart';   // ← 新增
 import '../plan/plan_screen.dart';
+import '../demo/standard_analysis_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -142,6 +143,13 @@ class _HomeScreenState extends State<HomeScreen>
     );
   }
 
+  // ← 新增：跳動作標準分析
+  void _openStandardAnalysis() {
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const StandardAnalysisScreen()),
+    );
+  }
+
   // ─── 操作:即將開放(鈴鐺、底部 4 tab 共用)
   void _comingSoon(String label) {
     ScaffoldMessenger.of(context).showSnackBar(
@@ -178,6 +186,8 @@ class _HomeScreenState extends State<HomeScreen>
                 _buildSectionTitle('功能捷徑'),
                 const SizedBox(height: 12),
                 _buildShortcutsRow(),
+                const SizedBox(height: 12),
+                _buildStandardAnalysisCard(),   // ← 新增
                 const SizedBox(height: 20),
               ],
             ),
@@ -409,6 +419,67 @@ class _HomeScreenState extends State<HomeScreen>
           ),
         ),
       ],
+    );
+  }
+
+  Widget _buildStandardAnalysisCard() {
+    return GestureDetector(
+      onTap: _openStandardAnalysis,
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.04),
+              blurRadius: 10,
+              offset: const Offset(0, 3),
+            ),
+          ],
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 44,
+              height: 44,
+              decoration: BoxDecoration(
+                color: const Color(0xFFE0E7FF),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: const Icon(Icons.insights,
+                  color: Color(0xFF4A65FF), size: 22),
+            ),
+            const SizedBox(width: 12),
+            const Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '動作標準分析',
+                    style: TextStyle(
+                      color: Color(0xFF374151),
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  SizedBox(height: 2),
+                  Text(
+                    '從治療師示範影片建立動作標準',
+                    style: TextStyle(
+                      color: Color(0xFF9CA3AF),
+                      fontSize: 11,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const Icon(Icons.arrow_forward_ios,
+                color: Color(0xFF9CA3AF), size: 14),
+          ],
+        ),
+      ),
     );
   }
 

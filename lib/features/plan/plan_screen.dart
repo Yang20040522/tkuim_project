@@ -1,12 +1,93 @@
-// lib/features/plan/plan_screen.dart
-//
-// 復健計畫頁面（範例 UI）
-// 目前為示意版本，未來接後端資料
-
 import 'package:flutter/material.dart';
+import 'exercise.dart';
+import 'rehab_plan.dart';
+import 'plan_repository.dart';
+import 'plan_builder_screen.dart';
+// import 'package:your_app/features/bone_viewer/bone_viewer_screen.dart';
+// ↑ 換成你們實際的 bone_viewer_screen.dart 路徑
 
-class PlanScreen extends StatelessWidget {
+class PlanScreen extends StatefulWidget {
   const PlanScreen({super.key});
+
+  @override
+  State<PlanScreen> createState() => _PlanScreenState();
+}
+
+class _PlanScreenState extends State<PlanScreen> {
+  RehabPlan? currentPlan;
+  bool isLoading = true;
+  DateTime selectedDate = DateTime.now();
+
+  @override
+  void initState() {
+    super.initState();
+    _loadPlan(selectedDate);
+  }
+
+  Future<void> _loadPlan(DateTime date) async {
+    setState(() => isLoading = true);
+    final plan = await planRepository.getPlanByDate(date);
+    setState(() {
+      currentPlan = plan;
+      isLoading = false;
+    });
+  }
+
+  void _onSelectDay(DateTime date) {
+    setState(() => selectedDate = date);
+    _loadPlan(date);
+  }
+
+  // 點今日計畫項目 → 導去實際辨識頁面，做完才算完成
+  Future<void> _startExercise(Exercise exercise, PlanItem item, int realIndex) async {
+    // final result = await Navigator.push<bool>(
+    //   context,
+    //   MaterialPageRoute(
+    //     builder: (_) => BoneViewerScreen(exercise: exercise),
+    //   ),
+    // );
+
+    final bool? result = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: Text('執行「${exercise.name}」'),
+        content: const Text('（此處之後串接 bone_viewer_screen.dart，實際做動作偵測）'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('取消')),
+          TextButton(onPressed: () => Navigator.pop(context, true), child: const Text('模擬完成')),
+        ],
+      ),
+    );
+
+    if (result == true && currentPlan != null) {
+      currentPlan!.items[realIndex].done = true;
+      await planRepository.updatePlanItem(currentPlan!.planId, currentPlan!.items[realIndex]);
+      setState(() {});
+    }
+  }
+
+  // 骨折：套用系統固定範本
+  Future<void> _applyFractureTemplate() async {
+    if (currentPlan == null) return;
+    final template = planRepository.buildFractureTemplate(currentPlan!.planId, selectedDate);
+    await planRepository.savePlan(template);
+    await _loadPlan(selectedDate);
+  }
+
+  // 中風：導去手動勾選頁面，治療師自己排
+  Future<void> _openManualBuilder() async {
+    if (currentPlan == null) return;
+    final updatedPlan = await Navigator.push<RehabPlan>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => PlanBuilderScreen(existingPlan: currentPlan!),
+      ),
+    );
+    if (updatedPlan != null) {
+      await planRepository.savePlan(updatedPlan);
+      await _loadPlan(selectedDate);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -18,29 +99,27 @@ class PlanScreen extends StatelessWidget {
           children: [
             _buildTopBar(context),
             Expanded(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.fromLTRB(20, 8, 20, 32),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _buildWeekRow(),
-                    const SizedBox(height: 24),
-                    _buildSectionTitle('今日計畫'),
-                    const SizedBox(height: 12),
-                    _buildTodayPlan(),
-                    const SizedBox(height: 24),
-                    _buildSectionTitle('本週進度'),
-                    const SizedBox(height: 12),
-                    _buildWeekProgress(),
-                    const SizedBox(height: 24),
-                    _buildSectionTitle('推薦動作'),
-                    const SizedBox(height: 12),
-                    _buildRecommendList(),
-                    const SizedBox(height: 16),
-                    _buildComingSoonBanner(),
-                  ],
-                ),
-              ),
+              child: isLoading
+                  ? const Center(child: CircularProgressIndicator())
+                  : SingleChildScrollView(
+                      padding: const EdgeInsets.fromLTRB(20, 8, 20, 32),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          _buildWeekRow(),
+                          const SizedBox(height: 24),
+                          _buildSectionTitle('今日計畫'),
+                          const SizedBox(height: 12),
+                          _buildTodayPlan(),
+                          const SizedBox(height: 24),
+                          _buildSectionTitle('本週進度'),
+                          const SizedBox(height: 12),
+                          _buildWeekProgress(),
+                          const SizedBox(height: 24),
+                          _buildActionArea(),
+                        ],
+                      ),
+                    ),
             ),
           ],
         ),
@@ -48,7 +127,6 @@ class PlanScreen extends StatelessWidget {
     );
   }
 
-  // ── 頂部 bar ──────────────────────────────────────────
   Widget _buildTopBar(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
@@ -78,24 +156,26 @@ class PlanScreen extends StatelessWidget {
               ),
             ),
           ),
-          // 未來：新增計畫按鈕
-          Container(
-            width: 40, height: 40,
-            decoration: BoxDecoration(
-              color: const Color(0xFF4A65FF),
-              borderRadius: BorderRadius.circular(12),
+          GestureDetector(
+            onTap: currentPlan == null ? null : _openManualBuilder,
+            child: Container(
+              width: 40, height: 40,
+              decoration: BoxDecoration(
+                color: const Color(0xFF4A65FF),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: const Icon(Icons.add, color: Colors.white, size: 20),
             ),
-            child: const Icon(Icons.add, color: Colors.white, size: 20),
           ),
         ],
       ),
     );
   }
 
-  // ── 星期列 ─────────────────────────────────────────────
   Widget _buildWeekRow() {
     final days = ['一', '二', '三', '四', '五', '六', '日'];
-    final today = DateTime.now().weekday - 1; // 0=週一
+    final today = DateTime.now();
+    final mondayOfWeek = today.subtract(Duration(days: today.weekday - 1));
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 12),
@@ -107,63 +187,60 @@ class PlanScreen extends StatelessWidget {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceAround,
         children: List.generate(7, (i) {
-          final isToday = i == today;
-          // 示意：週一、三、五有計畫
+          final thisDate = mondayOfWeek.add(Duration(days: i));
+          final isSelected = _isSameDay(thisDate, selectedDate);
           final hasPlan = [0, 2, 4].contains(i);
-          return Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                days[i],
-                style: TextStyle(
-                  color: isToday
-                      ? const Color(0xFF4A65FF)
-                      : const Color(0xFF9CA3AF),
-                  fontSize: 12,
-                  fontWeight: isToday ? FontWeight.w800 : FontWeight.w500,
+
+          return GestureDetector(
+            onTap: () => _onSelectDay(thisDate),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  days[i],
+                  style: TextStyle(
+                    color: isSelected ? const Color(0xFF4A65FF) : const Color(0xFF9CA3AF),
+                    fontSize: 12,
+                    fontWeight: isSelected ? FontWeight.w800 : FontWeight.w500,
+                  ),
                 ),
-              ),
-              const SizedBox(height: 6),
-              Container(
-                width: 32, height: 32,
-                decoration: BoxDecoration(
-                  color: isToday
-                      ? const Color(0xFF4A65FF)
-                      : Colors.transparent,
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Center(
-                  child: Text(
-                    '${DateTime.now().day - today + i}',
-                    style: TextStyle(
-                      color: isToday
-                          ? Colors.white
-                          : const Color(0xFF374151),
-                      fontSize: 13,
-                      fontWeight: FontWeight.w700,
+                const SizedBox(height: 6),
+                Container(
+                  width: 32, height: 32,
+                  decoration: BoxDecoration(
+                    color: isSelected ? const Color(0xFF4A65FF) : Colors.transparent,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Center(
+                    child: Text(
+                      '${thisDate.day}',
+                      style: TextStyle(
+                        color: isSelected ? Colors.white : const Color(0xFF374151),
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                      ),
                     ),
                   ),
                 ),
-              ),
-              const SizedBox(height: 4),
-              // 有計畫的日子顯示小圓點
-              Container(
-                width: 5, height: 5,
-                decoration: BoxDecoration(
-                  color: hasPlan
-                      ? const Color(0xFF4A65FF).withValues(alpha: 0.5)
-                      : Colors.transparent,
-                  shape: BoxShape.circle,
+                const SizedBox(height: 4),
+                Container(
+                  width: 5, height: 5,
+                  decoration: BoxDecoration(
+                    color: hasPlan ? const Color(0xFF4A65FF).withValues(alpha: 0.5) : Colors.transparent,
+                    shape: BoxShape.circle,
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           );
         }),
       ),
     );
   }
 
-  // ── 標題 ────────────────────────────────────────────────
+  bool _isSameDay(DateTime a, DateTime b) =>
+      a.year == b.year && a.month == b.month && a.day == b.day;
+
   Widget _buildSectionTitle(String text) {
     return Text(
       text,
@@ -175,96 +252,101 @@ class PlanScreen extends StatelessWidget {
     );
   }
 
-  // ── 今日計畫清單（示意資料）──────────────────────────────
   Widget _buildTodayPlan() {
-    final plans = [
-      (time: '09:00', name: '手腕旋轉', sets: '3 組 × 10 下', done: true),
-      (time: '09:15', name: '手肘彎曲伸展', sets: '3 組 × 12 下', done: true),
-      (time: '09:30', name: '肩膀上舉', sets: '2 組 × 8 下', done: false),
-      (time: '10:00', name: '站立提膝', sets: '3 組 × 10 下', done: false),
-    ];
+    if (currentPlan == null || currentPlan!.items.isEmpty) {
+      return Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: const Color(0xFFDDE0F0)),
+        ),
+        child: const Text(
+          '這一天尚無計畫',
+          style: TextStyle(color: Color(0xFF9CA3AF), fontSize: 13),
+        ),
+      );
+    }
+
+    final sortedItems = [...currentPlan!.items]..sort((a, b) => a.order.compareTo(b.order));
 
     return Column(
-      children: plans.map((p) => _planItem(p)).toList(),
+      children: sortedItems.map((item) {
+        final exercise = findExerciseById(item.exerciseId);
+        final realIndex = currentPlan!.items.indexOf(item);
+        return _planItem(exercise, item, () => _startExercise(exercise, item, realIndex));
+      }).toList(),
     );
   }
 
-  Widget _planItem(
-      ({String time, String name, String sets, bool done}) p) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 10),
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(
-          color: p.done
-              ? const Color(0xFF4A65FF).withValues(alpha: 0.3)
-              : const Color(0xFFDDE0F0),
+  Widget _planItem(Exercise exercise, PlanItem item, VoidCallback onTap) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 10),
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(
+            color: item.done
+                ? const Color(0xFF4A65FF).withValues(alpha: 0.3)
+                : const Color(0xFFDDE0F0),
+          ),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 28, height: 28,
+              decoration: BoxDecoration(
+                color: item.done ? const Color(0xFF4A65FF) : const Color(0xFFF5F6FA),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                item.done ? Icons.check : Icons.play_arrow,
+                color: item.done ? Colors.white : const Color(0xFF4A65FF),
+                size: 16,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Text(exercise.icon, style: const TextStyle(fontSize: 20)),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    exercise.name,
+                    style: TextStyle(
+                      color: item.done ? const Color(0xFF9CA3AF) : const Color(0xFF1A1D2E),
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                      decoration: item.done ? TextDecoration.lineThrough : null,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    '${item.sets} 組 × ${item.repsPerSet} 下',
+                    style: const TextStyle(color: Color(0xFF9CA3AF), fontSize: 12),
+                  ),
+                ],
+              ),
+            ),
+            if (!item.done)
+              const Icon(Icons.chevron_right, color: Color(0xFF9CA3AF), size: 18),
+          ],
         ),
       ),
-      child: Row(
-        children: [
-          // 完成打勾
-          Container(
-            width: 28, height: 28,
-            decoration: BoxDecoration(
-              color: p.done
-                  ? const Color(0xFF4A65FF)
-                  : const Color(0xFFF5F6FA),
-              shape: BoxShape.circle,
-            ),
-            child: Icon(
-              p.done ? Icons.check : Icons.circle_outlined,
-              color: p.done ? Colors.white : const Color(0xFFDDE0F0),
-              size: 16,
-            ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  p.name,
-                  style: TextStyle(
-                    color: p.done
-                        ? const Color(0xFF9CA3AF)
-                        : const Color(0xFF1A1D2E),
-                    fontSize: 14,
-                    fontWeight: FontWeight.w700,
-                    decoration:
-                        p.done ? TextDecoration.lineThrough : null,
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  p.sets,
-                  style: const TextStyle(
-                      color: Color(0xFF9CA3AF), fontSize: 12),
-                ),
-              ],
-            ),
-          ),
-          Text(
-            p.time,
-            style: const TextStyle(
-                color: Color(0xFF9CA3AF),
-                fontSize: 12,
-                fontWeight: FontWeight.w600),
-          ),
-        ],
-      ),
     );
   }
 
-  // ── 本週進度條 ──────────────────────────────────────────
   Widget _buildWeekProgress() {
-    final items = [
-      (label: '完成動作', value: '8 / 12'),
-      (label: '訓練天數', value: '3 / 5'),
-      (label: '總時長', value: '42 分鐘'),
-    ];
+    final total = currentPlan?.items.length ?? 0;
+    final done = currentPlan?.items.where((i) => i.done).length ?? 0;
+    final ratio = total == 0 ? 0.0 : done / total;
+    final totalMinutes = currentPlan?.items.fold<int>(
+            0, (sum, i) => sum + findExerciseById(i.exerciseId).defaultMinutes) ??
+        0;
 
     return Container(
       padding: const EdgeInsets.all(16),
@@ -280,147 +362,98 @@ class PlanScreen extends StatelessWidget {
         children: [
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceAround,
-            children: items
-                .map((item) => Column(
-                      children: [
-                        Text(
-                          item.value,
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 22,
-                            fontWeight: FontWeight.w900,
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          item.label,
-                          style: TextStyle(
-                            color: Colors.white.withValues(alpha: 0.8),
-                            fontSize: 11,
-                          ),
-                        ),
-                      ],
-                    ))
-                .toList(),
+            children: [
+              _progressStat('$done / $total', '完成動作'),
+              _progressStat('${(ratio * 100).round()}%', '完成率'),
+              _progressStat('$totalMinutes 分鐘', '預估時長'),
+            ],
           ),
           const SizedBox(height: 14),
-          // 進度條
           ClipRRect(
             borderRadius: BorderRadius.circular(4),
             child: LinearProgressIndicator(
-              value: 8 / 12,
+              value: ratio,
               backgroundColor: Colors.white.withValues(alpha: 0.2),
-              valueColor:
-                  const AlwaysStoppedAnimation<Color>(Colors.white),
+              valueColor: const AlwaysStoppedAnimation<Color>(Colors.white),
               minHeight: 6,
             ),
           ),
           const SizedBox(height: 6),
           Text(
-            '本週完成 67%，繼續加油！',
-            style: TextStyle(
-              color: Colors.white.withValues(alpha: 0.85),
-              fontSize: 11,
-            ),
+            total == 0 ? '這一天尚無計畫' : '完成 ${(ratio * 100).round()}%，繼續加油！',
+            style: TextStyle(color: Colors.white.withValues(alpha: 0.85), fontSize: 11),
           ),
         ],
       ),
     );
   }
 
-  // ── 推薦動作列表（示意）──────────────────────────────────
-  Widget _buildRecommendList() {
-    final items = [
-      (icon: '🙋', name: '伸手舉高', level: '初階', minutes: '10 分鐘'),
-      (icon: '🔄', name: '手腕旋轉', level: '初階', minutes: '8 分鐘'),
-      (icon: '🦵', name: '站立提膝', level: '中階', minutes: '15 分鐘'),
-    ];
-
+  Widget _progressStat(String value, String label) {
     return Column(
-      children: items.map((item) {
-        return Container(
-          margin: const EdgeInsets.only(bottom: 10),
-          padding: const EdgeInsets.all(14),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: const Color(0xFFDDE0F0)),
-          ),
-          child: Row(
-            children: [
-              Text(item.icon, style: const TextStyle(fontSize: 28)),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      item.name,
-                      style: const TextStyle(
-                        color: Color(0xFF1A1D2E),
-                        fontSize: 14,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      '${item.level} · ${item.minutes}',
-                      style: const TextStyle(
-                          color: Color(0xFF9CA3AF), fontSize: 12),
-                    ),
-                  ],
-                ),
-              ),
-              Container(
-                padding: const EdgeInsets.symmetric(
-                    horizontal: 12, vertical: 6),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFF0F2FF),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: const Text(
-                  '加入',
-                  style: TextStyle(
-                    color: Color(0xFF4A65FF),
-                    fontSize: 12,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        );
-      }).toList(),
+      children: [
+        Text(value,
+            style: const TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.w900)),
+        const SizedBox(height: 4),
+        Text(label, style: TextStyle(color: Colors.white.withValues(alpha: 0.8), fontSize: 11)),
+      ],
     );
   }
 
-  // ── 即將開放 banner ──────────────────────────────────────
-  Widget _buildComingSoonBanner() {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: const Color(0xFFF0F2FF),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(
-            color: const Color(0xFF4A65FF).withValues(alpha: 0.2)),
-      ),
-      child: const Row(
+  // ── 依骨折/中風分流，不再是假的智慧推薦 ─────────────────────
+  Widget _buildActionArea() {
+    if (currentPlan == null) return const SizedBox.shrink();
+
+    if (currentPlan!.condition == PatientCondition.fracture) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(Icons.info_outline, color: Color(0xFF4A65FF), size: 18),
-          SizedBox(width: 10),
-          Expanded(
-            child: Text(
-              '計畫功能開發中，目前顯示示意資料。\n未來將支援自訂計畫、治療師指派等功能。',
-              style: TextStyle(
-                color: Color(0xFF4A65FF),
-                fontSize: 12,
-                height: 1.5,
+          _buildSectionTitle('骨折標準範本'),
+          const SizedBox(height: 8),
+          const Text(
+            '骨折復健時程相對固定，可套用系統預設範本，之後再依需要調整。',
+            style: TextStyle(color: Color(0xFF9CA3AF), fontSize: 12),
+          ),
+          const SizedBox(height: 12),
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton(
+              onPressed: _applyFractureTemplate,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF4A65FF),
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
               ),
+              child: const Text('套用標準範本', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
             ),
           ),
         ],
-      ),
-    );
+      );
+    } else {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildSectionTitle('個別化安排'),
+          const SizedBox(height: 8),
+          const Text(
+            '中風患者個別差異大，無固定範本，請依病患實際狀況手動安排訓練動作。',
+            style: TextStyle(color: Color(0xFF9CA3AF), fontSize: 12),
+          ),
+          const SizedBox(height: 12),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton(
+              onPressed: _openManualBuilder,
+              style: OutlinedButton.styleFrom(
+                side: const BorderSide(color: Color(0xFF4A65FF)),
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              ),
+              child: const Text('依病患狀況安排動作',
+                  style: TextStyle(color: Color(0xFF4A65FF), fontWeight: FontWeight.w700)),
+            ),
+          ),
+        ],
+      );
+    }
   }
 }
