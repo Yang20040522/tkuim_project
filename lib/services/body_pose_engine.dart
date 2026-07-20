@@ -93,6 +93,41 @@ Float32List convertYUV(InferenceInput input) {
   return _sharedYuvBuffer;
 }
 
+// ── RGB → Float32 轉換(供影片分析用,規格跟 convertYUV 完全相同) ─────
+Float32List convertRGB(
+  Uint8List rgb,
+  int srcW,
+  int srcH, {
+  bool isFrontCamera = false,
+}) {
+  const int inputH = 256;
+  const int inputW = 192;
+  const int area = inputH * inputW;
+
+  final Float32List out = Float32List(3 * area);
+  final double ratioX = srcW / inputH;
+  final double ratioY = srcH / inputW;
+
+  int idx = 0;
+  for (int y = 0; y < inputH; y++) {
+    final int srcX = ((inputH - 1 - y) * ratioX).toInt().clamp(0, srcW - 1);
+    for (int x = 0; x < inputW; x++) {
+      final int srcY = (x * ratioY).toInt().clamp(0, srcH - 1);
+      final int pixelIdx = (srcY * srcW + srcX) * 3;
+
+      final int r = rgb[pixelIdx];
+      final int g = rgb[pixelIdx + 1];
+      final int b = rgb[pixelIdx + 2];
+
+      out[idx] = (r - 123.675) / 58.395;
+      out[area + idx] = (g - 116.28) / 57.12;
+      out[2 * area + idx] = (b - 103.53) / 57.375;
+      idx++;
+    }
+  }
+  return out;
+}
+
 // ══════════════════════════════════════════════════════════════════
 //  BodyPoseEngine — 相機 + ONNX + 133 點,全包
 // ══════════════════════════════════════════════════════════════════
@@ -224,6 +259,38 @@ class BodyPoseEngine {
 
     final converted = convertYUV(input);
     _pendingInference = _runInference(converted);
+  }
+
+  // ── 供影片分析用的外部入口 ──────────────────────────────────────────
+  // 傳「解碼後的 RGB bytes」進來,回傳一次推論結果(不用相機)
+  //
+  // 用法:
+  //   1. 用 video_thumbnail 抽出一幀 JPEG bytes
+  //   2. 用 `image` 套件解碼成 RGB
+  //   3. 呼叫這個方法 → poseNotifier 會 emit 該幀的 landmarks
+  Future<void> processExternalFrame(
+    Uint8List rgbBytes,
+    int width,
+    int height, {
+    bool isMirror = false,
+  }) async {
+    if (_disposed || _poseSession == null) return;
+
+    // 等目前正在跑的推論結束(避免衝突)
+    if (_processing) {
+      if (_pendingInference != null) {
+        try {
+          await _pendingInference!.timeout(const Duration(seconds: 3));
+        } catch (_) {}
+      }
+    }
+
+    _processing = true;
+    _isFrontCamera = isMirror; // 影響 keypoints 左右翻轉
+
+    final converted = convertRGB(rgbBytes, width, height, isFrontCamera: isMirror);
+    _pendingInference = _runInference(converted);
+    await _pendingInference;
   }
 
   // ── ONNX 推論 + 解碼 + EMA (搬自 body_test_screen,邏輯相同) ──────

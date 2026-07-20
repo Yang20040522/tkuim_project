@@ -91,21 +91,27 @@ class _HomeScreenState extends State<HomeScreen>
   int _calcStreak(List<TrainingRecord> records) {
     if (records.isEmpty) return 0;
 
-    // 收集所有有訓練的日期(yyyy-MM-dd)
-    final days = records
-        .map((r) => r.timestamp.substring(0, 10))
-        .toSet();
+    final days = records.map((r) => r.timestamp.substring(0, 10)).toSet();
+
+    final now = DateTime.now();
+    final todayStr = _formatDate(now);
+    final yesterdayStr = _formatDate(now.subtract(const Duration(days: 1)));
+
+    // 決定往回算的起始日
+    DateTime anchor;
+    if (days.contains(todayStr)) {
+      anchor = now; // 今天已經練過,從今天開始算
+    } else if (days.contains(yesterdayStr)) {
+      anchor = now.subtract(const Duration(days: 1)); // 今天還沒練,先用昨天當基準,天數不會歸零
+    } else {
+      return 0; // 昨天也沒練 → 斷了超過一天,歸零
+    }
 
     int streak = 0;
-    DateTime check = DateTime.now();
-    while (true) {
-      final dayStr = _formatDate(check);
-      if (days.contains(dayStr)) {
-        streak++;
-        check = check.subtract(const Duration(days: 1));
-      } else {
-        break;
-      }
+    DateTime check = anchor;
+    while (days.contains(_formatDate(check))) {
+      streak++;
+      check = check.subtract(const Duration(days: 1));
     }
     return streak;
   }

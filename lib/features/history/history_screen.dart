@@ -415,7 +415,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const Text(
-              '完美動作次數 (滿分 10)',
+              '完美動作次數',
               style: TextStyle(color: Color(0xFF6B7280), fontSize: 11),
             ),
             const SizedBox(height: 12),
@@ -432,11 +432,14 @@ class _HistoryScreenState extends State<HistoryScreen> {
         final w = constraints.maxWidth;
         final h = constraints.maxHeight;
         final points = records.asMap().entries.map((e) {
-          final perfect = (10 - e.value.mistakeLogs.length).clamp(0, 10);
+          //final perfect = (10 - e.value.mistakeLogs.length).clamp(0, 10);
+          final total = e.value.targetReps;
+          final perfect = (total - e.value.mistakeLogs.length).clamp(0, total);
           final x = records.length == 1
               ? w / 2
               : e.key / (records.length - 1) * w;
-          final y = h - (perfect / 10) * h;
+          //final y = h - (perfect / 10) * h;
+          final y = h - (perfect / total) * h;
           return Offset(x, y);
         }).toList();
 
@@ -564,7 +567,8 @@ class _HistoryScreenState extends State<HistoryScreen> {
   }
 
   Widget _buildRecordCard(TrainingRecord record) {
-    final perfect = 10 - record.mistakeLogs.length;
+    //final perfect = 10 - record.mistakeLogs.length;
+    final perfect = (record.targetReps - record.mistakeLogs.length).clamp(0, record.targetReps);
     final minutes = record.durationSeconds ~/ 60;
     final seconds = record.durationSeconds % 60;
     final hasMistakes = record.mistakeLogs.isNotEmpty;
@@ -643,7 +647,8 @@ class _HistoryScreenState extends State<HistoryScreen> {
                   ),
                   const SizedBox(height: 2),
                   Text(
-                    '$perfect / 10',
+                    //'$perfect / 10',
+                    '$perfect / ${record.targetReps}',
                     style: const TextStyle(color: Color(0xFF9CA3AF), fontSize: 11),
                   ),
                 ],

@@ -199,6 +199,7 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
       difficulty: _levelToInt(_previousLevel),
       durationSeconds: durationSec,
       mistakeLogs: const [],
+      targetReps: widget.difficultyMeta?.targetReps ?? 10, // ✅ 新增
     ));
 
     _recordsSavedThisSession++;

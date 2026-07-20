@@ -303,6 +303,7 @@ class TrainingRecord {
   final int durationSeconds;
   final List<String> mistakeLogs;
   final String? videoPath; // 訓練錄影檔案路徑,null 代表沒錄或使用者選擇不保留
+  final int targetReps; // ✅ 新增
 
   TrainingRecord({
     required this.timestamp,
@@ -311,6 +312,7 @@ class TrainingRecord {
     required this.durationSeconds,
     required this.mistakeLogs,
     this.videoPath,
+    this.targetReps = 10, // 沒帶值時的預設，避免其他呼叫處漏改就炸掉
   });
 
   Map<String, dynamic> toJson() => {
@@ -320,6 +322,7 @@ class TrainingRecord {
         'durationSeconds': durationSeconds,
         'mistakeLogs': mistakeLogs,
         'videoPath': videoPath,
+        'targetReps': targetReps, // ✅
       };
 
   factory TrainingRecord.fromJson(Map<String, dynamic> json) => TrainingRecord(
@@ -329,6 +332,7 @@ class TrainingRecord {
         durationSeconds: json['durationSeconds'] ?? 0,
         mistakeLogs: List<String>.from(json['mistakeLogs'] ?? []),
         videoPath: json['videoPath'] as String?,
+        targetReps: json['targetReps'] ?? 10, // ✅ 舊資料 fallback
       );
 
   /// 複製一份紀錄,只替換 videoPath(用於「先存紀錄、後補影片路徑」的情境)
@@ -339,5 +343,6 @@ class TrainingRecord {
         durationSeconds: durationSeconds,
         mistakeLogs: mistakeLogs,
         videoPath: path,
+        targetReps: targetReps, // ✅
       );
 }

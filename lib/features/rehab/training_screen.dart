@@ -187,6 +187,7 @@ class _TrainingScreenState extends State<TrainingScreen>
       durationSeconds: state.durationSeconds,
       mistakeLogs: state.mistakeLogs,
       videoPath: _pendingVideoPath,
+      targetReps: widget.difficulty.targetReps, // ✅ 新增這行，兩處都加
     ));
 
     if (!mounted || result == null) return;
@@ -271,6 +272,7 @@ class _TrainingScreenState extends State<TrainingScreen>
       durationSeconds: state.durationSeconds,
       mistakeLogs: state.mistakeLogs,
       videoPath: _pendingVideoPath,
+      targetReps: widget.difficulty.targetReps, // ✅ 新增這行，兩處都加
     ));
 
     if (!mounted || result == null) return;

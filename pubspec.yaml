@@ -17,6 +17,8 @@ dependencies:
   flutter_inappwebview: ^6.1.5
   audioplayers: ^6.0.0
   video_player: ^2.9.2
+  file_picker: ^8.0.0
+  video_thumbnail: ^0.5.3
 
 dev_dependencies:
   flutter_test:
