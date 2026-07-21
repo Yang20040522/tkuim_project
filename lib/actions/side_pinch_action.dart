@@ -168,6 +168,8 @@ class SidePinchAction extends BaseRehabAction {
         : level == 2
             ? '中階 (標準側捏)'
             : '進階 (懸空連擊)';
+    
+    callback.onLevelUp(newLevel: level, levelLabel: 'Lv.$level - $levelName', newTargetReps: targetReps);
 
     callback.onFeedbackChanged('側捏訓練 Lv.$level - $levelName', '準備進入關卡...');
     callback.onStatsChanged(repCount: 0);

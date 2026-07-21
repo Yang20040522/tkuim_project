@@ -17,6 +17,12 @@ abstract class RehabActionCallback {
     required bool isDone,
   });
 
+  void onLevelUp({
+    required int newLevel,
+    required String levelLabel,
+    required int newTargetReps,
+  });
+
   void onTrainingComplete({
     required int repCount,
     required int durationSeconds,

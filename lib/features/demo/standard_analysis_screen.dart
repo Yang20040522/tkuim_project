@@ -15,7 +15,7 @@
 //    - DTW 比對 / 完整角度分析 → 下一階段做
 // ══════════════════════════════════════════════════════════════════
 
-import 'dart:io';
+//import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
@@ -25,6 +25,8 @@ import 'package:image/image.dart' as img_lib;
 
 import '../../services/body_pose_engine.dart';
 import '../../models/pose_data.dart';
+import 'dart:math' as math;
+//import 'package:video_player/video_player.dart';
 
 class StandardAnalysisScreen extends StatefulWidget {
   const StandardAnalysisScreen({super.key});
@@ -43,6 +45,11 @@ class _StandardAnalysisScreenState extends State<StandardAnalysisScreen> {
   int _processedFrames = 0;
   int _framesWithPose = 0;
   final List<PoseData> _collectedPoses = [];
+
+  // ── 站姿抬腳分析結果 ──
+  final List<double> _hipFlexionAngles = [];   // 每幀的髖屈曲角度序列
+  double _minAngle = 0;                        // 最深角度(越小 = 抬越高)
+  double _maxAngle = 0;                        // 最淺角度
 
   BodyPoseEngine? _engine;
 
@@ -142,12 +149,25 @@ class _StandardAnalysisScreenState extends State<StandardAnalysisScreen> {
 
         // (e) 拿當下 poseNotifier 的結果存起來
         final PoseData pose = _engine!.poseNotifier.value;
-        if (pose.keypoints.isNotEmpty) {
-          _collectedPoses.add(pose);
-          setState(() => _framesWithPose++);
-        }
+          if (pose.keypoints.isNotEmpty) {
+            _collectedPoses.add(pose);
+            
+            // ── 站姿抬腳:計算髖屈曲角度 ──
+            final angle = _calculateHipFlexion(pose);
+            if (angle != null) {
+              _hipFlexionAngles.add(angle);
+            }
+            
+            setState(() => _framesWithPose++);
+          }
 
         setState(() => _processedFrames = i + 1);
+      }
+
+      // 算出角度統計
+      if (_hipFlexionAngles.isNotEmpty) {
+        _minAngle = _hipFlexionAngles.reduce(math.min);
+        _maxAngle = _hipFlexionAngles.reduce(math.max);
       }
 
       // ─── 分析完成 ──
@@ -189,6 +209,50 @@ class _StandardAnalysisScreenState extends State<StandardAnalysisScreen> {
     }
     return rgb;
   }
+
+  /// 計算單幀的髖屈曲角度(左右取平均、遇到缺失挑另一邊)
+    double? _calculateHipFlexion(PoseData pose) {
+      const int leftShoulder = 5;
+      const int rightShoulder = 6;
+      const int leftHip = 11;
+      const int rightHip = 12;
+      const int leftKnee = 13;
+      const int rightKnee = 14;
+
+      if (pose.keypoints.length < 15) return null;
+
+      final double? left = _computeAngle(
+        pose.keypoints[leftShoulder],
+        pose.keypoints[leftHip],
+        pose.keypoints[leftKnee],
+      );
+      final double? right = _computeAngle(
+        pose.keypoints[rightShoulder],
+        pose.keypoints[rightHip],
+        pose.keypoints[rightKnee],
+      );
+
+      if (left == null && right == null) return null;
+      if (left == null) return right;
+      if (right == null) return left;
+      return (left + right) / 2;
+    }
+
+    /// 三點夾角(以 b 為頂點),回傳角度(0~180)
+    double? _computeAngle(Offset a, Offset b, Offset c) {
+      final v1x = a.dx - b.dx;
+      final v1y = a.dy - b.dy;
+      final v2x = c.dx - b.dx;
+      final v2y = c.dy - b.dy;
+
+      final dot = v1x * v2x + v1y * v2y;
+      final mag1 = math.sqrt(v1x * v1x + v1y * v1y);
+      final mag2 = math.sqrt(v2x * v2x + v2y * v2y);
+      if (mag1 == 0 || mag2 == 0) return null;
+
+      final cosine = (dot / (mag1 * mag2)).clamp(-1.0, 1.0);
+      return math.acos(cosine) * 180 / math.pi;
+    }
 
   // ═══════════════════════════════════════════════════════════════
   //  UI
@@ -353,6 +417,66 @@ class _StandardAnalysisScreenState extends State<StandardAnalysisScreen> {
 
             const SizedBox(height: 20),
 
+            // ── 站姿抬腳:角度分析結果 ──
+            if (_hipFlexionAngles.isNotEmpty) ...[
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: const Color(0xFF4A65FF), width: 1.5),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Row(
+                      children: [
+                        Icon(Icons.timeline, color: Color(0xFF4A65FF), size: 18),
+                        SizedBox(width: 6),
+                        Text(
+                          '站姿抬腳分析',
+                          style: TextStyle(
+                            color: Color(0xFF1A1D2E),
+                            fontSize: 14,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    _buildAngleStat(
+                      '最深(抬最高)角度',
+                      '${_minAngle.toStringAsFixed(1)}°',
+                      const Color(0xFF4CAF50),
+                    ),
+                    const SizedBox(height: 6),
+                    _buildAngleStat(
+                      '最淺(放最低)角度',
+                      '${_maxAngle.toStringAsFixed(1)}°',
+                      const Color(0xFFFF9800),
+                    ),
+                    const SizedBox(height: 6),
+                    _buildAngleStat(
+                      '有效角度資料點',
+                      '${_hipFlexionAngles.length} 幀',
+                      const Color(0xFF6B7280),
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      '💡 對照現有難度門檻:\n'
+                      '   Easy: <= 130° | Medium: <= 100° | Hard: <= 90°',
+                      style: TextStyle(
+                        color: Colors.grey.shade600,
+                        fontSize: 11,
+                        height: 1.5,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 12),
+            ],
+
             // ── 分析結果簡報 ──
             if (_collectedPoses.isNotEmpty)
               Container(
@@ -398,6 +522,36 @@ class _StandardAnalysisScreenState extends State<StandardAnalysisScreen> {
           ],
         ),
       ),
+    );
+  }
+
+  Widget _buildAngleStat(String label, String value, Color color) {
+    return Row(
+      children: [
+        Container(
+          width: 6,
+          height: 6,
+          decoration: BoxDecoration(
+            color: color,
+            shape: BoxShape.circle,
+          ),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(
+            label,
+            style: TextStyle(color: Colors.grey.shade700, fontSize: 12),
+          ),
+        ),
+        Text(
+          value,
+          style: TextStyle(
+            color: color,
+            fontSize: 14,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+      ],
     );
   }
 }

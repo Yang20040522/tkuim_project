@@ -183,7 +183,8 @@ class _TrainingScreenState extends State<TrainingScreen>
     HistoryService().saveRecord(TrainingRecord(
       timestamp: DateTime.now().toString().substring(0, 16),
       actionName: widget.action.name,
-      difficulty: widget.action.difficulties.indexOf(widget.difficulty) + 1,
+      //difficulty: widget.action.difficulties.indexOf(widget.difficulty) + 1,
+      difficulty: widget.action.difficulties.indexWhere((d) => d.level == widget.difficulty.level) + 1,
       durationSeconds: state.durationSeconds,
       mistakeLogs: state.mistakeLogs,
       videoPath: _pendingVideoPath,
@@ -268,7 +269,8 @@ class _TrainingScreenState extends State<TrainingScreen>
     HistoryService().saveRecord(TrainingRecord(
       timestamp: DateTime.now().toString().substring(0, 16),
       actionName: widget.action.name,
-      difficulty: widget.action.difficulties.indexOf(widget.difficulty) + 1,
+      //difficulty: widget.action.difficulties.indexOf(widget.difficulty) + 1,
+      difficulty: widget.action.difficulties.indexWhere((d) => d.level == widget.difficulty.level) + 1,
       durationSeconds: state.durationSeconds,
       mistakeLogs: state.mistakeLogs,
       videoPath: _pendingVideoPath,
@@ -373,7 +375,10 @@ class _TrainingScreenState extends State<TrainingScreen>
           children: [
             TrainingTopBar(
               actionName: widget.action.name,
-              difficultyDesc: widget.difficulty.description,
+              //difficultyDesc: widget.difficulty.description,
+              difficultyDesc: s.currentLevelLabel.isNotEmpty
+                  ? s.currentLevelLabel              // ✅ 有更新過就用新的
+                  : widget.difficulty.description,   // 保底:剛開始還沒收到更新前,先顯示原本選的
               onBack: () => Navigator.of(context).pop(),
               onFlipCamera: _flipCamera,
             ),

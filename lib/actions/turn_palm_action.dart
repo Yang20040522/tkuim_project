@@ -338,6 +338,7 @@ class TurnPalmAction extends BaseRehabAction {
     _smoothedAngleStage1 = 0.0;
 
     final diffText = level == 1 ? '初階' : '中階 (幅度加大)';
+    callback.onLevelUp(newLevel: level, levelLabel: diffText, newTargetReps: targetReps);
     callback.onFeedbackChanged('$diffText 翻掌', '請握住短棍，對齊虛線保持直立 5 秒');
     callback.onStatsChanged(repCount: 0);
     callback.onCountdownChanged(isCountingDown: false, seconds: 5, isDone: false);

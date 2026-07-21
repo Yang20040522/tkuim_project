@@ -39,6 +39,7 @@ class RehabSessionState {
   final int durationSeconds;
   final List<String> mistakeLogs;
   final int targetReps;   // ← 新增
+  final String currentLevelLabel;   // ✅ 加這行(欄位宣告)
 
   const RehabSessionState({
     this.handLandmarks = const [],
@@ -57,6 +58,7 @@ class RehabSessionState {
     this.durationSeconds = 0,
     this.mistakeLogs = const [],
     this.targetReps = 10,   // ← 新增
+    this.currentLevelLabel = '',    // ✅ 加這行(預設值)
   });
 
   RehabSessionState copyWith({
@@ -76,6 +78,7 @@ class RehabSessionState {
     int? durationSeconds,
     List<String>? mistakeLogs,
     int? targetReps,   // ← 新增
+    String? currentLevelLabel,      // ✅ 加這行(copyWith 參數)
   }) {
     return RehabSessionState(
       handLandmarks: handLandmarks ?? this.handLandmarks,
@@ -94,6 +97,7 @@ class RehabSessionState {
       durationSeconds: durationSeconds ?? this.durationSeconds,
       mistakeLogs: mistakeLogs ?? this.mistakeLogs,
       targetReps: targetReps ?? this.targetReps,   // ← 新增
+      currentLevelLabel: currentLevelLabel ?? this.currentLevelLabel,  // ✅ 加這行(組裝新物件)
     );
   }
 }
@@ -122,7 +126,8 @@ class RehabSessionController implements RehabActionCallback {
     required this.action,
     required this.difficulty,
   }) {
-    final diffIdx = action.difficulties.indexOf(difficulty) + 1;
+    //final diffIdx = action.difficulties.indexOf(difficulty) + 1;
+    final diffIdx = action.difficulties.indexWhere((d) => d.level == difficulty.level) + 1;
     _state = _state.copyWith(targetReps: difficulty.targetReps);   // ← 新加這行
 
     switch (action.type) {
@@ -160,7 +165,8 @@ class RehabSessionController implements RehabActionCallback {
   // ── 生命週期 ──────────────────────────────────────────────────────
 
   Future<void> start() async {
-    final diffIdx = action.difficulties.indexOf(difficulty) + 1;
+    //final diffIdx = action.difficulties.indexOf(difficulty) + 1;
+    final diffIdx = action.difficulties.indexWhere((d) => d.level == difficulty.level) + 1;
 
     String actionCode = 'SECOND_ACTION';
     if (action.type == ActionType.turnPalm) actionCode = 'TURN_PALM';
@@ -274,6 +280,15 @@ class RehabSessionController implements RehabActionCallback {
       countdownSeconds: seconds,
       countdownDone: isDone,
     ));
+  }
+
+  @override
+  void onLevelUp({
+    required int newLevel,
+    required String levelLabel,
+    required int newTargetReps,
+  }) {
+    _emit(_state.copyWith(currentLevelLabel: levelLabel));
   }
 
   @override
