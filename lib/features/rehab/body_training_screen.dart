@@ -280,8 +280,13 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
           (a) => a.name == widget.action.title,
           orElse: () => kTrainingActions.first,
         );
-    final currentDiff = widget.difficultyMeta ??
-        currentMeta.difficulties.first;
+    //final currentDiff = widget.difficultyMeta ??
+        //currentMeta.difficulties.first;
+    // ✅ 改成這樣:用「真正做到的難度」反查對應的 DifficultyOption
+    final levelIdx = _levelToInt(_previousLevel) - 1;
+    final currentDiff = (levelIdx >= 0 && levelIdx < currentMeta.difficulties.length)
+        ? currentMeta.difficulties[levelIdx]
+        : (widget.difficultyMeta ?? currentMeta.difficulties.first);
 
     // 使用者在 dialog 裡選擇的結果(保留/不保留),預設 null = 沒選(視同不保留)
     bool? keepVideo;
