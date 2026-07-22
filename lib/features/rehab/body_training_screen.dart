@@ -2,22 +2,13 @@
 //
 // ══════════════════════════════════════════════════════════════════
 //  全身復健「共用畫面殼」
-//
-//  紀錄策略(方案 2 - 升級存 + 結束達標才存):
-//    ✓ 升級時自動存「上一個難度」的紀錄
-//    ✓ 按結束時,當前難度做 ≥3 下才存
-//    ✓ 都會跳完成 dialog
-//
-//  ✅ 訓練開始/結束自動螢幕錄影,結束時詢問是否保留。
-//     同一 session 存的所有紀錄(升級時 + 結束時)共用同一個 videoPath。
-//
-//  ✅ 新增:按下停止鍵先跳「暫停選單」(繼續 / 結束),
-//     選「繼續」時完全不動錄影/紀錄/進度,真正接續剛剛的狀態;
-//     只有選「結束」才會進入原本的完整結束流程。
+//  🚀 支援切換鏡頭來源(手機內建 / 樹莓派外接)
+//  🚀 樹莓派模式下,手部骨架改走樹莓派偵測(PiHandSource),
+//     與身體骨架共用同一套座標映射方式,確保兩者貼合對齊
 // ══════════════════════════════════════════════════════════════════
 
 import 'dart:io';
-
+import 'dart:typed_data'; // 用到 Uint8List
 import 'package:flutter/material.dart';
 import 'package:camera/camera.dart';
 import '../../models/pose_data.dart';
@@ -26,6 +17,10 @@ import '../../models/training_action.dart';
 import '../../services/body_pose_engine.dart';
 import '../../services/history_service.dart';
 import '../../services/screen_recorder_service.dart';
+import '../../services/pi_camera_source.dart'; // 🚀 樹莓派新增
+import '../../services/pi_hand_source.dart'; // 🚀 樹莓派手部新增
+import '../../services/mediapipe_service.dart'; // 🚀 樹莓派手部新增(Landmark/DetectionResult/MediaPipeService)
+import '../../widgets/pi_ip_dialog.dart'; // 🚀 樹莓派新增
 import '../../actions/body_rehab_action.dart';
 import '../../actions/standing_knee_raise_action.dart';
 import '../../actions/draw_circle_action.dart';
@@ -88,6 +83,15 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
   final BodyPoseEngine _engine = BodyPoseEngine();
   static const double _scoreThreshold = BodyPoseEngine.scoreThreshold;
 
+  // 🚀 樹莓派新增:外接鏡頭來源(null = 尚未連線)
+  PiCameraSource? _piCamera;
+  bool _isExternalCamera = false;
+  String? _lastPiIp;
+
+  // 🚀 樹莓派手部偵測新增:另開一條連線拿手部 landmarks
+  final MediaPipeService _handService = MediaPipeService();
+  PiHandSource? _piHand;
+
   int _repCount = 0;
   String _feedback = '請將身體放入鏡頭範圍內';
   late String _instruction;
@@ -96,17 +100,12 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
   final DateTime _sessionStart = DateTime.now();
   bool _completionShown = false;
 
-  // 是否正暫停中(暫停選單開啟期間為 true,偵測/計次會被忽略)
   bool _isPaused = false;
 
-  // 這個 session 目前已經存了幾筆紀錄(升級時 + 結束時的加總),
-  // 用來知道 stop 時要回頭更新「最後幾筆」紀錄的 videoPath
   int _recordsSavedThisSession = 0;
 
-  // 錄影是否已經開始(避免重複呼叫)
   bool _recordingStarted = false;
 
-  // ─── 當前難度的追蹤 ───────────────────────────────────────
   DateTime _currentLevelStart = DateTime.now();
   int _currentLevelReps = 0;
   RehabDifficulty _previousLevel = RehabDifficulty.easy;
@@ -133,7 +132,6 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
     await _engine.startCamera();
     _engine.poseNotifier.addListener(_onPoseUpdate);
 
-    // 相機開始後就開始螢幕錄影(附加功能,失敗不影響訓練本身)
     if (!_recordingStarted) {
       _recordingStarted = true;
       ScreenRecorderService.startRecording();
@@ -141,8 +139,6 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
   }
 
   void _onPoseUpdate() {
-    // 暫停中:不處理任何偵測結果,計次/回饋完全凍結,
-    // 這樣「繼續」時才能真的從原本狀態接著做,而不是漏掉或多算。
     if (_isPaused) return;
 
     final data = _engine.poseNotifier.value;
@@ -183,10 +179,6 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
     }
   }
 
-  // ─── 存當前難度的紀錄(升級瞬間 + 結束達標時呼叫)─────
-  // 注意:這裡先不帶 videoPath,等 session 真正結束、使用者決定
-  // 保留/不保留錄影後,再由 HistoryService.updateLastRecordsVideoPath
-  // 回頭把這個 session 存的所有紀錄一次補上。
   void _saveCurrentLevelRecord() {
     if (widget.trainingActionMeta == null) return;
 
@@ -199,7 +191,7 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
       difficulty: _levelToInt(_previousLevel),
       durationSeconds: durationSec,
       mistakeLogs: const [],
-      targetReps: widget.difficultyMeta?.targetReps ?? 10, // ✅ 新增
+      targetReps: widget.difficultyMeta?.targetReps ?? 10,
     ));
 
     _recordsSavedThisSession++;
@@ -228,11 +220,67 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
   }
 
   Future<void> _switchCamera() async {
+    // 🚀 樹莓派新增:如果目前是外接來源,「翻轉鏡頭」按鈕改為切回手機鏡頭
+    if (_isExternalCamera) {
+      await _disableExternalCamera();
+      return;
+    }
     await _engine.switchCamera();
     if (mounted) setState(() {});
   }
 
-  // ─── 按停止鍵觸發:先跳「暫停選單」,不動任何狀態 ─────────
+  // 🚀 樹莓派新增:開啟外接鏡頭來源(身體 + 手部)
+  Future<void> _enableExternalCamera() async {
+    final ip = await showPiIpDialog(context, initialIp: _lastPiIp);
+    if (ip == null || ip.isEmpty) return;
+    _lastPiIp = ip;
+
+    // 手機鏡頭串流先停掉,避免兩邊同時餵畫面給同一個 engine
+    try {
+      final cam = _engine.cameraController;
+      if (cam != null && cam.value.isStreamingImages) {
+        await cam.stopImageStream();
+      }
+    } catch (_) {}
+
+    _piCamera?.dispose();
+    _piCamera = PiCameraSource(engine: _engine, ip: ip);
+    await _piCamera!.start();
+
+    // 🚀 手部偵測:另開一條連線接同一台樹莓派,拿手部 landmarks
+    _piHand?.dispose();
+    _piHand = PiHandSource(service: _handService, ip: ip);
+    await _piHand!.start();
+
+    if (!mounted) return;
+    setState(() => _isExternalCamera = true);
+  }
+
+  // 🚀 樹莓派新增:切回手機內建鏡頭
+  Future<void> _disableExternalCamera() async {
+    await _piCamera?.stop();
+    _piCamera?.dispose();
+    _piCamera = null;
+
+    // 🚀 手部偵測:一併關閉
+    await _piHand?.stop();
+    _piHand?.dispose();
+    _piHand = null;
+
+    try {
+      final cam = _engine.cameraController;
+      if (cam != null && !cam.value.isStreamingImages) {
+        await cam.startImageStream((image) {});
+        // startImageStream 需要透過 engine 內部方法才會接上推論,
+        // 這裡改呼叫 engine 自己的 startCamera() 更安全:
+      }
+    } catch (_) {}
+    await _engine.startCamera();
+
+    if (!mounted) return;
+    setState(() => _isExternalCamera = false);
+  }
+
   Future<void> _handleStopButtonTap() async {
     if (_completionShown || _isPaused) return;
 
@@ -251,23 +299,18 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
     if (!mounted) return;
 
     if (choice != _PauseChoice.end) {
-      // 使用者選「繼續」,或用其他方式關掉選單(不算數,一律視為繼續)
       setState(() => _isPaused = false);
       return;
     }
 
-    // 選「結束」→ 進入原本的完整結束流程
     await _handleRealEnd();
   }
 
-  // ─── 真正的結束流程(停止錄影、存紀錄、跳完成 dialog)─────
   Future<void> _handleRealEnd() async {
     _completionShown = true;
 
-    // 停止錄影,拿到暫存檔案路徑(如果有錄成功的話)
     final videoPath = await ScreenRecorderService.stopRecording();
 
-    // 當前難度做 ≥ 3 下 → 存當前難度的紀錄
     if (_currentLevelReps >= _kMinRepsToSave) {
       _saveCurrentLevelRecord();
     }
@@ -280,15 +323,11 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
           (a) => a.name == widget.action.title,
           orElse: () => kTrainingActions.first,
         );
-    //final currentDiff = widget.difficultyMeta ??
-        //currentMeta.difficulties.first;
-    // ✅ 改成這樣:用「真正做到的難度」反查對應的 DifficultyOption
     final levelIdx = _levelToInt(_previousLevel) - 1;
     final currentDiff = (levelIdx >= 0 && levelIdx < currentMeta.difficulties.length)
         ? currentMeta.difficulties[levelIdx]
         : (widget.difficultyMeta ?? currentMeta.difficulties.first);
 
-    // 使用者在 dialog 裡選擇的結果(保留/不保留),預設 null = 沒選(視同不保留)
     bool? keepVideo;
 
     final result = await showDialog<_CompletionResult>(
@@ -312,13 +351,11 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
       ),
     );
 
-    // 回頭把這個 session 存的所有紀錄補上(或清掉)videoPath
     if (videoPath != null) {
       if (keepVideo == true) {
         await HistoryService()
             .updateLastRecordsVideoPath(_recordsSavedThisSession, videoPath);
       } else {
-        // 使用者選不保留(或沒做決定)→ 刪掉暫存檔案,紀錄的 videoPath 維持 null
         File(videoPath).delete().catchError((e) => File(videoPath));
       }
     }
@@ -346,6 +383,8 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
 
   Future<void> _navigateToAction(
       TrainingAction action, DifficultyOption difficulty) async {
+    _piCamera?.dispose();
+    _piHand?.dispose(); // 🚀 樹莓派新增:離開畫面前記得釋放
     await _engine.dispose();
     if (!mounted) return;
 
@@ -435,9 +474,6 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
 
   @override
   void dispose() {
-    // 保險:如果畫面被意外關掉(例如手機返回鍵、系統中斷)而沒有走到
-    // _handleRealEnd,錄影可能還在跑,這裡補一次停止,避免背景一直錄影。
-    // 這種非正常結束的情況,不詢問保留與否,直接視為不保留。
     if (_recordingStarted && !_completionShown) {
       ScreenRecorderService.stopRecording().then((path) {
         if (path != null) {
@@ -447,6 +483,9 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
     }
     VoiceService.stop();
     _engine.poseNotifier.removeListener(_onPoseUpdate);
+    _piCamera?.dispose(); // 🚀 樹莓派新增
+    _piHand?.dispose(); // 🚀 樹莓派手部新增
+    _handService.dispose(); // 🚀 樹莓派手部新增
     _engine.dispose();
     super.dispose();
   }
@@ -497,6 +536,28 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
               ),
             ),
           ),
+          // 🚀 樹莓派新增:外接鏡頭開關按鈕
+          GestureDetector(
+            onTap: _isExternalCamera
+                ? _disableExternalCamera
+                : _enableExternalCamera,
+            child: Container(
+              width: 40, height: 40,
+              margin: const EdgeInsets.only(right: 8),
+              decoration: BoxDecoration(
+                color: _isExternalCamera
+                    ? const Color(0xFF4A65FF)
+                    : const Color(0xFFF5F6FA),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: const Color(0xFFDDE0F0)),
+              ),
+              child: Icon(
+                Icons.videocam,
+                color: _isExternalCamera ? Colors.white : const Color(0xFF374151),
+                size: 20,
+              ),
+            ),
+          ),
           GestureDetector(
             onTap: _switchCamera,
             child: Container(
@@ -516,6 +577,90 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
   }
 
   Widget _buildBody() {
+    // 🚀 樹莓派新增:外接來源時顯示 JPEG 畫面,不是 CameraPreview
+    if (_isExternalCamera && _piCamera != null && _piHand != null) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(24),
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              ValueListenableBuilder<Uint8List?>(
+                valueListenable: _piCamera!.latestJpeg,
+                builder: (_, jpeg, __) {
+                  if (jpeg == null) {
+                    return const Center(
+                      child: CircularProgressIndicator(
+                          color: Color(0xFF00BCD4), strokeWidth: 3),
+                    );
+                  }
+                  return Image.memory(jpeg, fit: BoxFit.cover, gaplessPlayback: true);
+                },
+              ),
+              ValueListenableBuilder<PoseData>(
+                valueListenable: _engine.poseNotifier,
+                builder: (_, data, __) {
+                  return TweenAnimationBuilder<PoseData>(
+                    tween: _PoseTween(end: data),
+                    duration: const Duration(milliseconds: 40),
+                    curve: Curves.easeOutCubic,
+                    builder: (_, lerped, __) => CustomPaint(
+                      painter: _SkeletonPainter(lerped, _scoreThreshold),
+                    ),
+                  );
+                },
+              ),
+              // 🚀 樹莓派手部骨架:座標映射跟身體骨架用同一套(直接乘 size),
+              // 確保跟畫面顯示(BoxFit.cover)、跟身體骨架完全貼合
+              ValueListenableBuilder<DetectionResult>(
+                valueListenable: _piHand!.handResult,
+                builder: (_, hand, __) {
+                  if (!hand.handDetected || hand.landmarks.isEmpty) {
+                    return const SizedBox.shrink();
+                  }
+                  return CustomPaint(
+                    painter: _PiHandSkeletonPainter(hand.landmarks),
+                  );
+                },
+              ),
+              ValueListenableBuilder<bool>(
+                valueListenable: _piCamera!.connected,
+                builder: (_, connected, __) {
+                  if (connected) return const SizedBox.shrink();
+                  return Container(
+                    color: Colors.black.withValues(alpha: 0.5),
+                    child: const Center(
+                      child: Text(
+                        '樹莓派連線中斷,請確認網路',
+                        style: TextStyle(color: Colors.white, fontSize: 16),
+                      ),
+                    ),
+                  );
+                },
+              ),
+              if (!_bodyVisible)
+                Container(
+                  color: Colors.black.withValues(alpha: 0.3),
+                  child: const Center(
+                    child: Text(
+                      '請站入鏡頭範圍內',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 18,
+                        fontWeight: FontWeight.w600,
+                        shadows: [Shadow(blurRadius: 8, color: Colors.black)],
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    // ── 原本手機內建鏡頭邏輯,完全不變 ──────────────────────────
     final cam = _engine.cameraController;
     if (!_engine.cameraReady.value || cam == null) {
       return const Center(
@@ -771,9 +916,6 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
   }
 }
 
-// ── 暫停選單 dialog:只有「繼續」跟「結束」兩個選項 ──────────────
-// 目的是讓「暫停」真正只是暫停(不動任何進度/錄影/紀錄),
-// 只有選「結束」才會進入下一步的完整結束流程。
 class _PauseMenuDialog extends StatelessWidget {
   final VoidCallback onResume;
   final VoidCallback onEnd;
@@ -901,6 +1043,53 @@ class _SkeletonPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(_SkeletonPainter old) => true;
+}
+
+// 🚀 樹莓派手部骨架 painter
+// 座標映射刻意跟 _SkeletonPainter 用同一套(直接乘 size.width/height),
+// 不套用 BoxFit.contain,確保跟身體畫面(BoxFit.cover)、身體骨架三者對齊。
+// 若跑起來發現方向不對(左右相反或上下顛倒),把 map() 裡的
+// lm.x 改成 (1 - lm.x) 或 lm.y 改成 (1 - lm.y) 即可修正。
+class _PiHandSkeletonPainter extends CustomPainter {
+  final List<Landmark> landmarks;
+  _PiHandSkeletonPainter(this.landmarks);
+
+  static const _connections = [
+    [0, 1], [1, 2], [2, 3], [3, 4],
+    [0, 5], [5, 6], [6, 7], [7, 8],
+    [0, 9], [9, 10], [10, 11], [11, 12],
+    [0, 13], [13, 14], [14, 15], [15, 16],
+    [0, 17], [17, 18], [18, 19], [19, 20],
+  ];
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (landmarks.isEmpty) return;
+
+    Offset map(Landmark lm) => Offset(lm.x * size.width, lm.y * size.height);
+
+    final linePaint = Paint()
+      ..color = Colors.amberAccent.withValues(alpha: 0.85)
+      ..strokeWidth = 3
+      ..style = PaintingStyle.stroke
+      ..strokeCap = StrokeCap.round;
+
+    final pointPaint = Paint()
+      ..color = Colors.orangeAccent
+      ..style = PaintingStyle.fill;
+
+    for (final conn in _connections) {
+      if (conn[0] >= landmarks.length || conn[1] >= landmarks.length) continue;
+      canvas.drawLine(map(landmarks[conn[0]]), map(landmarks[conn[1]]), linePaint);
+    }
+
+    for (final lm in landmarks) {
+      canvas.drawCircle(map(lm), 5, pointPaint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(_PiHandSkeletonPainter old) => true;
 }
 
 class _PoseTween extends Tween<PoseData> {

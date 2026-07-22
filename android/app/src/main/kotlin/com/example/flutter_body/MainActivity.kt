@@ -25,6 +25,9 @@ class MainActivity : FlutterActivity() {
     private var pendingPermissionResult: MethodChannel.Result? = null
     private var pendingProjectionIntent: Intent? = null
 
+    // 🚀 樹莓派手部偵測新增:IMAGE 模式偵測器,獨立於 mediaPipeBridge
+    private var piHandImageDetector: PiHandImageDetector? = null
+
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
 
@@ -76,6 +79,25 @@ class MainActivity : FlutterActivity() {
                     "flipCamera" -> {
                         mediaPipeBridge?.flipCamera()
                         result.success(null)
+                    }
+                    // 🚀 樹莓派手部偵測新增:單張 JPEG → 21 個 hand landmark
+                    // 完全獨立於上面三個 case,不影響手機原生即時串流偵測
+                    "detectHandInImage" -> {
+                        val jpegBytes = call.argument<ByteArray>("jpegBytes")
+                        val isMirror = call.argument<Boolean>("isMirror") ?: false
+                        if (jpegBytes == null) {
+                            result.success(null)
+                        } else {
+                            if (piHandImageDetector == null) {
+                                piHandImageDetector = PiHandImageDetector(this)
+                            }
+                            piHandImageDetector?.detect(
+                                jpegBytes,
+                                isMirror,
+                                onResult = { payload -> result.success(payload) },
+                                onError = { _ -> result.success(null) }
+                            )
+                        }
                     }
                     else -> result.notImplemented()
                 }
@@ -133,5 +155,12 @@ class MainActivity : FlutterActivity() {
             }
             pendingPermissionResult = null
         }
+    }
+
+    // 🚀 樹莓派手部偵測新增:App 結束時釋放 IMAGE 模式偵測器資源
+    override fun onDestroy() {
+        piHandImageDetector?.close()
+        piHandImageDetector = null
+        super.onDestroy()
     }
 }

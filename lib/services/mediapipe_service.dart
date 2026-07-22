@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:typed_data';
 import 'package:flutter/foundation.dart'; // 用 kDebugMode
 import 'package:flutter/services.dart';
 
@@ -96,10 +97,43 @@ class MediaPipeService {
     await _channel.invokeMethod('flipCamera');
   }
 
+  /// 🆕 樹莓派用:傳入單張 JPEG bytes,回傳這一幀的手部 landmarks。
+  /// 走 IMAGE 模式,跟即時串流(startDetection)完全獨立,可以同時或分開使用。
+  Future<DetectionResult> detectHandInImage(
+    Uint8List jpegBytes, {
+    bool isMirror = false,
+  }) async {
+    try {
+      final data = await _channel.invokeMethod('detectHandInImage', {
+        'jpegBytes': jpegBytes,
+        'isMirror': isMirror,
+      });
+      if (data == null) {
+        return DetectionResult(landmarks: [], handDetected: false);
+      }
+      final map = data as Map;
+      final rawLandmarks = map['landmarks'] as List? ?? [];
+      final landmarks = rawLandmarks.map((lm) {
+        final m = lm as Map;
+        return Landmark(
+          (m['x'] ?? 0).toDouble(),
+          (m['y'] ?? 0).toDouble(),
+          (m['z'] ?? 0).toDouble(),
+        );
+      }).toList();
+      return DetectionResult(
+        landmarks: landmarks,
+        handDetected: map['handDetected'] ?? false,
+      );
+    } catch (e) {
+      debugPrint('=== detectHandInImage ERROR: $e');
+      return DetectionResult(landmarks: [], handDetected: false);
+    }
+  }
+
   void _subscribeLandmarks() {
     _landmarkSub = _landmarkChannel.receiveBroadcastStream().listen(
       (data) {
-        // ✅ 只在 debug 模式下才 log，且大幅減少輸出
         if (kDebugMode) {
           final map = data as Map?;
           final count = (map?['landmarks'] as List?)?.length ?? 0;
@@ -130,7 +164,6 @@ class MediaPipeService {
     _trainingSub = _trainingChannel.receiveBroadcastStream().listen(
       (data) {
         if (data == null) return;
-        // ✅ 移除每幀 print，只在完成時 log
         final update = TrainingUpdate.fromMap(data as Map);
         if (kDebugMode && update.isComplete) {
           debugPrint('=== Training complete: reps=${update.repCount}');

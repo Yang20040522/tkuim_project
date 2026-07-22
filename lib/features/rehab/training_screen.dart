@@ -9,6 +9,9 @@
 //  ✅ 新增:按下停止鍵先跳「暫停選單」(繼續 / 結束),
 //     選「繼續」時呼叫 controller.resume(),完全接續原本的次數與狀態;
 //     只有選「結束」才會進入原本的完整結束流程(停止錄影、存紀錄、跳完成畫面)。
+//  🚀 樹莓派新增:右上角加攝影機切換鈕,訓練中可切換手機鏡頭 / 樹莓派來源。
+//     切換時整個 RehabSessionController 連同 model 一起換掉重建,
+//     確保狀態機、動作判斷邏輯全部乾淨重來,不會有殘留狀態導致誤判。
 // ══════════════════════════════════════════════════════════════════
 
 import 'dart:io';
@@ -16,6 +19,10 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
+
+import '../../services/pi_hand_source.dart';
+import '../../services/pi_pose_model.dart';
+import '../../widgets/pi_ip_dialog.dart';
 
 import '../../controllers/rehab_session_controller.dart';
 import '../../models/training_action.dart';
@@ -59,7 +66,11 @@ enum _PauseChoice { resume, end }
 class _TrainingScreenState extends State<TrainingScreen>
     with TickerProviderStateMixin {
 
-  late final RehabSessionController _controller;
+  late RehabSessionController _controller;
+
+  // 🚀 樹莓派新增:是否使用外接來源、記住上次輸入的 IP
+  bool _isExternalCamera = false;
+  String? _lastPiIp;
 
   bool _isInitialized = false;
   bool _completionShown = false;
@@ -82,12 +93,7 @@ class _TrainingScreenState extends State<TrainingScreen>
   void initState() {
     super.initState();
 
-    final IPoseModel selectedModel = MediaPipeModel();
-    _controller = RehabSessionController(
-      model: selectedModel,
-      action: widget.action,
-      difficulty: widget.difficulty,
-    );
+    _controller = _buildController(useExternal: false);
 
     _pulseCtrl = AnimationController(
       vsync: this,
@@ -106,6 +112,25 @@ class _TrainingScreenState extends State<TrainingScreen>
       end: Offset.zero,
     ).animate(CurvedAnimation(parent: _slideCtrl, curve: Curves.easeOut));
 
+    _listenController();
+  }
+
+  // 🚀 樹莓派新增:依來源建立對應的 model + controller
+  RehabSessionController _buildController({
+    required bool useExternal,
+    String? ip,
+  }) {
+    final IPoseModel selectedModel =
+        useExternal ? PiPoseModel(ip: ip!) : MediaPipeModel();
+
+    return RehabSessionController(
+      model: selectedModel,
+      action: widget.action,
+      difficulty: widget.difficulty,
+    );
+  }
+
+  void _listenController() {
     _controller.stateStream.listen((state) {
       if (!mounted) return;
       setState(() {});
@@ -114,6 +139,40 @@ class _TrainingScreenState extends State<TrainingScreen>
         _handleCompletion(state);
       }
     });
+  }
+
+  // 🚀 樹莓派新增:開啟外接鏡頭 → 詢問 IP → 換掉整個 controller
+  Future<void> _enableExternalCamera() async {
+    final ip = await showPiIpDialog(context, initialIp: _lastPiIp);
+    if (ip == null || ip.isEmpty) return;
+    _lastPiIp = ip;
+
+    await _controller.disposeAsync();
+    if (!mounted) return;
+
+    setState(() {
+      _isExternalCamera = true;
+      _isInitialized = false;
+      _controller = _buildController(useExternal: true, ip: ip);
+    });
+    _listenController();
+
+    await _onSourceReady();
+  }
+
+  // 🚀 樹莓派新增:切回手機原生鏡頭 → 換掉整個 controller
+  Future<void> _disableExternalCamera() async {
+    await _controller.disposeAsync();
+    if (!mounted) return;
+
+    setState(() {
+      _isExternalCamera = false;
+      _isInitialized = false;
+      _controller = _buildController(useExternal: false);
+    });
+    _listenController();
+
+    await _onSourceReady();
   }
 
   // ── 切換畫面用:不做轉場動畫 ───────────────────────────────────
@@ -126,12 +185,21 @@ class _TrainingScreenState extends State<TrainingScreen>
   }
 
   Future<void> _onPlatformViewCreated() async {
+    await _onSourceReady();
+  }
+
+  // 🚀 樹莓派新增:手機原生走 PlatformView callback 觸發,
+  // 外接來源走 _enableExternalCamera/_disableExternalCamera 直接呼叫,
+  // 統一走這個方法啟動 controller、標記 UI 就緒
+  Future<void> _onSourceReady() async {
     await _controller.start();
     await Future.delayed(const Duration(milliseconds: 400));
     if (mounted) setState(() => _isInitialized = true);
 
-    // 錄影是附加功能,失敗不應影響訓練本身
-    ScreenRecorderService.startRecording();
+    if (!_isExternalCamera) {
+      // 錄影是附加功能,失敗不應影響訓練本身;樹莓派模式暫不錄影
+      ScreenRecorderService.startRecording();
+    }
   }
 
   @override
@@ -152,6 +220,11 @@ class _TrainingScreenState extends State<TrainingScreen>
   }
 
   Future<void> _flipCamera() async {
+    // 🚀 樹莓派新增:外接來源時,這顆按鈕改為切回手機鏡頭
+    if (_isExternalCamera) {
+      await _disableExternalCamera();
+      return;
+    }
     await _controller.flipCamera();
     if (mounted) setState(() {});
   }
@@ -373,14 +446,17 @@ class _TrainingScreenState extends State<TrainingScreen>
       body: SafeArea(
         child: Column(
           children: [
-            TrainingTopBar(
+            _TrainingTopBarWithPi(
               actionName: widget.action.name,
-              //difficultyDesc: widget.difficulty.description,
               difficultyDesc: s.currentLevelLabel.isNotEmpty
-                  ? s.currentLevelLabel              // ✅ 有更新過就用新的
-                  : widget.difficulty.description,   // 保底:剛開始還沒收到更新前,先顯示原本選的
+                  ? s.currentLevelLabel
+                  : widget.difficulty.description,
               onBack: () => Navigator.of(context).pop(),
               onFlipCamera: _flipCamera,
+              isExternalCamera: _isExternalCamera,
+              onTogglePi: _isExternalCamera
+                  ? _disableExternalCamera
+                  : _enableExternalCamera,
             ),
             AspectRatio(
               aspectRatio: 3 / 4,
@@ -391,32 +467,36 @@ class _TrainingScreenState extends State<TrainingScreen>
                   child: Stack(
                     fit: StackFit.expand,
                     children: [
-                      PlatformViewLink(
-                        viewType: 'com.rehabassist/camera_preview',
-                        surfaceFactory: (context, controller) {
-                          return AndroidViewSurface(
-                            controller: controller as AndroidViewController,
-                            gestureRecognizers: const {},
-                            hitTestBehavior:
-                                PlatformViewHitTestBehavior.opaque,
-                          );
-                        },
-                        onCreatePlatformView: (params) {
-                          final ctrl =
-                              PlatformViewsService.initExpensiveAndroidView(
-                            id: params.id,
-                            viewType: 'com.rehabassist/camera_preview',
-                            layoutDirection: TextDirection.ltr,
-                            onFocus: () => params.onFocusChanged(true),
-                          );
-                          ctrl.addOnPlatformViewCreatedListener(
-                              params.onPlatformViewCreated);
-                          ctrl.addOnPlatformViewCreatedListener(
-                              (_) => _onPlatformViewCreated());
-                          ctrl.create();
-                          return ctrl;
-                        },
-                      ),
+                      // 🚀 樹莓派新增:外接來源時顯示 Pi 傳來的 JPEG 畫面
+                      if (_isExternalCamera)
+                        _PiHandVideoView(controller: _controller)
+                      else
+                        PlatformViewLink(
+                          viewType: 'com.rehabassist/camera_preview',
+                          surfaceFactory: (context, controller) {
+                            return AndroidViewSurface(
+                              controller: controller as AndroidViewController,
+                              gestureRecognizers: const {},
+                              hitTestBehavior:
+                                  PlatformViewHitTestBehavior.opaque,
+                            );
+                          },
+                          onCreatePlatformView: (params) {
+                            final ctrl =
+                                PlatformViewsService.initExpensiveAndroidView(
+                              id: params.id,
+                              viewType: 'com.rehabassist/camera_preview',
+                              layoutDirection: TextDirection.ltr,
+                              onFocus: () => params.onFocusChanged(true),
+                            );
+                            ctrl.addOnPlatformViewCreatedListener(
+                                params.onPlatformViewCreated);
+                            ctrl.addOnPlatformViewCreatedListener(
+                                (_) => _onPlatformViewCreated());
+                            ctrl.create();
+                            return ctrl;
+                          },
+                        ),
                       if (s.handLandmarks.isNotEmpty)
                         HandOverlayWidget(
                           landmarks: s.handLandmarks,
@@ -472,6 +552,154 @@ class _TrainingScreenState extends State<TrainingScreen>
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+// 🚀 樹莓派新增:外接來源時顯示的畫面 widget
+// 直接從 controller 目前的 model 拿 PiPoseModel 底層的 latestJpeg,
+// 需要向下轉型,只有在 _isExternalCamera 為 true 時才會被 build,
+// 此時 model 一定是 PiPoseModel,轉型安全
+class _PiHandVideoView extends StatelessWidget {
+  final RehabSessionController controller;
+  const _PiHandVideoView({required this.controller});
+
+  @override
+  Widget build(BuildContext context) {
+    final model = controller.currentModel;
+    if (model is! PiPoseModel) {
+      return const ColoredBox(
+        color: Colors.black,
+        child: Center(
+          child: CircularProgressIndicator(
+              color: Color(0xFF00BCD4), strokeWidth: 3),
+        ),
+      );
+    }
+    final source = model.debugSource;
+    if (source == null) {
+      return const ColoredBox(
+        color: Colors.black,
+        child: Center(
+          child: CircularProgressIndicator(
+              color: Color(0xFF00BCD4), strokeWidth: 3),
+        ),
+      );
+    }
+    return ValueListenableBuilder<Uint8List?>(
+      valueListenable: source.latestJpeg,
+      builder: (_, jpeg, __) {
+        if (jpeg == null) {
+          return const ColoredBox(
+            color: Colors.black,
+            child: Center(
+              child: CircularProgressIndicator(
+                  color: Color(0xFF00BCD4), strokeWidth: 3),
+            ),
+          );
+        }
+        return Image.memory(jpeg, fit: BoxFit.cover, gaplessPlayback: true);
+      },
+    );
+  }
+}
+
+// 🚀 樹莓派新增:包一層 TrainingTopBar,額外加攝影機切換鈕(跟身體畫面一致的位置/樣式)
+class _TrainingTopBarWithPi extends StatelessWidget {
+  final String actionName;
+  final String difficultyDesc;
+  final VoidCallback onBack;
+  final VoidCallback onFlipCamera;
+  final bool isExternalCamera;
+  final VoidCallback onTogglePi;
+
+  const _TrainingTopBarWithPi({
+    required this.actionName,
+    required this.difficultyDesc,
+    required this.onBack,
+    required this.onFlipCamera,
+    required this.isExternalCamera,
+    required this.onTogglePi,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+      child: Row(
+        children: [
+          GestureDetector(
+            onTap: onBack,
+            child: Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                color: const Color(0xFFF5F6FA),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: const Color(0xFFDDE0F0)),
+              ),
+              child: const Icon(Icons.arrow_back_ios_new,
+                  color: Color(0xFF374151), size: 16),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  actionName,
+                  style: const TextStyle(
+                    color: Color(0xFF1A1D2E),
+                    fontSize: 18,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                Text(
+                  difficultyDesc,
+                  style: const TextStyle(
+                      color: Color(0xFF6B7280), fontSize: 12),
+                ),
+              ],
+            ),
+          ),
+          // 🚀 樹莓派新增:外接鏡頭開關按鈕
+          GestureDetector(
+            onTap: onTogglePi,
+            child: Container(
+              width: 40,
+              height: 40,
+              margin: const EdgeInsets.only(right: 8),
+              decoration: BoxDecoration(
+                color: isExternalCamera
+                    ? const Color(0xFF4A65FF)
+                    : const Color(0xFFF5F6FA),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: const Color(0xFFDDE0F0)),
+              ),
+              child: Icon(
+                Icons.videocam,
+                color: isExternalCamera ? Colors.white : const Color(0xFF374151),
+                size: 20,
+              ),
+            ),
+          ),
+          GestureDetector(
+            onTap: onFlipCamera,
+            child: Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                color: const Color(0xFFF5F6FA),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: const Color(0xFFDDE0F0)),
+              ),
+              child: const Icon(Icons.flip_camera_ios,
+                  color: Color(0xFF374151), size: 20),
+            ),
+          ),
+        ],
       ),
     );
   }

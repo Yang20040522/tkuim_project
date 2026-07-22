@@ -3,7 +3,9 @@
 // 動作判斷邏輯已全部移至 Dart（side_pinch_action / turn_palm_action）
 // trainingStream 不再使用，KT 只負責送 landmark
 //
-// ✅ 新增:pause()/resume(),支援「暫停選單」真正的接續(不重建、不歸零)
+// ✅ pause()/resume(),支援「暫停選單」真正的接續(不重建、不歸零)
+// 🚀 樹莓派新增:currentModel getter,讓 training_screen.dart 判斷
+//    目前用的是 MediaPipeModel 還是 PiPoseModel,以顯示對應畫面
 
 import 'dart:async';
 import 'package:flutter/material.dart';
@@ -117,6 +119,10 @@ class RehabSessionController implements RehabActionCallback {
 
   RehabSessionState _state = const RehabSessionState();
   RehabSessionState get currentState => _state;
+
+  // 🚀 樹莓派新增:讓 UI 層(training_screen.dart)拿到目前用的 model,
+  // 用來判斷是不是 PiPoseModel、進而取得底層 PiHandSource 顯示畫面
+  IPoseModel get currentModel => model;
 
   // 暫停中:frame 監聽會直接忽略新的一幀,凍結畫面與計次
   bool _isPaused = false;

@@ -9,6 +9,10 @@
 //  邏輯來源:原封不動搬自 body_test_screen.dart 那套已驗證成功的方案。
 //  (convertYUV / ONNX 推論 / EMA 平滑,參數完全相同)
 //
+//  🚀 修正:樹莓派/外部畫面來源不應套用手機鏡頭的旋轉翻轉公式,
+//     否則骨架會上下顛倒。改用獨立欄位區分「手機相機幀」與
+//     「外部畫面幀(樹莓派/影片分析)」,兩條路徑互不影響。
+//
 //  用法:
 //    final engine = BodyPoseEngine();
 //    await engine.init();
@@ -93,38 +97,72 @@ Float32List convertYUV(InferenceInput input) {
   return _sharedYuvBuffer;
 }
 
-// ── RGB → Float32 轉換(供影片分析用,規格跟 convertYUV 完全相同) ─────
+// ── RGB → Float32 轉換(供影片分析 / 樹莓派畫面用) ─────────────────
+// needsRotation:
+//   true  (預設) → 來源畫面是「橫躺」的原始感光元件資料(手機錄影抽幀用),
+//                  需要跟 convertYUV 一樣做 90 度校正映射
+//   false         → 來源畫面本身已經是正的(樹莓派 JPEG 畫面),
+//                  用一般等比縮放映射即可,不能套用旋轉映射,
+//                  不然骨架點位會整個歪掉(x/y 被錯誤交換)
 Float32List convertRGB(
   Uint8List rgb,
   int srcW,
   int srcH, {
   bool isFrontCamera = false,
+  bool needsRotation = true,
 }) {
   const int inputH = 256;
   const int inputW = 192;
   const int area = inputH * inputW;
 
   final Float32List out = Float32List(3 * area);
-  final double ratioX = srcW / inputH;
-  final double ratioY = srcH / inputW;
 
-  int idx = 0;
-  for (int y = 0; y < inputH; y++) {
-    final int srcX = ((inputH - 1 - y) * ratioX).toInt().clamp(0, srcW - 1);
-    for (int x = 0; x < inputW; x++) {
-      final int srcY = (x * ratioY).toInt().clamp(0, srcH - 1);
-      final int pixelIdx = (srcY * srcW + srcX) * 3;
+  if (needsRotation) {
+    // ── 90 度校正映射(手機感光元件原始畫面 / 手機錄影抽幀用) ──
+    final double ratioX = srcW / inputH;
+    final double ratioY = srcH / inputW;
 
-      final int r = rgb[pixelIdx];
-      final int g = rgb[pixelIdx + 1];
-      final int b = rgb[pixelIdx + 2];
+    int idx = 0;
+    for (int y = 0; y < inputH; y++) {
+      final int srcX = ((inputH - 1 - y) * ratioX).toInt().clamp(0, srcW - 1);
+      for (int x = 0; x < inputW; x++) {
+        final int srcY = (x * ratioY).toInt().clamp(0, srcH - 1);
+        final int pixelIdx = (srcY * srcW + srcX) * 3;
 
-      out[idx] = (r - 123.675) / 58.395;
-      out[area + idx] = (g - 116.28) / 57.12;
-      out[2 * area + idx] = (b - 103.53) / 57.375;
-      idx++;
+        final int r = rgb[pixelIdx];
+        final int g = rgb[pixelIdx + 1];
+        final int b = rgb[pixelIdx + 2];
+
+        out[idx] = (r - 123.675) / 58.395;
+        out[area + idx] = (g - 116.28) / 57.12;
+        out[2 * area + idx] = (b - 103.53) / 57.375;
+        idx++;
+      }
+    }
+  } else {
+    // ── 一般等比縮放,不做旋轉(樹莓派畫面用) ──
+    final double ratioX = srcW / inputW;
+    final double ratioY = srcH / inputH;
+
+    int idx = 0;
+    for (int y = 0; y < inputH; y++) {
+      final int srcY = (y * ratioY).toInt().clamp(0, srcH - 1);
+      for (int x = 0; x < inputW; x++) {
+        final int srcX = (x * ratioX).toInt().clamp(0, srcW - 1);
+        final int pixelIdx = (srcY * srcW + srcX) * 3;
+
+        final int r = rgb[pixelIdx];
+        final int g = rgb[pixelIdx + 1];
+        final int b = rgb[pixelIdx + 2];
+
+        out[idx] = (r - 123.675) / 58.395;
+        out[area + idx] = (g - 116.28) / 57.12;
+        out[2 * area + idx] = (b - 103.53) / 57.375;
+        idx++;
+      }
     }
   }
+
   return out;
 }
 
@@ -140,6 +178,11 @@ class BodyPoseEngine {
   OrtRunOptions? _runOpts;
   bool _processing = false;
   bool _isFrontCamera = true;
+
+  // 🚀 修正新增:區分「手機相機幀」與「外部畫面幀(樹莓派/影片分析)」,
+  // 兩者座標映射公式完全不同,不能共用 _isFrontCamera 這個欄位判斷。
+  bool _isExternalFrame = false;
+  bool _externalMirror = false;
 
   List<Offset> _smoothedKeypoints = [];
   bool _disposed = false;
@@ -245,6 +288,10 @@ class BodyPoseEngine {
     if (_disposed || _processing || _poseSession == null) return;
     _processing = true;
 
+    // 🚀 修正新增:確保從外部畫面(樹莓派)切回手機鏡頭時,
+    // 座標映射邏輯正確切回手機那一套,不會殘留外部畫面的旗標。
+    _isExternalFrame = false;
+
     final input = InferenceInput(
       yPlane: image.planes[0].bytes,
       uPlane: image.planes[1].bytes,
@@ -268,11 +315,18 @@ class BodyPoseEngine {
   //   1. 用 video_thumbnail 抽出一幀 JPEG bytes
   //   2. 用 `image` 套件解碼成 RGB
   //   3. 呼叫這個方法 → poseNotifier 會 emit 該幀的 landmarks
+  //
+  // isMirror:
+  //   影片分析(手機錄影抽幀,needsRotation:true)沿用原本語意,
+  //   代表是否鏡像。
+  //   樹莓派畫面(needsRotation:false)時代表畫面是否需要左右鏡像,
+  //   一般固定架設鏡頭不需要,傳 false 即可。
   Future<void> processExternalFrame(
     Uint8List rgbBytes,
     int width,
     int height, {
     bool isMirror = false,
+    bool needsRotation = true,
   }) async {
     if (_disposed || _poseSession == null) return;
 
@@ -286,9 +340,19 @@ class BodyPoseEngine {
     }
 
     _processing = true;
-    _isFrontCamera = isMirror; // 影響 keypoints 左右翻轉
 
-    final converted = convertRGB(rgbBytes, width, height, isFrontCamera: isMirror);
+    // 🚀 修正:外部畫面(樹莓派/影片分析)走獨立旗標,
+    // 不再覆蓋 _isFrontCamera,避免跟手機鏡頭的座標映射邏輯互相污染。
+    _isExternalFrame = true;
+    _externalMirror = isMirror;
+
+    final converted = convertRGB(
+      rgbBytes,
+      width,
+      height,
+      isFrontCamera: isMirror,
+      needsRotation: needsRotation,
+    );
     _pendingInference = _runInference(converted);
     await _pendingInference;
   }
@@ -338,7 +402,17 @@ class BodyPoseEngine {
         final rawX = xi / xArr.length.toDouble();
         final rawY = yi / yArr.length.toDouble();
 
-        if (_isFrontCamera) {
+        if (_isExternalFrame) {
+          // 🚀 樹莓派/外部畫面專用映射:
+          // 畫面本身已經是正的(needsRotation:false 沒做任何旋轉),
+          // 不套用手機鏡頭那套旋轉校正的翻轉公式,
+          // 否則骨架會上下顛倒。只有需要鏡像時才翻 x 軸。
+          if (_externalMirror) {
+            keypoints.add(Offset(1.0 - rawX, rawY));
+          } else {
+            keypoints.add(Offset(rawX, rawY));
+          }
+        } else if (_isFrontCamera) {
           keypoints.add(Offset(1.0 - rawX, rawY));
         } else {
           keypoints.add(Offset(1.0 - rawX, 1.0 - rawY));
