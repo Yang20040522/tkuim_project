@@ -84,6 +84,16 @@ class _DemoLibraryScreenState extends State<DemoLibraryScreen>
       modelAlts: ['左腳抬腿示範', '右腳抬腿示範'],
       category: DemoCategory.fullBody,
     ),
+    // ← 加在這裡
+    _DemoItem(
+      emoji: '💪',
+      title: '手肘屈伸訓練',
+      subtitle: '拖曳旋轉・雙指縮放',
+      tabLabels: ['示範'],
+      modelSrcs: ['assets/models/elbow_flexion_extension.glb'],
+      modelAlts: ['手肘屈伸示範'],
+      category: DemoCategory.arm,
+    ),
   ];
 
   // ── 每張卡片的展開狀態 & tab index ──────────────────────
