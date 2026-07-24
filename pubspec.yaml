@@ -38,6 +38,7 @@ flutter:
     - assets/icon/
     - assets/audio/
     - assets/splash/
+    - assets/preset_videos/
 
 
 flutter_launcher_icons:

@@ -292,11 +292,14 @@ class _HomeScreenState extends State<HomeScreen>
     return Row(
       children: [
         Expanded(
-          child: _StatCard(
-            title: '今日準確度',
-            value: _accuracyText,
-            footer: _accuracyFooter,
-            isPrimary: true,
+          child: GestureDetector(           // ✅ 新增
+            onTap: _openHistory,            // ✅ 新增:沿用既有的 _openHistory,邏輯完全沒動
+            child: _StatCard(
+              title: '今日準確度',
+              value: _accuracyText,
+              footer: _accuracyFooter,
+              isPrimary: true,
+            ),
           ),
         ),
         const SizedBox(width: 12),
@@ -505,25 +508,51 @@ class _HomeScreenState extends State<HomeScreen>
         top: false,
         child: SizedBox(
           height: 64,
-          child: Row(
+          child: Stack(
+            alignment: Alignment.center,
             children: [
-              _NavItem(label: '首頁', isActive: true, onTap: () {}),
-              _NavItem(
-                  label: '數據',
-                  isActive: false,
-                  onTap: () => _comingSoon('數據')),
-              _NavCenterButton(onTap: _openActionList),
-              _NavItem(
-                  label: '計畫',
-                  isActive: false,
-                  onTap: () => Navigator.of(context).push(
-                    MaterialPageRoute(builder: (_) => const PlanScreen()),
+              // 左右兩組項目,各自平分自己那一半的寬度
+              Row(
+                children: [
+                  Expanded(
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                      children: [
+                        _NavItem(label: '首頁', isActive: true, onTap: () {}),
+                        _NavItem(
+                            label: '數據',
+                            isActive: false,
+                            onTap: () => _comingSoon('數據')),
+                      ],
+                    ),
                   ),
-                ),
-              _NavItem(
-                  label: '個人',
-                  isActive: false,
-                  onTap: () => _comingSoon('個人')),
+                  const SizedBox(width: 64),   // 保留中間按鈕的空間,避免被擋住
+                  Expanded(
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                      children: [
+                        _NavItem(
+                          label: '計畫',
+                          isActive: false,
+                          onTap: () => Navigator.of(context).push(
+                            MaterialPageRoute(builder: (_) => const PlanScreen()),
+                          ),
+                        ),
+                        _NavItem(
+                            label: '聊天',                 // ✅ 新增
+                            isActive: false,
+                            onTap: () => _comingSoon('聊天')), // ✅ 先不接畫面
+                        _NavItem(
+                            label: '個人',
+                            isActive: false,
+                            onTap: () => _comingSoon('個人')),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              // 中間按鈕獨立疊在最上層,永遠釘在 Stack 正中央,不受左右項目數量影響
+              _NavCenterButton(onTap: _openActionList),
             ],
           ),
         ),
