@@ -51,6 +51,9 @@ class _HomeScreenState extends State<HomeScreen>
     super.dispose();
   }
 
+  bool _hasHistory = false;                    // ✅ 新增
+  String _lastTrainingText = '';                // ✅ 新增
+
   // ═══ 載入統計 ═══════════════════════════════════════════════
   // 未來接資料庫時,只動 HistoryService 內部即可,本方法不變
   Future<void> _loadStats() async {
@@ -64,7 +67,29 @@ class _HomeScreenState extends State<HomeScreen>
       _accuracyText = acc.text;
       _accuracyFooter = acc.footer;
       _streakText = '$streak 天';
+
+      // ✅ 新增:算出最近一筆訓練的顯示文字
+      if (records.isNotEmpty) {
+        _hasHistory = true;
+        _lastTrainingText = _formatLastTraining(records.last);
+      } else {
+        _hasHistory = false;
+        _lastTrainingText = '';
+      }
     });
+  }
+
+  // ✅ 新增:組出「動作名稱 · 難度 · 次數」文字
+  String _formatLastTraining(TrainingRecord r) {
+    final action = kTrainingActions.firstWhere(
+      (a) => a.name == r.actionName,
+      orElse: () => kTrainingActions.first,
+    );
+    final idx = r.difficulty - 1;
+    final label = (idx >= 0 && idx < action.difficulties.length)
+        ? action.difficulties[idx].label
+        : 'Lv.${r.difficulty}';
+    return '${r.actionName} · $label · ${r.targetReps}下';
   }
 
   // 今日準確度:取今天所有 record,(10 - 平均 mistake) / 10 * 100
@@ -328,7 +353,7 @@ class _HomeScreenState extends State<HomeScreen>
 
   Widget _buildMainTrainingCard() {
     return GestureDetector(
-      onTap: _openActionList,
+      onTap: _openActionList,   // 互動不變
       child: Container(
         width: double.infinity,
         padding: const EdgeInsets.all(20),
@@ -347,8 +372,7 @@ class _HomeScreenState extends State<HomeScreen>
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Container(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
               decoration: BoxDecoration(
                 color: const Color(0xFFF5F6FA),
                 borderRadius: BorderRadius.circular(20),
@@ -363,18 +387,22 @@ class _HomeScreenState extends State<HomeScreen>
               ),
             ),
             const SizedBox(height: 12),
-            const Text(
-              '自由訓練',
-              style: TextStyle(
+
+            // ✅ 依有沒有歷史紀錄切換標題
+            Text(
+              _hasHistory ? '最近訓練' : '自由訓練',
+              style: const TextStyle(
                 color: Color(0xFF1A1D2E),
                 fontSize: 22,
                 fontWeight: FontWeight.w900,
               ),
             ),
             const SizedBox(height: 4),
-            const Text(
-              '選擇動作 · 多種難度',
-              style: TextStyle(color: Color(0xFF6B7280), fontSize: 12),
+
+            // ✅ 依有沒有歷史紀錄切換副標題
+            Text(
+              _hasHistory ? _lastTrainingText : '選擇動作 · 多種難度',
+              style: const TextStyle(color: Color(0xFF6B7280), fontSize: 12),
             ),
             const SizedBox(height: 18),
             Container(
@@ -508,51 +536,28 @@ class _HomeScreenState extends State<HomeScreen>
         top: false,
         child: SizedBox(
           height: 64,
-          child: Stack(
-            alignment: Alignment.center,
+          child: Row(
             children: [
-              // 左右兩組項目,各自平分自己那一半的寬度
-              Row(
-                children: [
-                  Expanded(
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                      children: [
-                        _NavItem(label: '首頁', isActive: true, onTap: () {}),
-                        _NavItem(
-                            label: '數據',
-                            isActive: false,
-                            onTap: () => _comingSoon('數據')),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(width: 64),   // 保留中間按鈕的空間,避免被擋住
-                  Expanded(
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                      children: [
-                        _NavItem(
-                          label: '計畫',
-                          isActive: false,
-                          onTap: () => Navigator.of(context).push(
-                            MaterialPageRoute(builder: (_) => const PlanScreen()),
-                          ),
-                        ),
-                        _NavItem(
-                            label: '聊天',                 // ✅ 新增
-                            isActive: false,
-                            onTap: () => _comingSoon('聊天')), // ✅ 先不接畫面
-                        _NavItem(
-                            label: '個人',
-                            isActive: false,
-                            onTap: () => _comingSoon('個人')),
-                      ],
-                    ),
-                  ),
-                ],
+              _NavItem(label: '首頁', isActive: true, onTap: () {}),
+              _NavItem(
+                  label: '數據',
+                  isActive: false,
+                  onTap: () => _comingSoon('數據')),
+              _NavItem(
+                label: '計畫',
+                isActive: false,
+                onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => const PlanScreen()),
+                ),
               ),
-              // 中間按鈕獨立疊在最上層,永遠釘在 Stack 正中央,不受左右項目數量影響
-              _NavCenterButton(onTap: _openActionList),
+              _NavItem(
+                  label: '聊天',                     // ✅ 新增
+                  isActive: false,
+                  onTap: () => _comingSoon('聊天')),  // 先不接畫面
+              _NavItem(
+                  label: '個人',
+                  isActive: false,
+                  onTap: () => _comingSoon('個人')),
             ],
           ),
         ),
@@ -732,57 +737,6 @@ class _NavItem extends StatelessWidget {
                 fontSize: 11,
                 fontWeight:
                     isActive ? FontWeight.w800 : FontWeight.w500,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _NavCenterButton extends StatelessWidget {
-  final VoidCallback onTap;
-
-  const _NavCenterButton({required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    return Expanded(
-      child: GestureDetector(
-        onTap: onTap,
-        behavior: HitTestBehavior.opaque,
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Container(
-              width: 44,
-              height: 44,
-              decoration: BoxDecoration(
-                gradient: const LinearGradient(
-                  colors: [Color(0xFF4A65FF), Color(0xFF6B82FF)],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                ),
-                shape: BoxShape.circle,
-                boxShadow: [
-                  BoxShadow(
-                    color: const Color(0xFF4A65FF).withValues(alpha: 0.4),
-                    blurRadius: 12,
-                    offset: const Offset(0, 4),
-                  ),
-                ],
-              ),
-              child: const Icon(Icons.play_arrow_rounded,
-                  color: Colors.white, size: 24),
-            ),
-            const SizedBox(height: 2),
-            const Text(
-              '訓練',
-              style: TextStyle(
-                color: Color(0xFF6B7280),
-                fontSize: 10,
-                fontWeight: FontWeight.w600,
               ),
             ),
           ],

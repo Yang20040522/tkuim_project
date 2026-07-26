@@ -94,6 +94,15 @@ class _DemoLibraryScreenState extends State<DemoLibraryScreen>
       modelAlts: ['手肘屈伸示範'],
       category: DemoCategory.arm,
     ),
+    _DemoItem(
+      emoji: '🚶',
+      title: '側跨步訓練',
+      subtitle: '拖曳旋轉・雙指縮放',
+      tabLabels: ['示範'],
+      modelSrcs: ['assets/models/side_step.glb'],
+      modelAlts: ['側跨步示範'],
+      category: DemoCategory.fullBody,
+    ),
   ];
 
   // ── 每張卡片的展開狀態 & tab index ──────────────────────
