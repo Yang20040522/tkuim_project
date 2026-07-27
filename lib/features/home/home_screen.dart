@@ -12,6 +12,7 @@ import '../training/action_list_screen.dart';
 import '../demo/demo_library_screen.dart';   // ← 新增
 import '../plan/plan_screen.dart';
 import '../demo/standard_analysis_screen.dart';
+import '../chat/chat_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -551,9 +552,11 @@ class _HomeScreenState extends State<HomeScreen>
                 ),
               ),
               _NavItem(
-                  label: '聊天',                     // ✅ 新增
-                  isActive: false,
-                  onTap: () => _comingSoon('聊天')),  // 先不接畫面
+                label: '聊天',
+                isActive: false,
+                onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => const ChatScreen()),
+                )),
               _NavItem(
                   label: '個人',
                   isActive: false,

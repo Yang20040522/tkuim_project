@@ -89,3 +89,37 @@ class InMemoryPlanRepository implements PlanRepository {
 /// class SqlitePlanRepository implements PlanRepository { ... }
 
 final PlanRepository planRepository = InMemoryPlanRepository();
+
+/// 訓練完成後呼叫:如果「今天的計畫」裡剛好有這個動作,標記為完成
+/// 找不到今天的計畫、或計畫裡沒有這個動作、或已經是完成狀態,就什麼都不做
+Future<void> markPlanItemDoneByActionName(String actionName) async {
+  final plan = await planRepository.getPlanByDate(DateTime.now());
+  if (plan == null) return;
+
+  Exercise? exercise;
+  for (final e in exerciseLibrary) {
+    if (e.name == actionName) {
+      exercise = e;
+      break;
+    }
+  }
+  if (exercise == null) return;
+
+  PlanItem? item;
+  for (final i in plan.items) {
+    if (i.exerciseId == exercise.id) {
+      item = i;
+      break;
+    }
+  }
+  if (item == null || item.done) return;
+
+  final updated = PlanItem(
+    exerciseId: item.exerciseId,
+    order: item.order,
+    sets: item.sets,
+    repsPerSet: item.repsPerSet,
+    done: true,   // ✅ 標記完成
+  );
+  await planRepository.updatePlanItem(plan.planId, updated);
+}

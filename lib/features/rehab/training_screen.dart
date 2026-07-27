@@ -44,6 +44,7 @@ import '../../actions/raise_both_arms_action.dart';
 import '../../actions/elbow_forward_action.dart';
 
 import '../../actions/body_rehab_action.dart';
+import '../../features/plan/plan_repository.dart';
 
 
 
@@ -264,6 +265,9 @@ class _TrainingScreenState extends State<TrainingScreen>
       targetReps: widget.difficulty.targetReps, // ✅ 新增這行，兩處都加
     ));
 
+    // ✅ 新增:順便檢查今天計畫裡有沒有這個動作,有就標記完成
+    await markPlanItemDoneByActionName(widget.action.name);
+
     if (!mounted || result == null) return;
 
     switch (result.kind) {
@@ -349,6 +353,9 @@ class _TrainingScreenState extends State<TrainingScreen>
       videoPath: _pendingVideoPath,
       targetReps: widget.difficulty.targetReps, // ✅ 新增這行，兩處都加
     ));
+
+    // ✅ 新增:順便檢查今天計畫裡有沒有這個動作,有就標記完成
+    await markPlanItemDoneByActionName(widget.action.name);
 
     if (!mounted || result == null) return;
 

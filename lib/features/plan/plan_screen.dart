@@ -3,8 +3,19 @@ import 'exercise.dart';
 import 'rehab_plan.dart';
 import 'plan_repository.dart';
 import 'plan_builder_screen.dart';
-// import 'package:your_app/features/bone_viewer/bone_viewer_screen.dart';
-// ↑ 換成你們實際的 bone_viewer_screen.dart 路徑
+
+// ✅ 新增這幾行
+import '../../models/training_action.dart';
+import '../rehab/training_screen.dart';
+import '../rehab/body_training_screen.dart';
+import '../../actions/standing_knee_raise_action.dart';
+import '../../actions/draw_circle_action.dart';
+import '../../actions/reach_action.dart';
+import '../../actions/raise_both_arms_action.dart';
+import '../../actions/elbow_forward_action.dart';
+import '../../actions/sit_to_stand_action.dart';
+import '../../actions/lateral_step_action.dart';
+import '../../actions/body_rehab_action.dart';
 
 class PlanScreen extends StatefulWidget {
   const PlanScreen({super.key});
@@ -40,29 +51,79 @@ class _PlanScreenState extends State<PlanScreen> {
 
   // 點今日計畫項目 → 導去實際辨識頁面，做完才算完成
   Future<void> _startExercise(Exercise exercise, PlanItem item, int realIndex) async {
-    // final result = await Navigator.push<bool>(
-    //   context,
-    //   MaterialPageRoute(
-    //     builder: (_) => BoneViewerScreen(exercise: exercise),
-    //   ),
-    // );
-
-    final bool? result = await showDialog<bool>(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: Text('執行「${exercise.name}」'),
-        content: const Text('（此處之後串接 bone_viewer_screen.dart，實際做動作偵測）'),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('取消')),
-          TextButton(onPressed: () => Navigator.pop(context, true), child: const Text('模擬完成')),
-        ],
-      ),
+    final action = kTrainingActions.firstWhere(
+      (a) => a.name == exercise.name,
+      orElse: () => kTrainingActions.first,
     );
+    final difficulty = action.difficulties.first;
 
-    if (result == true && currentPlan != null) {
-      currentPlan!.items[realIndex].done = true;
-      await planRepository.updatePlanItem(currentPlan!.planId, currentPlan!.items[realIndex]);
-      setState(() {});
+    Widget screen;
+    if (exercise.category == ExerciseCategory.hand) {
+      screen = TrainingScreen(action: action, difficulty: difficulty);
+    } else {
+      final diff = _mapDifficulty(difficulty.level);
+      switch (action.type) {
+        case ActionType.wipeBody:
+          screen = BodyTrainingScreen(
+            action: StandingKneeRaiseAction(difficulty: diff, targetCount: difficulty.targetReps),
+            trainingActionMeta: action,
+            difficultyMeta: difficulty,
+          );
+        case ActionType.drawCircle:
+          screen = BodyTrainingScreen(
+            action: DrawCircleAction(difficulty: diff, targetCount: difficulty.targetReps),
+            trainingActionMeta: action,
+            difficultyMeta: difficulty,
+          );
+        case ActionType.reach:
+          screen = BodyTrainingScreen(
+            action: ReachAction(difficulty: diff, targetCount: difficulty.targetReps),
+            trainingActionMeta: action,
+            difficultyMeta: difficulty,
+          );
+        case ActionType.raiseBothArms:
+          screen = BodyTrainingScreen(
+            action: RaiseBothArmsAction(difficulty: diff, targetCount: difficulty.targetReps),
+            trainingActionMeta: action,
+            difficultyMeta: difficulty,
+          );
+        case ActionType.elbowForward:
+          screen = BodyTrainingScreen(
+            action: ElbowForwardAction(difficulty: diff, targetCount: difficulty.targetReps),
+            trainingActionMeta: action,
+            difficultyMeta: difficulty,
+          );
+        case ActionType.sitToStand:
+          screen = BodyTrainingScreen(
+            action: SitToStandAction(difficulty: diff, targetCount: difficulty.targetReps),
+            trainingActionMeta: action,
+            difficultyMeta: difficulty,
+          );
+        case ActionType.lateralStep:
+          screen = BodyTrainingScreen(
+            action: LateralStepAction(difficulty: diff, targetCount: difficulty.targetReps),
+            trainingActionMeta: action,
+            difficultyMeta: difficulty,
+          );
+        default:
+          screen = TrainingScreen(action: action, difficulty: difficulty);
+      }
+    }
+
+    await Navigator.push(context, MaterialPageRoute(builder: (_) => screen));
+
+    // 回來後重新讀取計畫 —— done 狀態已經在訓練完成時被自動標記過了
+    await _loadPlan(selectedDate);
+  }
+
+  RehabDifficulty _mapDifficulty(DifficultyLevel level) {
+    switch (level) {
+      case DifficultyLevel.level1:
+        return RehabDifficulty.easy;
+      case DifficultyLevel.level2:
+        return RehabDifficulty.medium;
+      case DifficultyLevel.level3:
+        return RehabDifficulty.hard;
     }
   }
 

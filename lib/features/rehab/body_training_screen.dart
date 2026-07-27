@@ -33,6 +33,7 @@ import '../../actions/raise_both_arms_action.dart';
 import '../../actions/elbow_forward_action.dart';
 import '../../actions/sit_to_stand_action.dart';
 import '../../actions/lateral_step_action.dart';
+import '../../features/plan/plan_repository.dart';
 
 // 達標下限:當前難度做 ≥ 3 下,按結束才會存紀錄
 const int _kMinRepsToSave = 3;
@@ -314,6 +315,9 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
     if (_currentLevelReps >= _kMinRepsToSave) {
       _saveCurrentLevelRecord();
     }
+
+    // ✅ 新增
+    await markPlanItemDoneByActionName(widget.trainingActionMeta?.name ?? widget.action.title);
 
     final durationSeconds =
         DateTime.now().difference(_sessionStart).inSeconds;
