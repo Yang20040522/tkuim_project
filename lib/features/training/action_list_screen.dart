@@ -4,6 +4,7 @@
 // 從新首頁的「開始訓練」大卡片點下去進來
 //
 // ✅ 新增:目標次數輸入框,使用者可自訂訓練次數
+// ✅ 修改:選擇難度等級 / 目標次數 / 開始訓練 / 查看訓練紀錄 改為固定在畫面底部(已縮小留白)
 
 import 'package:flutter/material.dart';
 
@@ -198,6 +199,8 @@ class _ActionListScreenState extends State<ActionListScreen> with TickerProvider
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               _buildHeader(),
+
+              // ── 可捲動區:動作選單 ─────────────────────────
               Expanded(
                 child: SingleChildScrollView(
                   padding: const EdgeInsets.symmetric(horizontal: 20),
@@ -255,30 +258,56 @@ class _ActionListScreenState extends State<ActionListScreen> with TickerProvider
                         ),
                       ),
                       const SizedBox(height: 20),
-
-                      // ── 難度選擇 + 開始按鈕 ─────────────────────────
-                      if (_selectedAction != null &&
-                          _selectedAction!.type != ActionType.bodyTest) ...[
-                        _buildSectionLabel('選擇難度等級'),
-                        const SizedBox(height: 10),
-                        _buildDifficultySelector(),
-                        const SizedBox(height: 12),
-                        _buildRepsInput(),          // ← 新增
-                        const SizedBox(height: 20),
-                        _buildStartButton(),
-                        const SizedBox(height: 12),
-                      ],
-
-                      // ── 歷史紀錄按鈕 ────────────────────────────────
-                      _buildHistoryButton(),
-                      const SizedBox(height: 32),
                     ],
                   ),
                 ),
               ),
+
+              // ── 固定在底部的操作區 ─────────────────────────
+              _buildBottomBar(),
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  // ── 固定底部操作區(難度 / 次數 / 開始訓練 / 查看紀錄) ──
+  Widget _buildBottomBar() {
+    return Container(
+      padding: EdgeInsets.fromLTRB(
+        20,
+        12,
+        20,
+        MediaQuery.of(context).padding.bottom + 8,
+      ),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.06),
+            blurRadius: 12,
+            offset: const Offset(0, -4),
+          ),
+        ],
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (_selectedAction != null &&
+              _selectedAction!.type != ActionType.bodyTest) ...[
+            _buildSectionLabel('選擇難度等級'),
+            const SizedBox(height: 8),
+            _buildDifficultySelector(),
+            const SizedBox(height: 10),
+            _buildRepsInput(),
+            const SizedBox(height: 12),
+            _buildStartButton(),
+            const SizedBox(height: 8),
+          ],
+          _buildHistoryButton(),
+        ],
       ),
     );
   }
@@ -647,7 +676,7 @@ class _ActionListScreenState extends State<ActionListScreen> with TickerProvider
     );
   }
 
-  // ── 新增:目標次數輸入框 ─────────────────────────────
+  // ── 目標次數輸入框 ─────────────────────────────
   Widget _buildRepsInput() {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),

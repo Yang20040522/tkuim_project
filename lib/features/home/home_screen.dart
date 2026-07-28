@@ -13,6 +13,7 @@ import '../demo/demo_library_screen.dart';   // ← 新增
 import '../plan/plan_screen.dart';
 import '../demo/standard_analysis_screen.dart';
 import '../chat/chat_screen.dart';
+import '../account/profile_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -558,9 +559,12 @@ class _HomeScreenState extends State<HomeScreen>
                   MaterialPageRoute(builder: (_) => const ChatScreen()),
                 )),
               _NavItem(
-                  label: '個人',
-                  isActive: false,
-                  onTap: () => _comingSoon('個人')),
+                label: '個人',
+                isActive: false,
+                onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => const ProfileScreen()),
+                ),
+              ),
             ],
           ),
         ),
