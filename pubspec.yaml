@@ -20,6 +20,8 @@ dependencies:
   video_player: ^2.9.2
   file_picker: ^8.0.0
   video_thumbnail: ^0.5.3
+  flutter_local_notifications: ^18.0.1
+  timezone: ^0.9.4
 
 dev_dependencies:
   flutter_test:

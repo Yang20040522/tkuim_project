@@ -16,6 +16,9 @@ import '../chat/chat_screen.dart';
 import '../account/profile_screen.dart';
 import '../stats/stats_screen.dart';
 
+import '../notification/notification_screen.dart';
+import '../notification/notification_service.dart';
+
 // ═══════════════════════════════════════════════════════════
 //  外殼:管理底部 tab 切換,IndexedStack 讓導航列常駐不消失
 // ═══════════════════════════════════════════════════════════
@@ -154,11 +157,13 @@ class _HomeContentState extends State<_HomeContent>
 
   bool _hasHistory = false;                    // ✅ 新增
   String _lastTrainingText = '';                // ✅ 新增
+  int _unreadCount = 0;                         // ✅ 新增(未讀通知數)
 
   // ═══ 載入統計 ═══════════════════════════════════════════════
   // 未來接資料庫時,只動 HistoryService 內部即可,本方法不變
   Future<void> _loadStats() async {
     final records = await _historyService.getHistory();
+    final unread = await NotificationService().getUnreadCount();  // ✅ 新增
     if (!mounted) return;
 
     final acc = _calcTodayAccuracy(records);
@@ -168,8 +173,8 @@ class _HomeContentState extends State<_HomeContent>
       _accuracyText = acc.text;
       _accuracyFooter = acc.footer;
       _streakText = '$streak 天';
+      _unreadCount = unread;   // ✅ 新增
 
-      // ✅ 新增:算出最近一筆訓練的顯示文字
       if (records.isNotEmpty) {
         _hasHistory = true;
         _lastTrainingText = _formatLastTraining(records.last);
@@ -283,7 +288,7 @@ class _HomeContentState extends State<_HomeContent>
   }
 
   // ─── 操作:即將開放(鈴鐺、底部 4 tab 共用)
-  void _comingSoon(String label) {
+  /*void _comingSoon(String label) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text('$label 即將開放'),
@@ -292,7 +297,7 @@ class _HomeContentState extends State<_HomeContent>
         backgroundColor: const Color(0xFF1A1D2E),
       ),
     );
-  }
+  }*/
 
   @override
   Widget build(BuildContext context) {
@@ -372,7 +377,14 @@ class _HomeContentState extends State<_HomeContent>
           ),
         ),
         GestureDetector(
-          onTap: () => _comingSoon('通知中心'),
+          onTap: () async {                               // ✅ 改
+            await Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => const NotificationScreen(),
+              ),
+            );
+            if (mounted) _loadStats();                    // 回來後重算未讀數
+          },
           child: Container(
             width: 44,
             height: 44,
@@ -392,18 +404,19 @@ class _HomeContentState extends State<_HomeContent>
               children: [
                 const Icon(Icons.notifications_outlined,
                     color: Color(0xFF374151), size: 22),
-                Positioned(
-                  top: 10,
-                  right: 12,
-                  child: Container(
-                    width: 8,
-                    height: 8,
-                    decoration: const BoxDecoration(
-                      color: Color(0xFFEF4444),
-                      shape: BoxShape.circle,
+                if (_unreadCount > 0)                     // ✅ 改:加條件
+                  Positioned(
+                    top: 10,
+                    right: 12,
+                    child: Container(
+                      width: 8,
+                      height: 8,
+                      decoration: const BoxDecoration(
+                        color: Color(0xFFEF4444),
+                        shape: BoxShape.circle,
+                      ),
                     ),
                   ),
-                ),
               ],
             ),
           ),
@@ -478,7 +491,7 @@ class _HomeContentState extends State<_HomeContent>
                 borderRadius: BorderRadius.circular(20),
               ),
               child: const Text(
-                'MediaPipe 核心運算',
+                '核心運算',
                 style: TextStyle(
                   color: Color(0xFF6B7280),
                   fontSize: 11,

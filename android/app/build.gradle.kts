@@ -6,15 +6,16 @@ plugins {
 
 android {
     namespace = "com.example.flutter_body"
-    compileSdk = 36  // ← 改這裡
+    compileSdk = 36
     ndkVersion = "28.2.13676358"
 
     defaultConfig {
         applicationId = "com.example.flutter_body"
         minSdk = 24
-        targetSdk = 36  // ← 改這裡
+        targetSdk = 36
         versionCode = 1
         versionName = "1.0"
+        multiDexEnabled = true                          // ← 新增
     }
 
     buildTypes {
@@ -24,6 +25,7 @@ android {
     }
 
     compileOptions {
+        isCoreLibraryDesugaringEnabled = true           // ← 新增
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
@@ -38,6 +40,7 @@ flutter {
 }
 
 dependencies {
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")  // ← 新增
     implementation("androidx.camera:camera-core:1.3.1")
     implementation("androidx.camera:camera-camera2:1.3.1")
     implementation("androidx.camera:camera-lifecycle:1.3.1")
