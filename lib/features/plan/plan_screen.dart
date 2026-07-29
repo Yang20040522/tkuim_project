@@ -193,20 +193,6 @@ class _PlanScreenState extends State<PlanScreen> {
       padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
       child: Row(
         children: [
-          GestureDetector(
-            onTap: () => Navigator.of(context).pop(),
-            child: Container(
-              width: 40, height: 40,
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: const Color(0xFFDDE0F0)),
-              ),
-              child: const Icon(Icons.arrow_back_ios_new,
-                  color: Color(0xFF374151), size: 16),
-            ),
-          ),
-          const SizedBox(width: 12),
           const Expanded(
             child: Text(
               '復健計畫',

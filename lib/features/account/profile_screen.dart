@@ -94,21 +94,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Widget _buildTopBar() {
     return Row(
       children: [
-        GestureDetector(
-          onTap: () => Navigator.of(context).pop(),
-          child: Container(
-            width: 40,
-            height: 40,
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: const Color(0xFFDDE0F0)),
-            ),
-            child: const Icon(Icons.arrow_back_ios_new,
-                color: Color(0xFF374151), size: 16),
-          ),
-        ),
-        const SizedBox(width: 12),
         const Text(
           '個人',
           style: TextStyle(
