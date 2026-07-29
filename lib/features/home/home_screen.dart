@@ -14,7 +14,11 @@ import '../plan/plan_screen.dart';
 import '../demo/standard_analysis_screen.dart';
 import '../chat/chat_screen.dart';
 import '../account/profile_screen.dart';
+import '../stats/stats_screen.dart';
 
+// ═══════════════════════════════════════════════════════════
+//  外殼:管理底部 tab 切換,IndexedStack 讓導航列常駐不消失
+// ═══════════════════════════════════════════════════════════
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
 
@@ -22,7 +26,102 @@ class HomeScreen extends StatefulWidget {
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen>
+class _HomeScreenState extends State<HomeScreen> {
+  int _currentIndex = 0;
+
+  late final List<Widget> _pages = [
+    const _HomeContent(),
+    const PlanScreen(),
+    const ChatScreen(),
+    const StatsScreen(),
+    const ProfileScreen(),
+  ];
+
+  // ─── 操作:即將開放(數據 tab 用)
+  /*void _comingSoon(String label) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('$label 即將開放'),
+        duration: const Duration(seconds: 2),
+        behavior: SnackBarBehavior.floating,
+        backgroundColor: const Color(0xFF1A1D2E),
+      ),
+    );
+  } */
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: IndexedStack(
+        index: _currentIndex,
+        children: _pages,
+      ),
+      bottomNavigationBar: _buildBottomNavBar(),
+    );
+  }
+
+  Widget _buildBottomNavBar() {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.05),
+            blurRadius: 12,
+            offset: const Offset(0, -2),
+          ),
+        ],
+      ),
+      child: SafeArea(
+        top: false,
+        child: SizedBox(
+          height: 64,
+          child: Row(
+            children: [
+              _NavItem(
+                label: '首頁',
+                isActive: _currentIndex == 0,
+                onTap: () => setState(() => _currentIndex = 0),
+              ),
+              _NavItem(
+                label: '數據',
+                isActive: _currentIndex == 3,
+                onTap: () => setState(() => _currentIndex = 3),
+              ),
+              _NavItem(
+                label: '計畫',
+                isActive: _currentIndex == 1,
+                onTap: () => setState(() => _currentIndex = 1),
+              ),
+              _NavItem(
+                label: '聊天',
+                isActive: _currentIndex == 2,
+                onTap: () => setState(() => _currentIndex = 2),
+              ),
+              _NavItem(
+                label: '個人',
+                isActive: _currentIndex == 4,
+                onTap: () => setState(() => _currentIndex = 4),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ═══════════════════════════════════════════════════════════
+//  首頁內容:原本 HomeScreen 的內容,搬進這個獨立 widget
+// ═══════════════════════════════════════════════════════════
+class _HomeContent extends StatefulWidget {
+  const _HomeContent();
+
+  @override
+  State<_HomeContent> createState() => _HomeContentState();
+}
+
+class _HomeContentState extends State<_HomeContent>
     with SingleTickerProviderStateMixin {
   late AnimationController _fadeCtrl;
   late Animation<double> _fadeAnim;
@@ -227,7 +326,6 @@ class _HomeScreenState extends State<HomeScreen>
           ),
         ),
       ),
-      bottomNavigationBar: _buildBottomNavBar(),
     );
   }
 
@@ -517,56 +615,6 @@ class _HomeScreenState extends State<HomeScreen>
             const Icon(Icons.arrow_forward_ios,
                 color: Color(0xFF9CA3AF), size: 14),
           ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildBottomNavBar() {
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.white,
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.05),
-            blurRadius: 12,
-            offset: const Offset(0, -2),
-          ),
-        ],
-      ),
-      child: SafeArea(
-        top: false,
-        child: SizedBox(
-          height: 64,
-          child: Row(
-            children: [
-              _NavItem(label: '首頁', isActive: true, onTap: () {}),
-              _NavItem(
-                  label: '數據',
-                  isActive: false,
-                  onTap: () => _comingSoon('數據')),
-              _NavItem(
-                label: '計畫',
-                isActive: false,
-                onTap: () => Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => const PlanScreen()),
-                ),
-              ),
-              _NavItem(
-                label: '聊天',
-                isActive: false,
-                onTap: () => Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => const ChatScreen()),
-                )),
-              _NavItem(
-                label: '個人',
-                isActive: false,
-                onTap: () => Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => const ProfileScreen()),
-                ),
-              ),
-            ],
-          ),
         ),
       ),
     );
