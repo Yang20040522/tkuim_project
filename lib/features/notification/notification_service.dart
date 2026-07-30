@@ -6,9 +6,9 @@ import 'dart:convert';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:timezone/data/latest_all.dart' as tz;
-import 'package:timezone/timezone.dart' as tz;
 
 import 'app_notification.dart';
+import 'native_notification_service.dart';
 
 class NotificationService {
   // Singleton
@@ -50,14 +50,14 @@ class NotificationService {
     await prefs.setBool(_enabledKey, value);
 
     if (value) {
-      // 開啟時要跟系統要權限,然後排提醒
       await _requestPermission();
       final h = await getReminderHour();
       final m = await getReminderMinute();
       await _scheduleDailyReminder(hour: h, minute: m);
     } else {
-      // 關閉時取消所有排程推播(app 內通知列表保留不動)
+      // 關閉時取消 Flutter 舊排程 + 原生排程
       await _plugin.cancelAll();
+      await NativeNotificationService.cancelNotification(1001);
     }
   }
 
@@ -87,6 +87,15 @@ class NotificationService {
     if (await isEnabled()) {
       await _scheduleDailyReminder(hour: hour, minute: minute);
     }
+  }
+
+  // 給首頁用:如果通知開著,重新排一次下一天的提醒
+  // 目的:繞過 MIUI 有時會清掉舊 alarm 的行為
+  Future<void> refreshDailyReminderIfEnabled() async {
+    if (!await isEnabled()) return;
+    final h = await getReminderHour();
+    final m = await getReminderMinute();
+    await _scheduleDailyReminder(hour: h, minute: m);
   }
 
   // ═══ App 內通知列表 ═════════════════════════════════════
@@ -134,6 +143,7 @@ class NotificationService {
     required String title,
     required String body,
   }) async {
+    // 1. 塞進 app 內通知中心(鈴鐺點進去看得到)
     await add(AppNotification(
       id: DateTime.now().microsecondsSinceEpoch.toString(),
       type: NotificationType.achievement,
@@ -141,42 +151,42 @@ class NotificationService {
       body: body,
       timestamp: DateTime.now().toIso8601String(),
     ));
+
+    // 2. 通知關閉時不彈系統橫幅
+    if (!await isEnabled()) return;
+
+    // 3. 用原生 AlarmManager 立刻彈系統橫幅(1 秒後觸發)
+    // id 用 timestamp 後 6 位,避免跟每日提醒 (1001) 或別的成就撞
+    final id = (DateTime.now().millisecondsSinceEpoch % 900000) + 100000;
+    await NativeNotificationService.scheduleNotification(
+      id: id,
+      title: title,
+      body: body,
+      triggerAt: DateTime.now().add(const Duration(seconds: 1)),
+    );
   }
 
   // ═══ 本地排程推播(內部方法) ═══════════════════════════
+  // ═══ 本地排程推播(內部方法)——改用原生 AlarmManager 繞過 MIUI ══
   Future<void> _scheduleDailyReminder({
     required int hour,
     required int minute,
   }) async {
-    if (!_inited) await init();
-    await _plugin.cancel(1001);
+    // 先取消舊的
+    await NativeNotificationService.cancelNotification(1001);
 
-    final now = tz.TZDateTime.now(tz.local);
-    var scheduled = tz.TZDateTime(
-      tz.local, now.year, now.month, now.day, hour, minute,
-    );
-    if (scheduled.isBefore(now)) {
-      scheduled = scheduled.add(const Duration(days: 1));
+    // 算下一次觸發時間
+    final now = DateTime.now();
+    var next = DateTime(now.year, now.month, now.day, hour, minute);
+    if (next.isBefore(now)) {
+      next = next.add(const Duration(days: 1));
     }
 
-    await _plugin.zonedSchedule(
-      1001,
-      '該做復健啦 💪',
-      '別讓連續達成中斷,今天還有時間',
-      scheduled,
-      const NotificationDetails(
-        android: AndroidNotificationDetails(
-          'rehab_reminder',
-          '訓練提醒',
-          channelDescription: '每日提醒你完成復健訓練',
-          importance: Importance.high,
-          priority: Priority.high,
-        ),
-      ),
-      androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
-      uiLocalNotificationDateInterpretation:
-          UILocalNotificationDateInterpretation.absoluteTime,
-      matchDateTimeComponents: DateTimeComponents.time,
+    await NativeNotificationService.scheduleNotification(
+      id: 1001,
+      title: '該做復健啦 💪',
+      body: '別讓連續達成中斷,今天還有時間',
+      triggerAt: next,
     );
   }
 }

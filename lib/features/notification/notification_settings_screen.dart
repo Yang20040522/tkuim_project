@@ -2,6 +2,7 @@
 
 import 'package:flutter/material.dart';
 import 'notification_service.dart';
+import 'native_notification_service.dart';
 
 class NotificationSettingsScreen extends StatefulWidget {
   const NotificationSettingsScreen({super.key});
@@ -114,6 +115,36 @@ class _NotificationSettingsScreenState
                     ],
                   ),
                 ),
+                if (_enabled) ...[
+                  const SizedBox(height: 12),
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton.icon(
+                      onPressed: () async {
+                        await NativeNotificationService.scheduleNotification(
+                          id: 9999,
+                          title: '測試通知 🔔(原生)',
+                          body: '如果你看到這個 = MIUI 沒殺我 🎉',
+                          triggerAt: DateTime.now().add(const Duration(seconds: 5)),
+                        );
+                        if (!mounted) return;
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('5 秒後跳原生通知,可以直接把 app 關掉試看看'),
+                            duration: Duration(seconds: 3),
+                          ),
+                        );
+                      },
+                      icon: const Icon(Icons.notifications_active_outlined),
+                      label: const Text('立刻測試通知(5 秒後)'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF4A65FF),
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                      ),
+                    ),
+                  ),
+                ],
                 const SizedBox(height: 12),
                 const Padding(
                   padding: EdgeInsets.symmetric(horizontal: 4),

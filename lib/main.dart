@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'features/home/home_screen.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';   // ← 新增
+//import 'features/home/home_screen.dart';
 import 'features/splash/splash_screen.dart';
 import 'features/notification/notification_service.dart';
 
@@ -23,6 +24,18 @@ class RehabAssistApp extends StatelessWidget {
     return MaterialApp(
       title: 'RehabAssist',
       debugShowCheckedModeBanner: false,
+      // ↓ 新增這三塊
+      localizationsDelegates: const [
+        GlobalMaterialLocalizations.delegate,
+        GlobalWidgetsLocalizations.delegate,
+        GlobalCupertinoLocalizations.delegate,
+      ],
+      supportedLocales: const [
+        Locale('zh', 'TW'),
+        Locale('en', 'US'),
+      ],
+      locale: const Locale('zh', 'TW'),
+      // ↑ 新增結束
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(
           seedColor: const Color(0xFF4A65FF),

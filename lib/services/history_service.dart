@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/training_action.dart';
+import '../features/notification/notification_service.dart';
 
 class HistoryService {
   static const String _key = 'rehab_history';
@@ -17,6 +18,13 @@ class HistoryService {
     final history = await getHistory();
     history.add(record);
     await prefs.setString(_key, jsonEncode(history.map((e) => e.toJson()).toList()));
+
+    final mistakes = record.mistakeLogs.length;
+    final acc = ((10 - mistakes) / 10 * 100).clamp(0, 100).round();
+    NotificationService().addAchievement(
+      title: mistakes == 0 ? '完美完成一組訓練 🎯' : '完成一組訓練 ✅',
+      body: '「${record.actionName}」${record.targetReps} 下 · 準確度 $acc%',
+    ).catchError((_) {});
   }
 
   /// 把「最後 count 筆」紀錄的 videoPath 更新成同一個值。

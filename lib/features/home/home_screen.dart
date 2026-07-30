@@ -162,6 +162,8 @@ class _HomeContentState extends State<_HomeContent>
   // ═══ 載入統計 ═══════════════════════════════════════════════
   // 未來接資料庫時,只動 HistoryService 內部即可,本方法不變
   Future<void> _loadStats() async {
+    // 每次進首頁時,如果通知開著就重新排下一次提醒(繞過 MIUI 殺鎖)
+    await NotificationService().refreshDailyReminderIfEnabled();
     final records = await _historyService.getHistory();
     final unread = await NotificationService().getUnreadCount();  // ✅ 新增
     if (!mounted) return;

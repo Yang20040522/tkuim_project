@@ -77,8 +77,8 @@ class InMemoryPlanRepository implements PlanRepository {
       date: DateTime.now(),
       condition: PatientCondition.stroke,
       items: [
-        PlanItem(exerciseId: 'ex10', order: 0, sets: 3, repsPerSet: 10, done: true), // 坐站訓練
-        PlanItem(exerciseId: 'ex05', order: 1, sets: 3, repsPerSet: 8, done: true),  // 畫圓訓練
+        PlanItem(exerciseId: 'ex10', order: 0, sets: 3, repsPerSet: 10, done: false), // 坐站訓練
+        PlanItem(exerciseId: 'ex05', order: 1, sets: 3, repsPerSet: 8, done: false),  // 畫圓訓練
         PlanItem(exerciseId: 'ex01', order: 2, sets: 2, repsPerSet: 10, done: false), // 翻掌訓練
       ],
     );

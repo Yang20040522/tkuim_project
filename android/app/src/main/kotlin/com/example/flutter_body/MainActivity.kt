@@ -1,8 +1,12 @@
 package com.example.flutter_body
 
 import android.app.Activity
+import android.app.AlarmManager
+import android.app.PendingIntent
+import android.content.Context
 import android.content.Intent
 import android.media.projection.MediaProjectionManager
+import android.os.Build
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.EventChannel
@@ -16,6 +20,7 @@ class MainActivity : FlutterActivity() {
     private val METHOD_CHANNEL = "com.rehabassist/mediapipe"
     private val LANDMARK_CHANNEL = "com.rehabassist/landmarks"
     private val SCREEN_RECORDER_CHANNEL = "com.rehabassist/screen_recorder"
+    private val NATIVE_NOTIFICATION_CHANNEL = "com.example.flutter_body/native_notification"
     private val SCREEN_RECORD_REQUEST_CODE = 9001
 
     private var mediaPipeBridge: MediaPipeBridge? = null
@@ -141,6 +146,27 @@ class MainActivity : FlutterActivity() {
                     else -> result.notImplemented()
                 }
             }
+
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, NATIVE_NOTIFICATION_CHANNEL)
+            .setMethodCallHandler { call, result ->
+                when (call.method) {
+                    "scheduleNotification" -> {
+                        val id = call.argument<Int>("id") ?: 0
+                        val title = call.argument<String>("title") ?: ""
+                        val body = call.argument<String>("body") ?: ""
+                        val triggerAtMillis =
+                            (call.argument<Number>("triggerAtMillis") ?: 0).toLong()
+                        scheduleAlarm(id, title, body, triggerAtMillis)
+                        result.success(true)
+                    }
+                    "cancelNotification" -> {
+                        val id = call.argument<Int>("id") ?: 0
+                        cancelAlarm(id)
+                        result.success(true)
+                    }
+                    else -> result.notImplemented()
+                }
+            }
     }
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
@@ -155,6 +181,50 @@ class MainActivity : FlutterActivity() {
             }
             pendingPermissionResult = null
         }
+    }
+
+    private fun scheduleAlarm(id: Int, title: String, body: String, triggerAtMillis: Long) {
+        val alarmManager = getSystemService(Context.ALARM_SERVICE) as AlarmManager
+
+        val intent = Intent(this, AlarmReceiver::class.java).apply {
+            putExtra("title", title)
+            putExtra("body", body)
+            putExtra("notificationId", id)
+        }
+
+        val flags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        } else {
+            PendingIntent.FLAG_UPDATE_CURRENT
+        }
+
+        val pendingIntent = PendingIntent.getBroadcast(this, id, intent, flags)
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            alarmManager.setExactAndAllowWhileIdle(
+                AlarmManager.RTC_WAKEUP,
+                triggerAtMillis,
+                pendingIntent
+            )
+        } else {
+            alarmManager.setExact(
+                AlarmManager.RTC_WAKEUP,
+                triggerAtMillis,
+                pendingIntent
+            )
+        }
+    }
+
+    private fun cancelAlarm(id: Int) {
+        val alarmManager = getSystemService(Context.ALARM_SERVICE) as AlarmManager
+        val intent = Intent(this, AlarmReceiver::class.java)
+        val flags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        } else {
+            PendingIntent.FLAG_UPDATE_CURRENT
+        }
+        val pendingIntent = PendingIntent.getBroadcast(this, id, intent, flags)
+        alarmManager.cancel(pendingIntent)
     }
 
     // 🚀 樹莓派手部偵測新增:App 結束時釋放 IMAGE 模式偵測器資源
