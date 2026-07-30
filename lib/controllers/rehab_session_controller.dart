@@ -42,6 +42,7 @@ class RehabSessionState {
   final List<String> mistakeLogs;
   final int targetReps;   // ← 新增
   final String currentLevelLabel;   // ✅ 加這行(欄位宣告)
+  final int currentLevel;   // ✅ 新增
 
   const RehabSessionState({
     this.handLandmarks = const [],
@@ -61,6 +62,7 @@ class RehabSessionState {
     this.mistakeLogs = const [],
     this.targetReps = 10,   // ← 新增
     this.currentLevelLabel = '',    // ✅ 加這行(預設值)
+    this.currentLevel = 1,   // ✅ 新增
   });
 
   RehabSessionState copyWith({
@@ -81,6 +83,7 @@ class RehabSessionState {
     List<String>? mistakeLogs,
     int? targetReps,   // ← 新增
     String? currentLevelLabel,      // ✅ 加這行(copyWith 參數)
+    int? currentLevel,   // ✅ 新增
   }) {
     return RehabSessionState(
       handLandmarks: handLandmarks ?? this.handLandmarks,
@@ -100,6 +103,7 @@ class RehabSessionState {
       mistakeLogs: mistakeLogs ?? this.mistakeLogs,
       targetReps: targetReps ?? this.targetReps,   // ← 新增
       currentLevelLabel: currentLevelLabel ?? this.currentLevelLabel,  // ✅ 加這行(組裝新物件)
+      currentLevel: currentLevel ?? this.currentLevel,   // ✅ 新增
     );
   }
 }
@@ -134,7 +138,10 @@ class RehabSessionController implements RehabActionCallback {
   }) {
     //final diffIdx = action.difficulties.indexOf(difficulty) + 1;
     final diffIdx = action.difficulties.indexWhere((d) => d.level == difficulty.level) + 1;
-    _state = _state.copyWith(targetReps: difficulty.targetReps);   // ← 新加這行
+    _state = _state.copyWith(
+      targetReps: difficulty.targetReps,
+      currentLevel: diffIdx,   // ✅ 新增
+    );   // ← 新加這行
 
     switch (action.type) {
       case ActionType.turnPalm:
@@ -294,7 +301,10 @@ class RehabSessionController implements RehabActionCallback {
     required String levelLabel,
     required int newTargetReps,
   }) {
-    _emit(_state.copyWith(currentLevelLabel: levelLabel));
+    _emit(_state.copyWith(
+      currentLevelLabel: levelLabel,
+      currentLevel: newLevel,   // ✅ 補上這行,之前漏加了
+    ));
   }
 
   @override

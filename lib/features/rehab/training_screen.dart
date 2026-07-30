@@ -233,6 +233,12 @@ class _TrainingScreenState extends State<TrainingScreen>
   Future<void> _handleCompletion(RehabSessionState state) async {
     _pendingVideoPath = await ScreenRecorderService.stopRecording();
 
+    // ✅ 新增:用 currentLevel 去查出真正對應的 DifficultyOption
+    final levelIdx = state.currentLevel - 1;
+    final displayDifficulty = (levelIdx >= 0 && levelIdx < widget.action.difficulties.length)
+        ? widget.action.difficulties[levelIdx]
+        : widget.difficulty;
+
     final result = await showDialog<_CompletionResult>(
       context: context,
       barrierDismissible: false,
@@ -241,7 +247,8 @@ class _TrainingScreenState extends State<TrainingScreen>
         durationSeconds: state.durationSeconds,
         mistakeLogs: state.mistakeLogs,
         currentAction: widget.action,
-        currentDifficulty: widget.difficulty,
+        //currentDifficulty: widget.difficulty,
+        currentDifficulty: displayDifficulty,   // ✅ 改這行(原本是 widget.difficulty)
         hasVideo: _pendingVideoPath != null,
         onVideoDecision: _handleVideoDecision,
         onRetry: () =>
@@ -322,6 +329,13 @@ class _TrainingScreenState extends State<TrainingScreen>
     final state = _controller.currentState;
     _pendingVideoPath = await ScreenRecorderService.stopRecording();
 
+    // ✅ 新增:算出真正要顯示的難度
+    final levelIdx = state.currentLevel - 1;
+    final displayDifficulty = (levelIdx >= 0 && levelIdx < widget.action.difficulties.length)
+        ? widget.action.difficulties[levelIdx]
+        : widget.difficulty;
+
+
     final result = await showDialog<_CompletionResult>(
       context: context,
       barrierDismissible: false,
@@ -331,7 +345,8 @@ class _TrainingScreenState extends State<TrainingScreen>
         durationSeconds: state.durationSeconds,
         mistakeLogs: state.mistakeLogs,
         currentAction: widget.action,
-        currentDifficulty: widget.difficulty,
+        //currentDifficulty: widget.difficulty,
+        currentDifficulty: displayDifficulty,   // ✅ 改這行
         hasVideo: _pendingVideoPath != null,
         onVideoDecision: _handleVideoDecision,
         onRetry: () =>
