@@ -5,6 +5,13 @@
 //  - 透過 WebSocket 連線樹莓派的 camera_server.py (ws://<pi_ip>:8765)
 //  - 收到 JPEG bytes → 呼叫原生 detectHandInImage(單張圖片模式)
 //  - 架構比照 pi_camera_source.dart,但吃的是手部 landmarks 而非身體骨架
+//
+//  🚀 修正:畫面顯示與手部偵測結果必須「鎖同一幀」,否則手部骨架
+//     會對不上畫面。原本邏輯是「新幀一到就立刻顯示,但偵測忙碌時
+//     就丟棄該幀」,導致顯示的畫面已經跑到後面幾幀,手部座標卻還是
+//     舊幀算出來的位置,動作快的時候特別明顯。
+//     改成:先完成偵測,再把「用來偵測的那一幀」拿去顯示,
+//     確保畫面與手部骨架永遠對應同一張原始 JPEG。
 // ══════════════════════════════════════════════════════════════════
 
 import 'dart:async';
@@ -69,26 +76,33 @@ class PiHandSource {
     if (_disposed) return;
     if (data is! Uint8List) return;
 
-    latestJpeg.value = data;
-
+    // 🚀 修正:偵測忙碌時「直接丟棄這一幀」,不提前更新 latestJpeg。
+    // 寧可跳過幾幀讓畫面稍微不那麼即時,也不能讓畫面先跑掉、
+    // 手部骨架卻停在舊的一幀 —— 那才是「對不上」的真正成因。
     if (_processing) return;
     _processing = true;
 
-    _decodeSizeAndDetect(data).whenComplete(() {
+    _decodeSizeAndDetectThenDisplay(data).whenComplete(() {
       _processing = false;
     });
   }
 
-  Future<void> _decodeSizeAndDetect(Uint8List jpegBytes) async {
+  Future<void> _decodeSizeAndDetectThenDisplay(Uint8List jpegBytes) async {
     try {
       final size = await _decodeImageSize(jpegBytes);
-      if (size != null) frameSize.value = size;
 
       final result = await service.detectHandInImage(
         jpegBytes,
         isMirror: false, // 樹莓派鏡頭固定架設,通常不需要鏡像
       );
-      if (!_disposed) handResult.value = result;
+
+      // 🚀 修正:偵測結果、畫面、尺寸三者一起更新,鎖同一幀,
+      // 確保 UI 疊圖時三者永遠對應同一張原始 JPEG,徹底消除時間差。
+      if (!_disposed) {
+        if (size != null) frameSize.value = size;
+        handResult.value = result;
+        latestJpeg.value = jpegBytes;
+      }
     } catch (e) {
       debugPrint('PiHandSource 偵測錯誤: $e');
     }

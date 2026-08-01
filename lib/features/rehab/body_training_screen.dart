@@ -5,10 +5,17 @@
 //  🚀 支援切換鏡頭來源(手機內建 / 樹莓派外接)
 //  🚀 樹莓派模式下,手部骨架改走樹莓派偵測(PiHandSource),
 //     與身體骨架共用同一套座標映射方式,確保兩者貼合對齊
+//  🚀 修正:_SkeletonPainter / _PiHandSkeletonPainter 加上 sourceSize,
+//     讓骨架點位能跟 Image.memory(fit: BoxFit.cover) 的裁切/縮放對齊。
+//     原本座標是 landmark 的 0~1 正規化值直接乘容器尺寸,但畫面顯示時
+//     用 BoxFit.cover 把原始 JPEG(長寬比通常跟容器不同)裁切填滿容器,
+//     兩套邏輯沒有對齊,骨架才會貼不上身體/手指。
+//     手機鏡頭(CameraPreview)路徑完全不傳 sourceSize,行為不受影響。
 // ══════════════════════════════════════════════════════════════════
 
 import 'dart:io';
 import 'dart:typed_data'; // 用到 Uint8List
+import 'dart:ui' show Size; // 🚀 新增:骨架對齊用
 import 'package:flutter/material.dart';
 import 'package:camera/camera.dart';
 import '../../models/pose_data.dart';
@@ -602,29 +609,46 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
                   return Image.memory(jpeg, fit: BoxFit.cover, gaplessPlayback: true);
                 },
               ),
+              // 🚀 修正:身體骨架 painter 加上 sourceSize(來自 _piCamera.frameSize),
+              // 讓骨架點位跟畫面顯示用的 BoxFit.cover 裁切/縮放對齊。
               ValueListenableBuilder<PoseData>(
                 valueListenable: _engine.poseNotifier,
                 builder: (_, data, __) {
-                  return TweenAnimationBuilder<PoseData>(
-                    tween: _PoseTween(end: data),
-                    duration: const Duration(milliseconds: 40),
-                    curve: Curves.easeOutCubic,
-                    builder: (_, lerped, __) => CustomPaint(
-                      painter: _SkeletonPainter(lerped, _scoreThreshold),
-                    ),
+                  return ValueListenableBuilder<Size?>(
+                    valueListenable: _piCamera!.frameSize,
+                    builder: (_, srcSize, __) {
+                      return TweenAnimationBuilder<PoseData>(
+                        tween: _PoseTween(end: data),
+                        duration: const Duration(milliseconds: 40),
+                        curve: Curves.easeOutCubic,
+                        builder: (_, lerped, __) => CustomPaint(
+                          painter: _SkeletonPainter(
+                            lerped,
+                            _scoreThreshold,
+                            sourceSize: srcSize, // 🚀 新增
+                          ),
+                        ),
+                      );
+                    },
                   );
                 },
               ),
-              // 🚀 樹莓派手部骨架:座標映射跟身體骨架用同一套(直接乘 size),
-              // 確保跟畫面顯示(BoxFit.cover)、跟身體骨架完全貼合
+              // 🚀 樹莓派手部骨架:一樣加上 sourceSize(來自 _piHand.frameSize),
+              // 跟身體骨架用同一套 BoxFit.cover 換算,確保三者(畫面/身體/手部)貼合。
               ValueListenableBuilder<DetectionResult>(
                 valueListenable: _piHand!.handResult,
                 builder: (_, hand, __) {
                   if (!hand.handDetected || hand.landmarks.isEmpty) {
                     return const SizedBox.shrink();
                   }
-                  return CustomPaint(
-                    painter: _PiHandSkeletonPainter(hand.landmarks),
+                  return ValueListenableBuilder<Size?>(
+                    valueListenable: _piHand!.frameSize,
+                    builder: (_, srcSize, __) => CustomPaint(
+                      painter: _PiHandSkeletonPainter(
+                        hand.landmarks,
+                        sourceSize: srcSize, // 🚀 新增
+                      ),
+                    ),
                   );
                 },
               ),
@@ -664,7 +688,7 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
       );
     }
 
-    // ── 原本手機內建鏡頭邏輯,完全不變 ──────────────────────────
+    // ── 原本手機內建鏡頭邏輯,完全不變(不傳 sourceSize,行為不受影響) ──
     final cam = _engine.cameraController;
     if (!_engine.cameraReady.value || cam == null) {
       return const Center(
@@ -1005,10 +1029,41 @@ class _PauseMenuDialog extends StatelessWidget {
 class _SkeletonPainter extends CustomPainter {
   final PoseData data;
   final double threshold;
-  _SkeletonPainter(this.data, this.threshold);
+  // 🚀 新增:原始畫面(樹莓派 JPEG)的實際尺寸。傳 null 時維持原本行為
+  // (直接用容器尺寸換算),手機鏡頭(CameraPreview)場景不受影響。
+  final Size? sourceSize;
+
+  _SkeletonPainter(this.data, this.threshold, {this.sourceSize});
 
   bool _valid(Offset p) =>
       p.dx > 0.02 && p.dx < 0.98 && p.dy > 0.02 && p.dy < 0.98;
+
+  // 🚀 新增:算出跟 Image.memory(fit: BoxFit.cover) 一致的縮放倍率
+  // 與置中裁切偏移量,邏輯跟 hand_overlay_widget.dart 的修正相同。
+  ({double scale, double dx, double dy}) _coverTransform(Size canvasSize) {
+    final src = sourceSize;
+    if (src == null || src.width <= 0 || src.height <= 0) {
+      return (scale: 1.0, dx: 0.0, dy: 0.0);
+    }
+    final scaleX = canvasSize.width / src.width;
+    final scaleY = canvasSize.height / src.height;
+    final scale = scaleX > scaleY ? scaleX : scaleY; // cover: 取較大值
+    final scaledW = src.width * scale;
+    final scaledH = src.height * scale;
+    final dx = (canvasSize.width - scaledW) / 2;
+    final dy = (canvasSize.height - scaledH) / 2;
+    return (scale: scale, dx: dx, dy: dy);
+  }
+
+  Offset _map(Offset p, Size canvasSize) {
+    final t = _coverTransform(canvasSize);
+    final srcW = sourceSize?.width ?? canvasSize.width;
+    final srcH = sourceSize?.height ?? canvasSize.height;
+    return Offset(
+      p.dx * srcW * t.scale + t.dx,
+      p.dy * srcH * t.scale + t.dy,
+    );
+  }
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -1030,18 +1085,13 @@ class _SkeletonPainter extends CustomPainter {
       if (data.scores[a] < threshold || data.scores[b] < threshold) continue;
       final pa = data.keypoints[a], pb = data.keypoints[b];
       if (!_valid(pa) || !_valid(pb)) continue;
-      canvas.drawLine(
-        Offset(pa.dx * size.width, pa.dy * size.height),
-        Offset(pb.dx * size.width, pb.dy * size.height),
-        bone,
-      );
+      canvas.drawLine(_map(pa, size), _map(pb, size), bone);
     }
     for (int i = 0; i < 17 && i < data.keypoints.length; i++) {
       if (i >= data.scores.length || data.scores[i] < threshold) continue;
       final p = data.keypoints[i];
       if (!_valid(p)) continue;
-      canvas.drawCircle(
-          Offset(p.dx * size.width, p.dy * size.height), 5, joint);
+      canvas.drawCircle(_map(p, size), 5, joint);
     }
   }
 
@@ -1050,13 +1100,15 @@ class _SkeletonPainter extends CustomPainter {
 }
 
 // 🚀 樹莓派手部骨架 painter
-// 座標映射刻意跟 _SkeletonPainter 用同一套(直接乘 size.width/height),
-// 不套用 BoxFit.contain,確保跟身體畫面(BoxFit.cover)、身體骨架三者對齊。
+// 🚀 修正:加上 sourceSize,套用跟 _SkeletonPainter / HandOverlayPainter
+// 相同的 BoxFit.cover 換算邏輯,確保跟畫面顯示、跟身體骨架三者對齊。
 // 若跑起來發現方向不對(左右相反或上下顛倒),把 map() 裡的
 // lm.x 改成 (1 - lm.x) 或 lm.y 改成 (1 - lm.y) 即可修正。
 class _PiHandSkeletonPainter extends CustomPainter {
   final List<Landmark> landmarks;
-  _PiHandSkeletonPainter(this.landmarks);
+  final Size? sourceSize; // 🚀 新增
+
+  _PiHandSkeletonPainter(this.landmarks, {this.sourceSize});
 
   static const _connections = [
     [0, 1], [1, 2], [2, 3], [3, 4],
@@ -1066,11 +1118,33 @@ class _PiHandSkeletonPainter extends CustomPainter {
     [0, 17], [17, 18], [18, 19], [19, 20],
   ];
 
+  ({double scale, double dx, double dy}) _coverTransform(Size canvasSize) {
+    final src = sourceSize;
+    if (src == null || src.width <= 0 || src.height <= 0) {
+      return (scale: 1.0, dx: 0.0, dy: 0.0);
+    }
+    final scaleX = canvasSize.width / src.width;
+    final scaleY = canvasSize.height / src.height;
+    final scale = scaleX > scaleY ? scaleX : scaleY;
+    final scaledW = src.width * scale;
+    final scaledH = src.height * scale;
+    final dx = (canvasSize.width - scaledW) / 2;
+    final dy = (canvasSize.height - scaledH) / 2;
+    return (scale: scale, dx: dx, dy: dy);
+  }
+
   @override
   void paint(Canvas canvas, Size size) {
     if (landmarks.isEmpty) return;
 
-    Offset map(Landmark lm) => Offset(lm.x * size.width, lm.y * size.height);
+    final t = _coverTransform(size);
+    final srcW = sourceSize?.width ?? size.width;
+    final srcH = sourceSize?.height ?? size.height;
+
+    Offset map(Landmark lm) => Offset(
+          lm.x * srcW * t.scale + t.dx,
+          lm.y * srcH * t.scale + t.dy,
+        );
 
     final linePaint = Paint()
       ..color = Colors.amberAccent.withValues(alpha: 0.85)

@@ -6,6 +6,9 @@
 // ✅ pause()/resume(),支援「暫停選單」真正的接續(不重建、不歸零)
 // 🚀 樹莓派新增:currentModel getter,讓 training_screen.dart 判斷
 //    目前用的是 MediaPipeModel 還是 PiPoseModel,以顯示對應畫面
+// 🚀 修正:TurnPalmAction 的 overlayMirrored 必須依「目前來源是手機還是
+//    樹莓派」動態決定,兩者座標鏡像方向相反,共用同一個 false 會導致
+//    樹莓派模式角度算反(偏差顯示接近 180 度)。
 
 import 'dart:async';
 import 'package:flutter/material.dart';
@@ -19,6 +22,7 @@ import '../actions/wrist_side_bend_action.dart';
 import '../models/training_action.dart';
 import '../services/mediapipe_service.dart';
 import '../services/pose_model_interface.dart';
+import '../services/pi_pose_model.dart'; // 🚀 新增:判斷是否為樹莓派來源
 
 // ── Session 狀態快照 ──────────────────────────────────────────────
 class RehabSessionState {
@@ -143,11 +147,18 @@ class RehabSessionController implements RehabActionCallback {
       currentLevel: diffIdx,   // ✅ 新增
     );   // ← 新加這行
 
+    // 🚀 修正:樹莓派來源跟手機來源的 landmark 座標左右鏡像方向相反,
+    // TurnPalmAction 的角度計算公式是針對手機原生鏡像後的座標調校的,
+    // 樹莓派模式必須把 overlayMirrored 反過來,角度才會算對,
+    // 不然會出現偏差角度接近 180 度(方向算反)的情況。
+    final bool isExternalSource = model is PiPoseModel;
+
     switch (action.type) {
       case ActionType.turnPalm:
         _actionLogic = TurnPalmAction(
           callback: this,
           targetReps: difficulty.targetReps,   // ← 新增
+          overlayMirrored: isExternalSource,   // 🚀 新增:依來源動態決定鏡像方向
         );
 
       case ActionType.wristExtension:

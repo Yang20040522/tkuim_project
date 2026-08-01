@@ -12,9 +12,13 @@
 //  🚀 樹莓派新增:右上角加攝影機切換鈕,訓練中可切換手機鏡頭 / 樹莓派來源。
 //     切換時整個 RehabSessionController 連同 model 一起換掉重建,
 //     確保狀態機、動作判斷邏輯全部乾淨重來,不會有殘留狀態導致誤判。
+//  🚀 修正:HandOverlayWidget 加上 sourceSize,讓骨架點位能跟
+//     Image.memory(fit: BoxFit.cover) 的裁切/縮放對齊，
+//     解決樹莓派鏡頭骨架貼不上手指的問題（詳見 hand_overlay_widget.dart）。
 // ══════════════════════════════════════════════════════════════════
 
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
@@ -459,6 +463,16 @@ class _TrainingScreenState extends State<TrainingScreen>
     }
   }
 
+  // 🚀 新增:取得樹莓派來源目前這一幀的原始尺寸,給 HandOverlayWidget
+  // 用來算 BoxFit.cover 的縮放/裁切偏移。手機鏡頭模式回傳 null,
+  // HandOverlayPainter 收到 null 時會維持原本(未受影響)的行為。
+  Size? _currentPiSourceSize() {
+    if (!_isExternalCamera) return null;
+    final model = _controller.currentModel;
+    if (model is! PiPoseModel) return null;
+    return model.debugSource?.frameSize.value;
+  }
+
   @override
   Widget build(BuildContext context) {
     final s = _controller.currentState;
@@ -527,6 +541,10 @@ class _TrainingScreenState extends State<TrainingScreen>
                           showPinchGuide: _showPinchGuide && !s.isComplete,
                           progress: s.progress,
                           speedState: s.speedState,
+                          // 🚀 新增:樹莓派模式下傳入原始 JPEG 尺寸,
+                          // 讓骨架點位跟 Image.memory(fit: BoxFit.cover)
+                          // 的裁切/縮放對齊。手機鏡頭維持 null 不受影響。
+                          sourceSize: _currentPiSourceSize(),
                         ),
                       if (!_isInitialized) const LoadingOverlay(),
                       if (_isInitialized &&
