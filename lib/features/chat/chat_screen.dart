@@ -1,4 +1,7 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'chat_repository.dart';   // 加這行
 
 enum ChatSender { me, therapist }
 
@@ -8,6 +11,18 @@ class ChatMessage {
   final DateTime time;
 
   ChatMessage({required this.text, required this.sender, required this.time});
+
+  Map<String, dynamic> toJson() => {
+        'text': text,
+        'sender': sender.name,
+        'time': time.toIso8601String(),
+      };
+
+  factory ChatMessage.fromJson(Map<String, dynamic> json) => ChatMessage(
+        text: json['text'] as String,
+        sender: ChatSender.values.firstWhere((e) => e.name == json['sender']),
+        time: DateTime.parse(json['time'] as String),
+      );
 }
 
 class ChatScreen extends StatefulWidget {
@@ -18,17 +33,27 @@ class ChatScreen extends StatefulWidget {
 }
 
 class _ChatScreenState extends State<ChatScreen> {
+  static const _storageKey = 'chat_messages';
+
   final TextEditingController _inputController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
+  final ChatRepository _chatRepository = ChatRepository();   // 加這行
+  bool _isAiTyping = false;                                   // 加這行
 
-  // 先用假資料撐畫面,之後接真人/AI 只要換這裡的來源
-  final List<ChatMessage> _messages = [
-    ChatMessage(
-      text: '您好，我是您的復健治療師，有任何訓練上的問題都可以在這裡問我。',
-      sender: ChatSender.therapist,
-      time: DateTime.now().subtract(const Duration(minutes: 10)),
-    ),
-  ];
+  List<ChatMessage> _messages = [];
+  bool _loaded = false;
+
+  ChatMessage get _welcomeMessage => ChatMessage(
+        text: '您好，我是您的ai復健治療師，有任何訓練上的問題都可以在這裡問我。',
+        sender: ChatSender.therapist,
+        time: DateTime.now(),
+      );
+
+  @override
+  void initState() {
+    super.initState();
+    _loadMessages();
+  }
 
   @override
   void dispose() {
@@ -37,19 +62,100 @@ class _ChatScreenState extends State<ChatScreen> {
     super.dispose();
   }
 
-  void _sendMessage() {
+  // ---------- 持久化 ----------
+
+  Future<void> _loadMessages() async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString(_storageKey);
+
+    if (raw == null || raw.isEmpty) {
+      setState(() {
+        _messages = [_welcomeMessage];
+        _loaded = true;
+      });
+      await _saveMessages();
+      return;
+    }
+
+    try {
+      final List<dynamic> list = jsonDecode(raw) as List<dynamic>;
+      setState(() {
+        _messages = list
+            .map((e) => ChatMessage.fromJson(e as Map<String, dynamic>))
+            .toList();
+        _loaded = true;
+      });
+    } catch (_) {
+      // 資料壞掉就重置，避免整個聊天室打不開
+      setState(() {
+        _messages = [_welcomeMessage];
+        _loaded = true;
+      });
+      await _saveMessages();
+    }
+
+    _scrollToBottom();
+  }
+
+  Future<void> _saveMessages() async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = jsonEncode(_messages.map((m) => m.toJson()).toList());
+    await prefs.setString(_storageKey, raw);
+  }
+
+  // ---------- 動作 ----------
+
+  void _sendMessage() async {
     final text = _inputController.text.trim();
     if (text.isEmpty) return;
 
     setState(() {
       _messages.add(ChatMessage(text: text, sender: ChatSender.me, time: DateTime.now()));
+      _isAiTyping = true;
     });
     _inputController.clear();
-
-    // TODO: 之後接真人治療師 或 AI 回覆邏輯就寫在這裡
-    // 例如: await chatRepository.sendMessage(text);
-
+    await _saveMessages();
     _scrollToBottom();
+
+    final reply = await _chatRepository.sendMessage(
+      userMessage: text,
+      // context: 之後接上真實資料,例如 UserContext(...從 RehabSessionState 抓)
+    );
+
+    setState(() {
+      _messages.add(ChatMessage(text: reply, sender: ChatSender.therapist, time: DateTime.now()));
+      _isAiTyping = false;
+    });
+    await _saveMessages();
+    _scrollToBottom();
+  }
+
+  Future<void> _confirmNewConversation() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('開始新對話'),
+        content: const Text('這會清空目前的對話紀錄，確定要繼續嗎？'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('取消'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('確定清空', style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      setState(() {
+        _messages = [_welcomeMessage];
+      });
+      await _saveMessages();
+      _scrollToBottom();
+    }
   }
 
   void _scrollToBottom() {
@@ -69,13 +175,15 @@ class _ChatScreenState extends State<ChatScreen> {
     return Scaffold(
       backgroundColor: const Color(0xFFF5F6FA),
       body: SafeArea(
-        child: Column(
-          children: [
-            _buildTopBar(),
-            Expanded(child: _buildMessageList()),
-            _buildInputBar(),
-          ],
-        ),
+        child: !_loaded
+            ? const Center(child: CircularProgressIndicator())
+            : Column(
+                children: [
+                  _buildTopBar(),
+                  Expanded(child: _buildMessageList()),
+                  _buildInputBar(),
+                ],
+              ),
       ),
     );
   }
@@ -113,6 +221,11 @@ class _ChatScreenState extends State<ChatScreen> {
                 ),
               ],
             ),
+          ),
+          IconButton(
+            onPressed: _confirmNewConversation,
+            icon: const Icon(Icons.add_comment_outlined, color: Color(0xFF4A65FF)),
+            tooltip: '開始新對話',
           ),
         ],
       ),

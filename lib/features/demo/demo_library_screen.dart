@@ -103,6 +103,15 @@ class _DemoLibraryScreenState extends State<DemoLibraryScreen>
       modelAlts: ['側跨步示範'],
       category: DemoCategory.fullBody,
     ),
+    _DemoItem(
+      emoji: '🏋️',
+      title: '深蹲訓練',
+      subtitle: '拖曳旋轉・雙指縮放',
+      tabLabels: ['示範'],
+      modelSrcs: ['assets/models/squat.glb'],
+      modelAlts: ['深蹲示範'],
+      category: DemoCategory.fullBody,
+    ),
   ];
 
   // ── 每張卡片的展開狀態 & tab index ──────────────────────
