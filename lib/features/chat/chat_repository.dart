@@ -3,7 +3,7 @@
 // 負責:
 // 1. 組裝 System Prompt + 使用者資料 context
 // 2. 醫療關鍵字前置攔截(不呼叫AI,直接固定回覆)
-// 3. 呼叫 Gemini API 取得回覆
+// 3. 呼叫 Gemini API 取得回覆(透過Cloudflare Worker中介,key不放在App裡)
 
 import 'dart:convert';
 import 'package:http/http.dart' as http;
@@ -26,16 +26,6 @@ class UserContext {
     this.lastScore,
   });
 
-  /// 目前資料還沒串接時,先用這個假資料撐著
-  factory UserContext.mock() => UserContext(
-        name: '使用者',
-        currentLevel: 2,
-        weeklyCompleted: 3,
-        weeklyTarget: 5,
-        streak: 5,
-        lastScore: 82,
-      );
-
   String toPromptBlock() {
     return '''
 【使用者資料】
@@ -49,14 +39,9 @@ class UserContext {
 }
 
 class ChatRepository {
-  // TODO: 不要把key直接寫死在這裡上傳到git!
-  // 建議用 --dart-define=GEMINI_API_KEY=xxx 或讀 .env
-  // static const String _apiKey = String.fromEnvironment('GEMINI_API_KEY');
-  static const String _apiKey = String.fromEnvironment('GEMINI_API_KEY');
-
-  static const String _model = 'gemini-3.5-flash-lite';
+  // 透過Cloudflare Worker中介呼叫Gemini API,key藏在Worker端,App內不含任何key
   static const String _endpoint =
-      'https://generativelanguage.googleapis.com/v1beta/models/$_model:generateContent';
+      'https://rehab-chat-proxy.abelcheng1228.workers.dev';
 
   static const String _systemPrompt = '''
   你是RehabAssist App的復健陪伴助手,服務對象是正在進行復健訓練的病患,
@@ -145,22 +130,17 @@ class ChatRepository {
   /// 主要對外方法: 傳入使用者訊息 + 使用者資料,回傳AI(或轉介)的回覆文字
   Future<String> sendMessage({
     required String userMessage,
-    UserContext? context,
+    required UserContext context,
   }) async {
     // 1. 前置攔截
     if (_needsMedicalRedirect(userMessage)) {
       return _medicalRedirectReply;
     }
 
-    if (_apiKey.isEmpty) {
-      return '(尚未設定API金鑰,請用 --dart-define=GEMINI_API_KEY=你的key 執行)';
-    }
-
-    final ctx = context ?? UserContext.mock();
     final fullPrompt = '''
 $_systemPrompt
 
-${ctx.toPromptBlock()}
+${context.toPromptBlock()}
 
 【使用者訊息】
 $userMessage
@@ -168,7 +148,7 @@ $userMessage
 
     try {
       final response = await http.post(
-        Uri.parse('$_endpoint?key=$_apiKey'),
+        Uri.parse(_endpoint),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({
           'contents': [

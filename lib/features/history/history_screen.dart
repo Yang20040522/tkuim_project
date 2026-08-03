@@ -562,7 +562,38 @@ class _HistoryScreenState extends State<HistoryScreen> {
     return ListView.builder(
       padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
       itemCount: reversed.length,
-      itemBuilder: (_, i) => _buildRecordCard(reversed[i]),
+      itemBuilder: (_, i) {
+        final record = reversed[i];
+        return Dismissible(
+          key: ValueKey(record.timestamp),
+          direction: DismissDirection.endToStart,
+          background: Container(
+            alignment: Alignment.centerRight,
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            margin: const EdgeInsets.only(bottom: 10),
+            decoration: BoxDecoration(
+              color: const Color(0xFFFF4B4B),
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: const Icon(Icons.delete_outline,
+                color: Colors.white, size: 22),
+          ),
+          onDismissed: (_) async {
+            await _historyService.removeByTimestamp(record.timestamp);
+            if (!mounted) return;
+            setState(() {
+              _allRecords.removeWhere((r) => r.timestamp == record.timestamp);
+            });
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('已刪除紀錄'),
+                duration: Duration(seconds: 2),
+              ),
+            );
+          },
+          child: _buildRecordCard(record),
+        );
+      },
     );
   }
 

@@ -52,6 +52,14 @@ class HistoryService {
     await prefs.setString(_key, jsonEncode(history.map((e) => e.toJson()).toList()));
   }
 
+  Future<void> removeByTimestamp(String timestamp) async {
+    final prefs = await SharedPreferences.getInstance();
+    final history = await getHistory();
+    history.removeWhere((r) => r.timestamp == timestamp);
+    await prefs.setString(
+        _key, jsonEncode(history.map((e) => e.toJson()).toList()));
+  }
+
   Future<void> clearHistory() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_key);

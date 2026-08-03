@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'chat_repository.dart';   // 加這行
+import 'user_context_builder.dart';
 
 enum ChatSender { me, therapist }
 
@@ -38,6 +39,7 @@ class _ChatScreenState extends State<ChatScreen> {
   final TextEditingController _inputController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
   final ChatRepository _chatRepository = ChatRepository();   // 加這行
+  final UserContextBuilder _contextBuilder = UserContextBuilder();
   bool _isAiTyping = false;                                   // 加這行
 
   List<ChatMessage> _messages = [];
@@ -117,9 +119,10 @@ class _ChatScreenState extends State<ChatScreen> {
     await _saveMessages();
     _scrollToBottom();
 
+    final userContext = await _contextBuilder.build();
     final reply = await _chatRepository.sendMessage(
       userMessage: text,
-      // context: 之後接上真實資料,例如 UserContext(...從 RehabSessionState 抓)
+      context: userContext,
     );
 
     setState(() {

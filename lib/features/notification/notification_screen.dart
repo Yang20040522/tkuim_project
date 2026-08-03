@@ -95,7 +95,36 @@ class _NotificationScreenState extends State<NotificationScreen> {
                           itemCount: _items.length,
                           separatorBuilder: (_, __) =>
                               const SizedBox(height: 10),
-                          itemBuilder: (_, i) => _buildItem(_items[i]),
+                          itemBuilder: (_, i) {
+                            final item = _items[i];
+                            return Dismissible(
+                              key: ValueKey(item.id),
+                              direction: DismissDirection.endToStart,
+                              background: Container(
+                                alignment: Alignment.centerRight,
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 20),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFFEF4444),
+                                  borderRadius: BorderRadius.circular(14),
+                                ),
+                                child: const Icon(Icons.delete_outline,
+                                    color: Colors.white, size: 22),
+                              ),
+                              onDismissed: (_) async {
+                                await _service.removeById(item.id);
+                                if (!mounted) return;
+                                setState(() => _items.removeAt(i));
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text('已刪除通知'),
+                                    duration: Duration(seconds: 2),
+                                  ),
+                                );
+                              },
+                              child: _buildItem(item),
+                            );
+                          },
                         ),
                 ),
                 if (_items.isNotEmpty)

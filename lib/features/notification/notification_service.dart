@@ -133,6 +133,16 @@ class NotificationService {
     await prefs.setStringList(_storageKey, updated);
   }
 
+  Future<void> removeById(String id) async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getStringList(_storageKey) ?? [];
+    raw.removeWhere((s) {
+      final json = jsonDecode(s) as Map<String, dynamic>;
+      return json['id'] == id;
+    });
+    await prefs.setStringList(_storageKey, raw);
+  }
+
   Future<void> clearAll() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_storageKey);
