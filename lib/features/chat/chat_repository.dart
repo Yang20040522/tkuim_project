@@ -33,7 +33,7 @@ class UserContext {
 - 目前訓練關卡：Level $currentLevel
 - 本週完成次數：$weeklyCompleted / $weeklyTarget
 - 連續訓練天數：$streak 天
-- 最近一次訓練評分：${lastScore != null ? '$lastScore 分' : '無紀錄'}
+- 最近一次訓練評分：${lastScore != null ? '${lastScore!.toStringAsFixed(0)} 分' : '無紀錄'}
 ''';
   }
 }
@@ -114,18 +114,21 @@ class ChatRepository {
         明天感覺應該會好一些。
   ''';
 
-  /// 高風險關鍵字,命中就不呼叫AI,直接走固定轉介回覆
-  static final List<String> _medicalRedFlags = [
-    '痛', '腫', '麻', '出血', '受傷', '惡化', '吃藥', '藥物', '發燒', '暈眩',
+  /// 只攔截「明確描述自己當下症狀求判斷」的高風險短語,
+  /// 一般痠痛閒聊、詢問普遍狀況交由 AI 依 System Prompt 判斷。
+  static final List<String> _hardRedirect = [
+    '我在流血', '我出血', '我暈倒', '我快暈',
+    '腫到', '腫得', '很痛怎麼辦', '痛到不能', '痛到無法',
+    '發燒到', '一直發燒', '傷口裂', '骨頭跑',
   ];
 
   bool _needsMedicalRedirect(String userMessage) {
-    return _medicalRedFlags.any((kw) => userMessage.contains(kw));
+    return _hardRedirect.any((kw) => userMessage.contains(kw));
   }
 
   String get _medicalRedirectReply =>
-      '我理解你的擔心,不過這類跟身體狀況相關的問題,我沒辦法給你專業判斷。\n'
-      '建議你盡快跟治療師或醫生反映這個狀況,會比較安全喔。';
+      '這聽起來要交給專業的人判斷比較安心,你的身體狀況我沒辦法幫你評估。\n'
+      '建議盡快跟治療師或醫生說一下,他們才能真正幫到你 🙏';
 
   /// 主要對外方法: 傳入使用者訊息 + 使用者資料,回傳AI(或轉介)的回覆文字
   Future<String> sendMessage({
@@ -147,38 +150,40 @@ $userMessage
 ''';
 
     try {
-      final response = await http.post(
-        Uri.parse(_endpoint),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({
-          'contents': [
-            {
-              'parts': [
-                {'text': fullPrompt}
-              ]
-            }
-          ],
-          'generationConfig': {
-            'temperature': 0.3,
-            'maxOutputTokens': 500,
-          },
-        }),
-      );
+      final response = await http
+          .post(
+            Uri.parse(_endpoint),
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode({
+              'contents': [
+                {
+                  'parts': [
+                    {'text': fullPrompt}
+                  ]
+                }
+              ],
+              'generationConfig': {
+                'temperature': 0.3,
+                'maxOutputTokens': 800,
+              },
+            }),
+          )
+          .timeout(const Duration(seconds: 15));
 
       if (response.statusCode != 200) {
-        return '抱歉,現在連線有點問題,晚點再試試看。';
+        return '嗚,我這邊訊號不太好,等一下再問我一次好嗎? 🥺';
       }
 
       final data = jsonDecode(utf8.decode(response.bodyBytes));
       final text = data['candidates']?[0]?['content']?['parts']?[0]?['text'];
 
       if (text == null || (text as String).trim().isEmpty) {
-        return '抱歉,我沒有理解你的意思,可以換個方式問嗎?';
+        return '抱歉,我沒有完全理解你的意思,可以換個方式再說一次嗎?';
       }
 
       return text.trim();
     } catch (e) {
-      return '抱歉,現在連線有點問題,晚點再試試看。';
+      return '嗚,我這邊訊號不太好,等一下再問我一次好嗎? 🥺';
     }
   }
 }
