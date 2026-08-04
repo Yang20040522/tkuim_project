@@ -6,6 +6,8 @@
 // 目前全部是佔位,等資料層接上再填。
 
 import 'package:flutter/material.dart';
+import 'radar_chart_card.dart';
+import 'personal_records_card.dart';
 
 class StatsScreen extends StatelessWidget {
   const StatsScreen({super.key});
@@ -27,7 +29,7 @@ class StatsScreen extends StatelessWidget {
               const SizedBox(height: 28),
               _buildSectionTitle('弱點分析', '看看哪些動作還可以進步'),
               const SizedBox(height: 12),
-              _buildRadarPlaceholder(),
+              const RadarChartCard(),
               const SizedBox(height: 12),
               _buildMistakeTypePlaceholder(),
               const SizedBox(height: 28),
@@ -35,7 +37,7 @@ class StatsScreen extends StatelessWidget {
               const SizedBox(height: 12),
               _buildBadgesPlaceholder(),
               const SizedBox(height: 12),
-              _buildPersonalRecordsPlaceholder(),
+              const PersonalRecordsCard(),
               const SizedBox(height: 20),
             ],
           ),
@@ -162,18 +164,6 @@ class StatsScreen extends StatelessWidget {
     );
   }
 
-  // ─── 雷達圖佔位 ───────────────────────────────────────
-  Widget _buildRadarPlaceholder() {
-    return _card(
-      icon: Icons.radar_rounded,
-      iconBg: const Color(0xFFE0E7FF),
-      iconColor: const Color(0xFF4A65FF),
-      title: '弱項動作雷達',
-      body: '各動作準確度一次呈現,\n一眼看出哪個動作需要加強',
-      height: 180,
-    );
-  }
-
   // ─── 錯誤類型分佈佔位 ──────────────────────────────────
   Widget _buildMistakeTypePlaceholder() {
     return _card(
@@ -259,77 +249,6 @@ class StatsScreen extends StatelessWidget {
       ),
     );
   }
-
-  // ─── 個人紀錄佔位 ─────────────────────────────────────
-  Widget _buildPersonalRecordsPlaceholder() {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: _cardDecoration(),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Container(
-                width: 36,
-                height: 36,
-                decoration: BoxDecoration(
-                  color: const Color(0xFFD1FAE5),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: const Icon(Icons.local_fire_department_rounded,
-                    color: Color(0xFF10B981), size: 20),
-              ),
-              const SizedBox(width: 10),
-              const Text(
-                '個人紀錄',
-                style: TextStyle(
-                  color: Color(0xFF374151),
-                  fontSize: 14,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 14),
-          _recordRow('連續達成天數', '-- 天'),
-          _recordDivider(),
-          _recordRow('單日最多訓練', '-- 組'),
-          _recordDivider(),
-          _recordRow('累積訓練組數', '-- 組'),
-          _recordDivider(),
-          _recordRow('最高單組準確度', '-- %'),
-        ],
-      ),
-    );
-  }
-
-  Widget _recordRow(String label, String value) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8),
-      child: Row(
-        children: [
-          Expanded(
-            child: Text(
-              label,
-              style: const TextStyle(color: Color(0xFF6B7280), fontSize: 12),
-            ),
-          ),
-          Text(
-            value,
-            style: const TextStyle(
-              color: Color(0xFF9CA3AF),
-              fontSize: 14,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _recordDivider() =>
-      const Divider(height: 1, color: Color(0xFFF5F6FA));
 
   // ─── 通用卡片(給雷達 / 錯誤分佈用)─────────────────────
   Widget _card({

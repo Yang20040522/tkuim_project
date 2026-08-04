@@ -5,6 +5,9 @@ import 'package:flutter_localizations/flutter_localizations.dart';   // ← 新�
 import 'features/splash/splash_screen.dart';
 import 'features/notification/notification_service.dart';
 
+import 'package:provider/provider.dart';
+import 'services/history_service.dart';
+
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
@@ -13,7 +16,13 @@ void main() async {
     statusBarIconBrightness: Brightness.light,
   ));
   await NotificationService().init();
-  runApp(const RehabAssistApp());
+  //runApp(const RehabAssistApp());
+  runApp(
+    ChangeNotifierProvider(
+      create: (_) => HistoryService(),
+      child: const RehabAssistApp(),
+    ),
+  );
 }
 
 class RehabAssistApp extends StatelessWidget {

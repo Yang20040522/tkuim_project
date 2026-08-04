@@ -2,8 +2,10 @@ import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/training_action.dart';
 import '../features/notification/notification_service.dart';
+import 'package:flutter/foundation.dart';
 
-class HistoryService {
+class HistoryService extends ChangeNotifier {
+  // 其他不動
   static const String _key = 'rehab_history';
 
   Future<List<TrainingRecord>> getHistory() async {
@@ -25,6 +27,8 @@ class HistoryService {
       title: mistakes == 0 ? '完美完成一組訓練 🎯' : '完成一組訓練 ✅',
       body: '「${record.actionName}」${record.targetReps} 下 · 準確度 $acc%',
     ).catchError((_) {});
+
+    notifyListeners();  // ← 新增
   }
 
   /// 把「最後 count 筆」紀錄的 videoPath 更新成同一個值。
@@ -50,6 +54,8 @@ class HistoryService {
     }
 
     await prefs.setString(_key, jsonEncode(history.map((e) => e.toJson()).toList()));
+
+    notifyListeners();  // ← 新增
   }
 
   Future<void> removeByTimestamp(String timestamp) async {
@@ -58,10 +64,14 @@ class HistoryService {
     history.removeWhere((r) => r.timestamp == timestamp);
     await prefs.setString(
         _key, jsonEncode(history.map((e) => e.toJson()).toList()));
+
+    notifyListeners();  // ← 新增
   }
 
   Future<void> clearHistory() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_key);
+
+    notifyListeners();  // ← 新增
   }
 }
