@@ -8,6 +8,8 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'stats_calculator.dart';
 import '../history/history_screen.dart';
+import 'package:provider/provider.dart';
+import '../../services/history_service.dart';
 
 class RadarChartCard extends StatefulWidget {
   const RadarChartCard({super.key});
@@ -47,6 +49,13 @@ class _RadarChartCardState extends State<RadarChartCard> {
 
   @override
   Widget build(BuildContext context) {
+    // 訂閱 HistoryService,值變了會 rebuild
+    context.watch<HistoryService>();
+    // rebuild 就重新載入(延到下一幀,避免 build 時 setState)
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _load();
+    });
+
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(16),
