@@ -8,6 +8,8 @@
 import 'package:flutter/material.dart';
 import 'radar_chart_card.dart';
 import 'personal_records_card.dart';
+import 'week_summary_card.dart';
+import 'badges_card.dart';
 
 class StatsScreen extends StatelessWidget {
   const StatsScreen({super.key});
@@ -25,7 +27,7 @@ class StatsScreen extends StatelessWidget {
             children: [
               _buildTopBar(),
               const SizedBox(height: 20),
-              _buildWeekSummary(),
+              const WeekSummaryCard(),
               const SizedBox(height: 28),
               _buildSectionTitle('弱點分析', '看看哪些動作還可以進步'),
               const SizedBox(height: 12),
@@ -35,7 +37,7 @@ class StatsScreen extends StatelessWidget {
               const SizedBox(height: 28),
               _buildSectionTitle('成就與紀錄', '你的努力都被記下來了'),
               const SizedBox(height: 12),
-              _buildBadgesPlaceholder(),
+              const BadgesCard(),
               const SizedBox(height: 12),
               const PersonalRecordsCard(),
               const SizedBox(height: 20),
@@ -64,79 +66,6 @@ class StatsScreen extends StatelessWidget {
         Text(
           '你的復健表現一目了然',
           style: TextStyle(color: Color(0xFF9CA3AF), fontSize: 12),
-        ),
-      ],
-    );
-  }
-
-  // ─── 本週摘要卡(紫色漸層,呼應首頁風格)─────────────────
-  Widget _buildWeekSummary() {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          colors: [Color(0xFF4A65FF), Color(0xFF7B5EA7)],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        borderRadius: BorderRadius.circular(20),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
-            '本週摘要',
-            style: TextStyle(
-              color: Colors.white,
-              fontSize: 13,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-          const SizedBox(height: 14),
-          Row(
-            children: [
-              Expanded(child: _weekStat('-- 組', '訓練次數')),
-              Expanded(child: _weekStat('-- %', '平均準確度')),
-              Expanded(child: _weekStat('-- 分', '訓練時長')),
-            ],
-          ),
-          const SizedBox(height: 12),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-            decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.18),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: const Text(
-              '本週 vs 上週對比,尚未開放',
-              style: TextStyle(color: Colors.white, fontSize: 11),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _weekStat(String value, String label) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          value,
-          style: const TextStyle(
-            color: Colors.white,
-            fontSize: 20,
-            fontWeight: FontWeight.w900,
-          ),
-        ),
-        const SizedBox(height: 2),
-        Text(
-          label,
-          style: TextStyle(
-            color: Colors.white.withValues(alpha: 0.85),
-            fontSize: 10,
-          ),
         ),
       ],
     );
@@ -173,80 +102,6 @@ class StatsScreen extends StatelessWidget {
       title: '錯誤類型分佈',
       body: '你最常犯的錯是什麼?\n(角度不足、姿勢不穩、幅度太小...)',
       height: 140,
-    );
-  }
-
-  // ─── 成就徽章佔位 ─────────────────────────────────────
-  Widget _buildBadgesPlaceholder() {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: _cardDecoration(),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Container(
-                width: 36,
-                height: 36,
-                decoration: BoxDecoration(
-                  color: const Color(0xFFFEF3C7),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: const Icon(Icons.emoji_events_rounded,
-                    color: Color(0xFFF59E0B), size: 20),
-              ),
-              const SizedBox(width: 10),
-              const Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      '成就徽章',
-                      style: TextStyle(
-                        color: Color(0xFF374151),
-                        fontSize: 14,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                    SizedBox(height: 2),
-                    Text(
-                      '0 / 12 已解鎖',
-                      style: TextStyle(color: Color(0xFF9CA3AF), fontSize: 11),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 14),
-          SizedBox(
-            height: 60,
-            child: ListView.separated(
-              scrollDirection: Axis.horizontal,
-              itemCount: 5,
-              separatorBuilder: (_, __) => const SizedBox(width: 10),
-              itemBuilder: (_, __) => Container(
-                width: 60,
-                decoration: BoxDecoration(
-                  color: const Color(0xFFF5F6FA),
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(
-                      color: const Color(0xFFDDE0F0),
-                      style: BorderStyle.solid),
-                ),
-                child: const Icon(Icons.lock_outline,
-                    color: Color(0xFF9CA3AF), size: 22),
-              ),
-            ),
-          ),
-          const SizedBox(height: 10),
-          const Text(
-            '完成訓練解鎖徽章 · 尚未開放',
-            style: TextStyle(color: Color(0xFF9CA3AF), fontSize: 11),
-          ),
-        ],
-      ),
     );
   }
 

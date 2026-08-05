@@ -4,6 +4,7 @@
 // 未來擴充成就徽章、個人紀錄等時,新方法都放這裡
 
 import '../../services/history_service.dart';
+import '../../models/training_action.dart';
 
 /// 雷達圖一個軸的資料:一個動作 + 這個動作在期間內的平均準確度
 class RadarAxis {
@@ -128,6 +129,294 @@ class StatsCalculator {
       '${d.year.toString().padLeft(4, '0')}-'
       '${d.month.toString().padLeft(2, '0')}-'
       '${d.day.toString().padLeft(2, '0')}';
+
+  /// 算出本週摘要卡需要的數字
+  Future<WeeklySummary> getWeeklySummary() async {
+    final records = await _historyService.getHistory();
+    if (records.isEmpty) return WeeklySummary.empty;
+
+    final now = DateTime.now();
+    // 本週從週一 00:00 開始算
+    final startOfThisWeek =
+        DateTime(now.year, now.month, now.day)
+            .subtract(Duration(days: now.weekday - 1));
+    final startOfLastWeek =
+        startOfThisWeek.subtract(const Duration(days: 7));
+
+    final thisWeek = <TrainingRecord>[];
+    final lastWeek = <TrainingRecord>[];
+
+    for (final r in records) {
+      final dt = DateTime.tryParse(r.timestamp);
+      if (dt == null) continue;
+      if (!dt.isBefore(startOfThisWeek)) {
+        thisWeek.add(r);
+      } else if (!dt.isBefore(startOfLastWeek)) {
+        lastWeek.add(r);
+      }
+    }
+
+    // 本週平均準確度
+    int avgAcc = 0;
+    if (thisWeek.isNotEmpty) {
+      double sumAcc = 0;
+      int count = 0;
+      for (final r in thisWeek) {
+        if (r.targetReps <= 0) continue;
+        final perfect =
+            (r.targetReps - r.mistakeLogs.length).clamp(0, r.targetReps);
+        sumAcc += perfect / r.targetReps * 100;
+        count++;
+      }
+      if (count > 0) avgAcc = (sumAcc / count).round();
+    }
+
+    // 本週總時長(分鐘)
+    final totalSeconds =
+        thisWeek.fold<int>(0, (sum, r) => sum + r.durationSeconds);
+    final totalMinutes = (totalSeconds / 60).round();
+
+    return WeeklySummary(
+      sessions: thisWeek.length,
+      avgAccuracy: avgAcc,
+      totalMinutes: totalMinutes,
+      sessionsLastWeek: lastWeek.length,
+    );
+  }
+
+  /// 算出所有徽章的解鎖狀態
+  Future<List<Achievement>> getAchievements() async {
+    final records = await _historyService.getHistory();
+
+    // 先算出所有徽章要用的統計數字
+    final total = records.length;
+    final firstRecordTime = records.isNotEmpty
+        ? DateTime.tryParse(records.first.timestamp)
+        : null;
+
+    // 單日組數 map
+    final Map<String, List<TrainingRecord>> byDay = {};
+    for (final r in records) {
+      final day = r.timestamp.substring(0, 10);
+      byDay.putIfAbsent(day, () => []).add(r);
+    }
+    final maxDaily =
+        byDay.values.fold<int>(0, (m, v) => v.length > m ? v.length : m);
+
+    // 連續達成天數
+    final streak =
+        _calcStreak(records.map((r) => r.timestamp).toList());
+
+    // 最高準確度
+    int maxAcc = 0;
+    DateTime? perfectAt;
+    for (final r in records) {
+      if (r.targetReps <= 0) continue;
+      final perfect =
+          (r.targetReps - r.mistakeLogs.length).clamp(0, r.targetReps);
+      final acc = (perfect / r.targetReps * 100).round();
+      if (acc > maxAcc) maxAcc = acc;
+      if (acc == 100 && perfectAt == null) {
+        perfectAt = DateTime.tryParse(r.timestamp);
+      }
+    }
+
+    // 各徽章的解鎖時間(找到達成條件的第一筆紀錄的時間)
+    final firstStreakOf = <int, DateTime?>{};
+    for (final threshold in [3, 7, 30]) {
+      firstStreakOf[threshold] = _findFirstStreakDate(records, threshold);
+    }
+
+    final firstTotalOf = <int, DateTime?>{};
+    for (final threshold in [1, 25, 100]) {
+      firstTotalOf[threshold] = records.length >= threshold
+          ? DateTime.tryParse(records[threshold - 1].timestamp)
+          : null;
+    }
+
+    final firstDailyOf = <int, DateTime?>{};
+    for (final threshold in [3, 5]) {
+      DateTime? found;
+      for (final entry in byDay.entries) {
+        if (entry.value.length >= threshold) {
+          final dt = DateTime.tryParse(entry.value.last.timestamp);
+          if (dt != null && (found == null || dt.isBefore(found))) {
+            found = dt;
+          }
+        }
+      }
+      firstDailyOf[threshold] = found;
+    }
+
+    final firstAccOf = <int, DateTime?>{};
+    for (final threshold in [70, 85]) {
+      DateTime? found;
+      for (final r in records) {
+        if (r.targetReps <= 0) continue;
+        final perfect =
+            (r.targetReps - r.mistakeLogs.length).clamp(0, r.targetReps);
+        final acc = (perfect / r.targetReps * 100).round();
+        if (acc >= threshold) {
+          final dt = DateTime.tryParse(r.timestamp);
+          if (dt != null && (found == null || dt.isBefore(found))) {
+            found = dt;
+          }
+        }
+      }
+      firstAccOf[threshold] = found;
+    }
+
+    return [
+      // 堅持系
+      Achievement(
+        id: 'streak_3',
+        category: BadgeCategory.streak,
+        name: '起步走',
+        description: '連續 3 天完成訓練',
+        hint: '連續 3 天,證明自己願意開始',
+        unlocked: streak >= 3 || (firstStreakOf[3] != null),
+        unlockedAt: firstStreakOf[3],
+      ),
+      Achievement(
+        id: 'streak_7',
+        category: BadgeCategory.streak,
+        name: '一週不倒',
+        description: '連續 7 天完成訓練',
+        hint: '連續 7 天,養成習慣了',
+        unlocked: streak >= 7 || (firstStreakOf[7] != null),
+        unlockedAt: firstStreakOf[7],
+      ),
+      Achievement(
+        id: 'streak_30',
+        category: BadgeCategory.streak,
+        name: '月度王者',
+        description: '連續 30 天完成訓練',
+        hint: '連續 30 天,你是真的認真的',
+        unlocked: streak >= 30 || (firstStreakOf[30] != null),
+        unlockedAt: firstStreakOf[30],
+      ),
+
+      // 量系
+      Achievement(
+        id: 'total_1',
+        category: BadgeCategory.volume,
+        name: '第一步',
+        description: '完成第一組訓練',
+        hint: '完成第一組訓練即解鎖',
+        unlocked: total >= 1,
+        unlockedAt: firstRecordTime,
+      ),
+      Achievement(
+        id: 'total_25',
+        category: BadgeCategory.volume,
+        name: '累積 25 組',
+        description: '累積完成 25 組訓練',
+        hint: '再累積 ${(25 - total).clamp(1, 25)} 組就解鎖',
+        unlocked: total >= 25,
+        unlockedAt: firstTotalOf[25],
+      ),
+      Achievement(
+        id: 'total_100',
+        category: BadgeCategory.volume,
+        name: '百組達人',
+        description: '累積完成 100 組訓練',
+        hint: '再累積 ${(100 - total).clamp(1, 100)} 組就解鎖',
+        unlocked: total >= 100,
+        unlockedAt: firstTotalOf[100],
+      ),
+
+      // 強度系
+      Achievement(
+        id: 'daily_3',
+        category: BadgeCategory.intensity,
+        name: '認真的一天',
+        description: '單日完成 3 組訓練',
+        hint: '一天內完成 3 組訓練就解鎖',
+        unlocked: maxDaily >= 3,
+        unlockedAt: firstDailyOf[3],
+      ),
+      Achievement(
+        id: 'daily_5',
+        category: BadgeCategory.intensity,
+        name: '爆發模式',
+        description: '單日完成 5 組訓練',
+        hint: '一天內完成 5 組訓練就解鎖',
+        unlocked: maxDaily >= 5,
+        unlockedAt: firstDailyOf[5],
+      ),
+      Achievement(
+        id: 'perfect',
+        category: BadgeCategory.intensity,
+        name: '完美主義',
+        description: '首次完美完成訓練(零錯誤)',
+        hint: '單組訓練零錯誤即解鎖',
+        unlocked: perfectAt != null,
+        unlockedAt: perfectAt,
+      ),
+
+      // 精準系
+      Achievement(
+        id: 'acc_70',
+        category: BadgeCategory.accuracy,
+        name: '準確入門',
+        description: '單組準確度達 70%',
+        hint: '單組準確度達 70% 即解鎖',
+        unlocked: maxAcc >= 70,
+        unlockedAt: firstAccOf[70],
+      ),
+      Achievement(
+        id: 'acc_85',
+        category: BadgeCategory.accuracy,
+        name: '穩定高手',
+        description: '單組準確度達 85%',
+        hint: '單組準確度達 85% 即解鎖',
+        unlocked: maxAcc >= 85,
+        unlockedAt: firstAccOf[85],
+      ),
+      Achievement(
+        id: 'acc_100',
+        category: BadgeCategory.accuracy,
+        name: '百分百',
+        description: '單組準確度 100%',
+        hint: '單組準確度達 100% 即解鎖',
+        unlocked: maxAcc >= 100,
+        unlockedAt: perfectAt,
+      ),
+    ];
+  }
+
+  /// 找出使用者第一次達到「連續 X 天」的日期
+  DateTime? _findFirstStreakDate(
+      List<TrainingRecord> records, int threshold) {
+    if (records.isEmpty) return null;
+
+    final days = records
+        .map((r) => r.timestamp.substring(0, 10))
+        .toSet()
+        .toList()
+      ..sort();
+
+    int currentStreak = 1;
+    DateTime? prevDay;
+    for (final dayStr in days) {
+      final dt = DateTime.parse(dayStr);
+      if (prevDay != null && dt.difference(prevDay).inDays == 1) {
+        currentStreak++;
+      } else {
+        currentStreak = 1;
+      }
+      if (currentStreak >= threshold) {
+        // 找到達成的那一筆紀錄的實際時間
+        final match = records.firstWhere(
+          (r) => r.timestamp.startsWith(dayStr),
+          orElse: () => records.first,
+        );
+        return DateTime.tryParse(match.timestamp);
+      }
+      prevDay = dt;
+    }
+    return null;
+  }
 }
 
 /// 個人紀錄卡的所有數字
@@ -150,4 +439,61 @@ class PersonalRecords {
     totalSessions: 0,
     maxAccuracy: 0,
   );
+}
+
+/// 本週摘要卡的所有數字
+class WeeklySummary {
+  final int sessions;         // 本週訓練組數
+  final int avgAccuracy;      // 本週平均準確度 (0~100)
+  final int totalMinutes;     // 本週訓練總時長(分鐘)
+  final int sessionsLastWeek; // 上週訓練組數(用來對比)
+
+  const WeeklySummary({
+    required this.sessions,
+    required this.avgAccuracy,
+    required this.totalMinutes,
+    required this.sessionsLastWeek,
+  });
+
+  static const empty = WeeklySummary(
+    sessions: 0,
+    avgAccuracy: 0,
+    totalMinutes: 0,
+    sessionsLastWeek: 0,
+  );
+
+  /// 相比上週增減:正數表示增加,負數表示減少,null 表示上週沒資料
+  int? get diffFromLastWeek {
+    if (sessionsLastWeek == 0 && sessions == 0) return null;
+    return sessions - sessionsLastWeek;
+  }
+}
+
+/// 徽章大類
+enum BadgeCategory {
+  streak,    // 堅持系
+  volume,    // 量系
+  intensity, // 強度系
+  accuracy,  // 精準系
+}
+
+/// 一個徽章的定義 + 目前狀態
+class Achievement {
+  final String id;
+  final BadgeCategory category;
+  final String name;
+  final String description;
+  final String hint;         // 尚未解鎖時的提示
+  final bool unlocked;
+  final DateTime? unlockedAt; // 解鎖時間(有解鎖才有值)
+
+  const Achievement({
+    required this.id,
+    required this.category,
+    required this.name,
+    required this.description,
+    required this.hint,
+    required this.unlocked,
+    this.unlockedAt,
+  });
 }

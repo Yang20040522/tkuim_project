@@ -44,6 +44,7 @@ class _ChatScreenState extends State<ChatScreen> {
   ChatConversation? _current;
   final Set<String> _typingConversationIds = {};
   bool _loaded = false;
+  bool _isAiMode = true;  // ← 新增,true=AI, false=真實治療師
 
   ChatMessage get _welcomeMessage => ChatMessage(
         text: '您好,我是您的 AI 復健治療師,有任何訓練上的問題都可以在這裡問我。',
@@ -287,8 +288,12 @@ class _ChatScreenState extends State<ChatScreen> {
             : Column(
                 children: [
                   _buildTopBar(),
-                  Expanded(child: _buildMessageList()),
-                  _buildInputBar(),
+                  Expanded(
+                    child: _isAiMode
+                        ? _buildMessageList()
+                        : _buildTherapistPlaceholder(),
+                  ),
+                  if (_isAiMode) _buildInputBar(),
                 ],
               ),
       ),
@@ -297,53 +302,79 @@ class _ChatScreenState extends State<ChatScreen> {
 
   Widget _buildTopBar() {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(8, 8, 20, 8),
+      padding: const EdgeInsets.fromLTRB(8, 8, 8, 8),
       child: Row(
         children: [
           Builder(
             builder: (ctx) => IconButton(
               icon: const Icon(Icons.menu, color: Color(0xFF374151)),
-              onPressed: () => Scaffold.of(ctx).openDrawer(),
+              onPressed: _isAiMode
+                  ? () => Scaffold.of(ctx).openDrawer()
+                  : null,
               tooltip: '對話列表',
             ),
           ),
-          Container(
-            width: 40,
-            height: 40,
-            decoration: const BoxDecoration(
-              color: Color(0xFF4A65FF),
-              shape: BoxShape.circle,
-            ),
-            child: const Icon(Icons.person, color: Colors.white, size: 20),
-          ),
-          const SizedBox(width: 12),
           Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  '治療師',
-                  style: TextStyle(
-                    color: Color(0xFF1A1D2E),
-                    fontSize: 16,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-                Text(
-                  _current?.title ?? '',
-                  style: const TextStyle(
-                      color: Color(0xFF9CA3AF), fontSize: 11),
-                ),
-              ],
+            child: Container(
+              padding: const EdgeInsets.all(4),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF5F6FA),
+                borderRadius: BorderRadius.circular(24),
+              ),
+              child: Row(
+                children: [
+                  Expanded(child: _buildModeTab('AI 對話', true)),
+                  Expanded(child: _buildModeTab('真實治療師', false)),
+                ],
+              ),
             ),
           ),
+          const SizedBox(width: 8),
           IconButton(
-            onPressed: _startNewConversation,
-            icon: const Icon(Icons.add_comment_outlined,
-                color: Color(0xFF4A65FF)),
+            onPressed: _isAiMode ? _startNewConversation : null,
+            icon: Icon(
+              Icons.add_comment_outlined,
+              color: _isAiMode
+                  ? const Color(0xFF4A65FF)
+                  : const Color(0xFFDDE0F0),
+            ),
             tooltip: '新對話',
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildModeTab(String label, bool isAi) {
+    final active = _isAiMode == isAi;
+    return GestureDetector(
+      onTap: () => setState(() => _isAiMode = isAi),
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        decoration: BoxDecoration(
+          color: active ? Colors.white : Colors.transparent,
+          borderRadius: BorderRadius.circular(20),
+          boxShadow: active
+              ? [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.06),
+                    blurRadius: 4,
+                    offset: const Offset(0, 1),
+                  ),
+                ]
+              : null,
+        ),
+        alignment: Alignment.center,
+        child: Text(
+          label,
+          style: TextStyle(
+            color: active
+                ? const Color(0xFF1A1D2E)
+                : const Color(0xFF9CA3AF),
+            fontSize: 13,
+            fontWeight: active ? FontWeight.w800 : FontWeight.w600,
+          ),
+        ),
       ),
     );
   }
@@ -601,6 +632,51 @@ class _ChatScreenState extends State<ChatScreen> {
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildTherapistPlaceholder() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Container(
+            width: 80,
+            height: 80,
+            decoration: BoxDecoration(
+              color: const Color(0xFF4A65FF).withValues(alpha: 0.1),
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(
+              Icons.medical_services_outlined,
+              color: Color(0xFF4A65FF),
+              size: 36,
+            ),
+          ),
+          const SizedBox(height: 16),
+          const Text(
+            '真實治療師對話',
+            style: TextStyle(
+              color: Color(0xFF1A1D2E),
+              fontSize: 16,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          const SizedBox(height: 6),
+          const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 40),
+            child: Text(
+              '此功能開發中\n未來將可與您的治療師直接對話',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: Color(0xFF9CA3AF),
+                fontSize: 12,
+                height: 1.5,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
