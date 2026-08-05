@@ -19,6 +19,8 @@ import '../stats/stats_screen.dart';
 import '../notification/notification_screen.dart';
 import '../notification/notification_service.dart';
 
+import 'package:provider/provider.dart';
+
 // ═══════════════════════════════════════════════════════════
 //  外殼:管理底部 tab 切換,IndexedStack 讓導航列常駐不消失
 // ═══════════════════════════════════════════════════════════
@@ -39,18 +41,6 @@ class _HomeScreenState extends State<HomeScreen> {
     const StatsScreen(),
     const ProfileScreen(),
   ];
-
-  // ─── 操作:即將開放(數據 tab 用)
-  /*void _comingSoon(String label) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('$label 即將開放'),
-        duration: const Duration(seconds: 2),
-        behavior: SnackBarBehavior.floating,
-        backgroundColor: const Color(0xFF1A1D2E),
-      ),
-    );
-  } */
 
   @override
   Widget build(BuildContext context) {
@@ -289,20 +279,15 @@ class _HomeContentState extends State<_HomeContent>
     );
   }
 
-  // ─── 操作:即將開放(鈴鐺、底部 4 tab 共用)
-  /*void _comingSoon(String label) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('$label 即將開放'),
-        duration: const Duration(seconds: 2),
-        behavior: SnackBarBehavior.floating,
-        backgroundColor: const Color(0xFF1A1D2E),
-      ),
-    );
-  }*/
-
   @override
   Widget build(BuildContext context) {
+    // 訂閱 HistoryService,值變了會 rebuild
+    context.watch<HistoryService>();
+    // rebuild 就重新載入統計(延到下一幀,避免 build 時 setState)
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _loadStats();
+    });
+
     return Scaffold(
       backgroundColor: const Color(0xFFF5F6FA),
       body: FadeTransition(
