@@ -188,6 +188,9 @@ class _ActionListScreenState extends State<ActionListScreen> with TickerProvider
             actionType: act.type,
             actionName: act.name,
             targetScreen: screen,
+            difficultyLabel: diff.label,     // ← 新增
+            targetReps: diff.targetReps,     // ← 新增
+            description: act.description,     // ← 新增
           )
         : screen;
 

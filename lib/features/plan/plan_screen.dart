@@ -118,6 +118,9 @@ class _PlanScreenState extends State<PlanScreen> {
             actionType: action.type,
             actionName: action.name,
             targetScreen: screen,
+            difficultyLabel: difficulty.label,     // ← 新增
+            targetReps: difficulty.targetReps,     // ← 新增
+            description: action.description,        // ← 新增
           )
         : screen;
 

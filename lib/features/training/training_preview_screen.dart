@@ -67,13 +67,19 @@ bool hasDemo3D(ActionType type) => kActionDemo3DMap.containsKey(type);
 class TrainingPreviewScreen extends StatefulWidget {
   final ActionType actionType;
   final String actionName;
-  final Widget targetScreen; // 按「開始」後要進入的實際訓練頁
+  final Widget targetScreen;
+  final String difficultyLabel;  // ← 新增
+  final int targetReps;          // ← 新增
+  final String description;      // ← 新增
 
   const TrainingPreviewScreen({
     super.key,
     required this.actionType,
     required this.actionName,
     required this.targetScreen,
+    required this.difficultyLabel,  // ← 新增
+    required this.targetReps,       // ← 新增
+    required this.description,      // ← 新增
   });
 
   @override
@@ -96,6 +102,39 @@ class _TrainingPreviewScreenState extends State<TrainingPreviewScreen> {
     );
   }
 
+  Future<void> _confirmSkip() async {
+    final skip = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: Colors.white,
+        shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16)),
+        title: const Text('確定要跳過示範嗎?',
+            style: TextStyle(
+                color: Color(0xFF1A1D2E),
+                fontSize: 16,
+                fontWeight: FontWeight.w800)),
+        content: const Text(
+          '復健動作建議先看示範,\n確保姿勢正確以免受傷。',
+          style: TextStyle(color: Color(0xFF6B7280), fontSize: 13, height: 1.5),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('再看一下',
+                style: TextStyle(color: Color(0xFF6B7280))),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('直接開始',
+                style: TextStyle(color: Color(0xFF4A65FF))),
+          ),
+        ],
+      ),
+    );
+    if (skip == true) _startTraining();
+  }
+
   @override
   Widget build(BuildContext context) {
     final demo = _demo;
@@ -110,7 +149,7 @@ class _TrainingPreviewScreenState extends State<TrainingPreviewScreen> {
           children: [
             // ── 頂欄 ──────────────────────────────
             Padding(
-              padding: const EdgeInsets.fromLTRB(8, 8, 20, 8),
+              padding: const EdgeInsets.fromLTRB(8, 8, 16, 8),
               child: Row(
                 children: [
                   IconButton(
@@ -128,36 +167,88 @@ class _TrainingPreviewScreenState extends State<TrainingPreviewScreen> {
                       ),
                     ),
                   ),
+                  TextButton(
+                    onPressed: _confirmSkip,  // ← 彈窗確認才跳過
+                    child: const Text(
+                      '跳過',
+                      style: TextStyle(
+                        color: Color(0xFF6B7280),
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
                 ],
               ),
             ),
 
-            // ── 動作名稱 ──────────────────────────
+            // ── 動作名稱 + 難度徽章 ──────────────────
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 24),
-              child: Align(
-                alignment: Alignment.centerLeft,
-                child: Text(
-                  widget.actionName,
-                  style: const TextStyle(
-                    color: Color(0xFF1A1D2E),
-                    fontSize: 22,
-                    fontWeight: FontWeight.w900,
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      widget.actionName,
+                      style: const TextStyle(
+                        color: Color(0xFF1A1D2E),
+                        fontSize: 22,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 10, vertical: 5),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF4A65FF).withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Text(
+                      '${widget.difficultyLabel} · ${widget.targetReps} 下',
+                      style: const TextStyle(
+                        color: Color(0xFF4A65FF),
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 8),
+
+            // ── 動作要領 ──────────────────────────
+            if (widget.description.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 24),
+                child: Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFFEF9E7),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Icon(Icons.lightbulb_outline,
+                          color: Color(0xFFF59E0B), size: 16),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          widget.description,
+                          style: const TextStyle(
+                            color: Color(0xFF92400E),
+                            fontSize: 12,
+                            height: 1.5,
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ),
-            ),
-            const SizedBox(height: 4),
-            const Padding(
-              padding: EdgeInsets.symmetric(horizontal: 24),
-              child: Align(
-                alignment: Alignment.centerLeft,
-                child: Text(
-                  '拖曳可旋轉・雙指縮放・先看示範再開始',
-                  style: TextStyle(color: Color(0xFF9CA3AF), fontSize: 12),
-                ),
-              ),
-            ),
             const SizedBox(height: 16),
 
             // ── 3D 模型 ───────────────────────────
