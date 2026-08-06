@@ -23,6 +23,8 @@ import '../../actions/lateral_step_action.dart';
 
 import '../../actions/body_rehab_action.dart';
 
+import 'training_preview_screen.dart';
+
 // 手部動作清單
 final _handActions = [
   ActionType.turnPalm,
@@ -180,8 +182,17 @@ class _ActionListScreenState extends State<ActionListScreen> with TickerProvider
       screen = TrainingScreen(action: act, difficulty: diff);
     }
 
+    // 有 3D 示範的動作 → 先進示範頁;沒有的 → 直接進訓練
+    final Widget destination = hasDemo3D(act.type)
+        ? TrainingPreviewScreen(
+            actionType: act.type,
+            actionName: act.name,
+            targetScreen: screen,
+          )
+        : screen;
+
     Navigator.of(context).push(PageRouteBuilder(
-      pageBuilder: (_, anim, __) => screen,
+      pageBuilder: (_, anim, __) => destination,
       transitionsBuilder: (_, anim, __, child) =>
           FadeTransition(opacity: anim, child: child),
       transitionDuration: const Duration(milliseconds: 400),

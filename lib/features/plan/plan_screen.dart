@@ -17,6 +17,8 @@ import '../../actions/sit_to_stand_action.dart';
 import '../../actions/lateral_step_action.dart';
 import '../../actions/body_rehab_action.dart';
 
+import '../training/training_preview_screen.dart';
+
 class PlanScreen extends StatefulWidget {
   const PlanScreen({super.key});
 
@@ -110,9 +112,19 @@ class _PlanScreenState extends State<PlanScreen> {
       }
     }
 
-    await Navigator.push(context, MaterialPageRoute(builder: (_) => screen));
+    // 有 3D 示範的動作 → 先進示範頁;沒有的 → 直接進訓練
+    final Widget destination = hasDemo3D(action.type)
+        ? TrainingPreviewScreen(
+            actionType: action.type,
+            actionName: action.name,
+            targetScreen: screen,
+          )
+        : screen;
 
-    // 回來後重新讀取計畫 —— done 狀態已經在訓練完成時被自動標記過了
+    await Navigator.push(
+        context, MaterialPageRoute(builder: (_) => destination));
+
+    // 回來後重新讀取計畫
     await _loadPlan(selectedDate);
   }
 
