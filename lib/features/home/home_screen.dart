@@ -21,6 +21,25 @@ import '../notification/notification_service.dart';
 
 import 'package:provider/provider.dart';
 
+import '../tv_cast/connection_status_screen.dart';
+import '../tv_cast/phone_connection_screen.dart';
+
+// 🖥️ 電視投放串接新增
+import 'dart:async';
+import '../tv_cast/webrtc_service.dart';
+import '../tv_cast/socket_server_service.dart';
+import '../tv_cast/socket_client_service.dart';
+import '../rehab/body_training_screen.dart';
+import '../../actions/standing_knee_raise_action.dart';
+import '../../actions/draw_circle_action.dart';
+import '../../actions/reach_action.dart';
+import '../../actions/raise_both_arms_action.dart';
+import '../../actions/elbow_forward_action.dart';
+import '../../actions/sit_to_stand_action.dart';
+import '../../actions/lateral_step_action.dart';
+import '../../actions/body_rehab_action.dart';
+
+
 // ═══════════════════════════════════════════════════════════
 //  外殼:管理底部 tab 切換,IndexedStack 讓導航列常駐不消失
 // ═══════════════════════════════════════════════════════════
@@ -33,6 +52,114 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   int _currentIndex = 0;
+
+  // 🖥️ 電視投放新增
+  final _serverService = SocketServerService();
+  final _clientService = SocketClientService();
+  final _rtcService = WebRtcService();
+  StreamSubscription? _serverSub;
+  StreamSubscription? _clientSub;
+
+  @override
+  void initState() {
+    super.initState();
+    // WebRTC 信令透過 socket 轉發給對方
+    _rtcService.onSignalingMessage = (signal) {
+      final msg = {'type': 'RTC_SIGNAL', 'signal': signal};
+      if (_clientService.isConnected) {
+        _clientService.sendCommand(msg);
+      } else if (_serverService.isClientConnected) {
+        _serverService.sendMessage(msg);
+      }
+    };
+    // 電視端:監聽手機傳來的指令
+    _serverSub = _serverService.messages.listen(_handleRemoteCommand);
+    _clientSub = _clientService.messages.listen(_handleRemoteCommand);
+  }
+
+  @override
+  void dispose() {
+    _serverSub?.cancel();
+    _clientSub?.cancel();
+    super.dispose();
+  }
+
+  // 🖥️ 電視端:收到 START_TRAINING → 開對應的顯示端訓練畫面
+  void _handleRemoteCommand(Map<String, dynamic> msg) {
+    if (!mounted) return;
+    if (msg['type'] != 'START_TRAINING') return;
+
+    final actionName = msg['actionName'] as String?;
+    final levelName = msg['difficultyLevel'] as String?;
+    if (actionName == null) return;
+
+    final action = kTrainingActions.firstWhere(
+      (a) => a.name == actionName,
+      orElse: () => kTrainingActions.first,
+    );
+    final difficulty = action.difficulties.firstWhere(
+      (d) => d.level.name == levelName,
+      orElse: () => action.difficulties.first,
+    );
+
+    // 只處理全身動作,手部動作先忽略
+    if (!_isBodyAction(action.type)) return;
+
+    _rtcService.init(isController: false);
+
+    Navigator.of(context).push(MaterialPageRoute(
+      builder: (_) => BodyTrainingScreen(
+        action: _createBodyRehabAction(action, difficulty),
+        trainingActionMeta: action,
+        difficultyMeta: difficulty,
+        isDisplay: true, // ← 電視顯示端
+      ),
+    ));
+  }
+
+  bool _isBodyAction(ActionType type) {
+    return type == ActionType.wipeBody ||
+        type == ActionType.drawCircle ||
+        type == ActionType.reach ||
+        type == ActionType.raiseBothArms ||
+        type == ActionType.elbowForward ||
+        type == ActionType.sitToStand ||
+        type == ActionType.lateralStep;
+  }
+
+  BodyRehabAction _createBodyRehabAction(
+      TrainingAction act, DifficultyOption diff) {
+    final d = _mapDifficulty(diff.level);
+    switch (act.type) {
+      case ActionType.wipeBody:
+        return StandingKneeRaiseAction(difficulty: d);
+      case ActionType.drawCircle:
+        return DrawCircleAction(difficulty: d);
+      case ActionType.reach:
+        return ReachAction(difficulty: d);
+      case ActionType.raiseBothArms:
+        return RaiseBothArmsAction(difficulty: d);
+      case ActionType.elbowForward:
+        return ElbowForwardAction(difficulty: d);
+      case ActionType.sitToStand:
+        return SitToStandAction(difficulty: d);
+      case ActionType.lateralStep:
+        return LateralStepAction(difficulty: d);
+      default:
+        return StandingKneeRaiseAction(difficulty: d);
+    }
+  }
+
+  RehabDifficulty _mapDifficulty(DifficultyLevel level) {
+    switch (level) {
+      case DifficultyLevel.level1:
+        return RehabDifficulty.easy;
+      case DifficultyLevel.level2:
+        return RehabDifficulty.medium;
+      case DifficultyLevel.level3:
+        return RehabDifficulty.hard;
+    }
+  }
 
   late final List<Widget> _pages = [
     const _HomeContent(),
@@ -279,6 +406,146 @@ class _HomeContentState extends State<_HomeContent>
     );
   }
 
+  // 📺 投放到電視:底部彈窗,選這台當電視(顯示端)還是當手機(遙控端)
+  void _showCastSheet() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (ctx) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Center(
+                  child: Container(
+                    width: 40,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFDDE0F0),
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 20),
+                const Text(
+                  '電視投放',
+                  style: TextStyle(
+                    color: Color(0xFF1A1D2E),
+                    fontSize: 20,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                const Text(
+                  '選擇這台裝置的角色',
+                  style: TextStyle(color: Color(0xFF6B7280), fontSize: 13),
+                ),
+                const SizedBox(height: 20),
+                _buildCastOption(
+                  emoji: '📺',
+                  title: '這台當電視',
+                  subtitle: '接收手機傳來的訓練畫面',
+                  onTap: () {
+                    Navigator.of(ctx).pop();
+                    _onCastAsTv();
+                  },
+                ),
+                const SizedBox(height: 12),
+                _buildCastOption(
+                  emoji: '📱',
+                  title: '這台當手機',
+                  subtitle: '遙控電視、傳送訓練畫面',
+                  onTap: () {
+                    Navigator.of(ctx).pop();
+                    _onCastAsPhone();
+                  },
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildCastOption({
+    required String emoji,
+    required String title,
+    required String subtitle,
+    required VoidCallback onTap,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: const Color(0xFFF5F6FA),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: const Color(0xFFDDE0F0)),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 44,
+              height: 44,
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Center(
+                child: Text(emoji, style: const TextStyle(fontSize: 22)),
+              ),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: const TextStyle(
+                      color: Color(0xFF1A1D2E),
+                      fontSize: 15,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    subtitle,
+                    style: const TextStyle(
+                        color: Color(0xFF6B7280), fontSize: 12),
+                  ),
+                ],
+              ),
+            ),
+            const Icon(Icons.arrow_forward_ios,
+                color: Color(0xFF9CA3AF), size: 14),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // 這台當電視:進 server 畫面,顯示自己的 IP 等手機連進來
+  void _onCastAsTv() {
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const ConnectionStatusScreen()),
+    );
+  }
+
+  // 這台當手機:進 client 畫面,輸入電視 IP 連過去
+  void _onCastAsPhone() {
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const PhoneConnectionScreen()),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     // 訂閱 HistoryService,值變了會 rebuild
@@ -363,6 +630,28 @@ class _HomeContentState extends State<_HomeContent>
             ],
           ),
         ),
+        // 📺 投放到電視:圓形按鈕,放在通知鈴鐺左邊
+        GestureDetector(
+          onTap: _showCastSheet,
+          child: Container(
+            width: 44,
+            height: 44,
+            decoration: BoxDecoration(
+              color: Colors.white,
+              shape: BoxShape.circle,
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.04),
+                  blurRadius: 8,
+                  offset: const Offset(0, 2),
+                ),
+              ],
+            ),
+            child: const Icon(Icons.cast,
+                color: Color(0xFF374151), size: 22),
+          ),
+        ),
+        const SizedBox(width: 12),
         GestureDetector(
           onTap: () async {                               // ✅ 改
             await Navigator.of(context).push(

@@ -31,6 +31,8 @@ import 'package:flutter/services.dart';
 import 'package:onnxruntime_v2/onnxruntime_v2.dart';
 import '../models/pose_data.dart';
 
+import 'package:image/image.dart' as img;
+
 // ── 推論輸入封裝 ──────────────────────────────────────────────────
 class InferenceInput {
   final Uint8List yPlane;
@@ -200,11 +202,28 @@ class BodyPoseEngine {
   // 對外:相機是否就緒
   final ValueNotifier<bool> cameraReady = ValueNotifier(false);
 
+  // ── 電視投放新增 ──────────────────────────────────────────
+  // 對外:JPEG 影像 (電視投放時,控制端把畫面傳給顯示端用)
+  final ValueNotifier<Uint8List?> imageNotifier = ValueNotifier(null);
+
+  // 電視顯示端旗標:true = 純顯示端,不開相機、不載模型,只吃 updateFromRemote
+  bool _isReceiver = false;
+  // JPEG 生成節流(限制 ~30fps,避免每幀都轉太吃資源)
+  bool _jpegProcessing = false;
+
+  bool get isReceiver => _isReceiver;
+
   CameraController? get cameraController => _cam;
   bool get isFrontCamera => _isFrontCamera;
 
   // ── 初始化:相機 + 模型 ──────────────────────────────────────────
-  Future<void> init() async {
+  Future<void> init({bool asReceiver = false}) async {
+    _isReceiver = asReceiver;
+    if (_isReceiver) {
+      // 電視顯示端:不開相機、不載模型,直接標記就緒
+      cameraReady.value = true;
+      return;
+    }
     await _initCamera();
     await _initOnnx();
   }
@@ -246,6 +265,12 @@ class BodyPoseEngine {
     _runOpts = OrtRunOptions();
 
     cameraReady.value = true;
+  }
+
+  // ── 電視投放新增:接收遠端算好的骨架,直接顯示(不推論) ──────────
+  void updateFromRemote(List<Offset> keypoints, List<double> scores) {
+    if (!_isReceiver) return;
+    poseNotifier.value = PoseData(keypoints, scores);
   }
 
   // ── 啟動相機串流 ──────────────────────────────────────────────────
@@ -306,6 +331,72 @@ class BodyPoseEngine {
 
     final converted = convertYUV(input);
     _pendingInference = _runInference(converted);
+
+    // ── 電視投放新增:限制 ~30fps 生成 JPEG,給顯示端串流用 ──
+    if (!_jpegProcessing) {
+      _jpegProcessing = true;
+      _generateJpeg(image).then((_) {
+        Future.delayed(const Duration(milliseconds: 33), () {
+          if (!_disposed) _jpegProcessing = false;
+        });
+      });
+    }
+  }
+
+  // ── 電視投放新增:把相機幀轉成 JPEG,丟到 imageNotifier ──────────
+  Future<void> _generateJpeg(CameraImage image) async {
+    try {
+      final img.Image? processed = _convertCameraImage(image);
+      if (processed != null) {
+        final jpeg = Uint8List.fromList(img.encodeJpg(processed, quality: 50));
+        imageNotifier.value = jpeg;
+      }
+    } catch (e) {
+      debugPrint('Error generating JPEG: $e');
+    }
+  }
+
+  img.Image? _convertCameraImage(CameraImage image) {
+    try {
+      final int width = image.width;
+      final int height = image.height;
+      final img.Image result = img.Image(width: height, height: width);
+
+      final Uint8List yPlane = image.planes[0].bytes;
+      final Uint8List uPlane = image.planes[1].bytes;
+      final Uint8List vPlane = image.planes[2].bytes;
+
+      final int yRowStride = image.planes[0].bytesPerRow;
+      final int uvRowStride = image.planes[1].bytesPerRow;
+      final int uvPixelStride = image.planes[1].bytesPerPixel ?? 1;
+
+      for (int y = 0; y < height; y++) {
+        for (int x = 0; x < width; x++) {
+          final int yIdx = y * yRowStride + x;
+          final int uvIdx = (y >> 1) * uvRowStride + (x >> 1) * uvPixelStride;
+
+          final int yVal = yPlane[yIdx];
+          final int uVal = uPlane[uvIdx] - 128;
+          final int vVal = vPlane[uvIdx] - 128;
+
+          int r = (yVal + 1.402 * vVal).toInt().clamp(0, 255);
+          int g =
+              (yVal - 0.344136 * uVal - 0.714136 * vVal).toInt().clamp(0, 255);
+          int b = (yVal + 1.772 * uVal).toInt().clamp(0, 255);
+
+          // 順時針轉 90 度:(x, y) -> (y, width - 1 - x)
+          result.setPixelRgb(y, width - 1 - x, r, g, b);
+        }
+      }
+
+      if (_isFrontCamera) {
+        return img.flipHorizontal(result);
+      }
+      return result;
+    } catch (e) {
+      debugPrint("Error converting CameraImage: $e");
+    }
+    return null;
   }
 
   // ── 供影片分析用的外部入口 ──────────────────────────────────────────
@@ -492,6 +583,7 @@ class BodyPoseEngine {
     } catch (_) {}
     
     poseNotifier.dispose();
+    imageNotifier.dispose();   // ← 電視投放新增
     cameraReady.dispose();
   }
 }

@@ -42,6 +42,15 @@ import '../../actions/sit_to_stand_action.dart';
 import '../../actions/lateral_step_action.dart';
 import '../../features/plan/plan_repository.dart';
 
+// 🖥️ 電視投放新增
+import 'dart:async';
+import 'dart:convert';
+import 'package:flutter_webrtc/flutter_webrtc.dart';
+import '../../features/tv_cast/webrtc_service.dart';
+import '../../features/tv_cast/socket_server_service.dart';
+import '../../features/tv_cast/socket_client_service.dart';
+import '../../controllers/rehab_session_controller.dart';
+
 // 達標下限:當前難度做 ≥ 3 下,按結束才會存紀錄
 const int _kMinRepsToSave = 3;
 
@@ -74,11 +83,14 @@ class BodyTrainingScreen extends StatefulWidget {
   final TrainingAction? trainingActionMeta;
   final DifficultyOption? difficultyMeta;
 
+  final bool isDisplay; // 🖥️ 電視投放新增:true = 這台當電視顯示端
+
   const BodyTrainingScreen({
     super.key,
     required this.action,
     this.trainingActionMeta,
     this.difficultyMeta,
+    this.isDisplay = false, // 🖥️ 電視投放新增
   });
 
   @override
@@ -99,6 +111,15 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
   // 🚀 樹莓派手部偵測新增:另開一條連線拿手部 landmarks
   final MediaPipeService _handService = MediaPipeService();
   PiHandSource? _piHand;
+
+  // 🖥️ 電視投放新增
+  final _serverService = SocketServerService();
+  final _clientService = SocketClientService();
+  final _rtcService = WebRtcService();
+  final _remoteRenderer = RTCVideoRenderer();
+  StreamSubscription? _socketSub;
+  final ValueNotifier<RehabSessionState> _remoteState =
+      ValueNotifier(const RehabSessionState());
 
   int _repCount = 0;
   String _feedback = '請將身體放入鏡頭範圍內';
@@ -131,14 +152,53 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
     );
     VoiceService.init();
     _start();
+
+    // 🖥️ 電視投放新增
+    _initRtc();
+    if (_clientService.isConnected) {
+      _socketSub = _clientService.messages.listen(_handleRemoteCommand);
+    } else if (_serverService.isClientConnected) {
+      _socketSub = _serverService.messages.listen(_handleRemoteCommand);
+    }
+
+    // 🖥️ 電視投放新增:控制端進訓練時,通知電視開對應的顯示端畫面
+    if (!widget.isDisplay) {
+      final startMsg = {
+        'type': 'START_TRAINING',
+        'actionName': widget.trainingActionMeta?.name ?? widget.action.title,
+        'difficultyLevel': widget.difficultyMeta?.level.name ?? 'level1',
+      };
+      if (_clientService.isConnected) {
+        _clientService.sendCommand(startMsg);
+      } else if (_serverService.isClientConnected) {
+        _serverService.sendMessage(startMsg);
+      }
+    }
   }
 
-  Future<void> _start() async {
+  /*Future<void> _start() async {
     await _engine.init();
     if (!mounted) return;
     setState(() {});
     await _engine.startCamera();
     _engine.poseNotifier.addListener(_onPoseUpdate);
+
+    if (!_recordingStarted) {
+      _recordingStarted = true;
+      ScreenRecorderService.startRecording();
+    }
+  }*/
+
+  Future<void> _start() async {
+    // 🖥️ 電視投放新增:顯示端不開相機、不載模型,只吃遠端資料
+    await _engine.init(asReceiver: widget.isDisplay);
+    if (!mounted) return;
+    setState(() {});
+    if (widget.isDisplay) return; // 🖥️ 顯示端到此為止
+
+    await _engine.startCamera();
+    _engine.poseNotifier.addListener(_onPoseUpdate);
+    _engine.imageNotifier.addListener(_onImageUpdate); // 🖥️ 控制端:傳畫面
 
     if (!_recordingStarted) {
       _recordingStarted = true;
@@ -181,9 +241,89 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
         }
       });
 
+      // 🖥️ 電視投放新增:控制端把骨架+狀態傳給電視
+      if (_clientService.isConnected || _serverService.isClientConnected) {
+        final poseMsg = {
+          'type': 'POSE_UPDATE',
+          'keypoints': data.keypoints.map((e) => [e.dx, e.dy]).toList(),
+          'scores': data.scores,
+        };
+        final statusMsg = {
+          'type': 'TRAINING_UPDATE',
+          'repCount': _repCount,
+          'feedback': _feedback,
+          'instruction': _instruction,
+        };
+        if (_clientService.isConnected) {
+          _clientService.sendCommand(poseMsg);
+          _clientService.sendCommand(statusMsg);
+        } else {
+          _serverService.sendMessage(poseMsg);
+          _serverService.sendMessage(statusMsg);
+        }
+      }
+
       if (fb.prompt != null) {
         VoiceService.speak(fb.prompt!);
       }
+    }
+  }
+
+  // 🖥️ 電視投放新增:WebRTC + binary(JPEG)接收
+  Future<void> _initRtc() async {
+    await _remoteRenderer.initialize();
+    _rtcService.onRemoteStream.listen((stream) {
+      if (mounted) setState(() => _remoteRenderer.srcObject = stream);
+    });
+
+    if (_clientService.isConnected) {
+      _clientService.binaryMessages.listen((data) {
+        if (mounted && widget.isDisplay) _engine.imageNotifier.value = data;
+      });
+    } else if (_serverService.isClientConnected) {
+      _serverService.binaryMessages.listen((data) {
+        if (mounted && widget.isDisplay) _engine.imageNotifier.value = data;
+      });
+    }
+
+    if (!widget.isDisplay) {
+      await _rtcService.init(isController: true);
+    }
+  }
+
+  // 🖥️ 電視投放新增:控制端把手機畫面 JPEG 傳給電視
+  void _onImageUpdate() {
+    if (widget.isDisplay) return;
+    final jpeg = _engine.imageNotifier.value;
+    if (jpeg == null) return;
+    if (_clientService.isConnected) {
+      _clientService.sendBinary(jpeg);
+    } else if (_serverService.isClientConnected) {
+      _serverService.sendBinary(jpeg);
+    }
+  }
+
+  // 🖥️ 電視投放新增:顯示端收遠端指令
+  void _handleRemoteCommand(Map<String, dynamic> msg) {
+    if (!mounted || !widget.isDisplay) return;
+    final type = msg['type'];
+    if (type == 'POSE_UPDATE') {
+      final kp = (msg['keypoints'] as List)
+          .map((e) => Offset(e[0].toDouble(), e[1].toDouble()))
+          .toList();
+      final sc = (msg['scores'] as List).map((e) => e.toDouble()).toList();
+      _engine.updateFromRemote(kp, List<double>.from(sc));
+    } else if (type == 'TRAINING_UPDATE') {
+      final c = _remoteState.value;
+      _remoteState.value = c.copyWith(
+        repCount: msg['repCount'] ?? c.repCount,
+        feedback: msg['feedback'] ?? c.feedback,
+        instruction: msg['instruction'] ?? c.instruction,
+      );
+    } else if (type == 'RTC_SIGNAL') {
+      _rtcService.handleSignal(msg['signal']);
+    } else if (type == 'STOP') {
+      Navigator.of(context).pop();
     }
   }
 
@@ -493,6 +633,12 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
       });
     }
     VoiceService.stop();
+    // 🖥️ 電視投放新增
+    _socketSub?.cancel();
+    _engine.imageNotifier.removeListener(_onImageUpdate);
+    _rtcService.dispose();
+    _remoteRenderer.dispose();
+    _remoteState.dispose();
     _engine.poseNotifier.removeListener(_onPoseUpdate);
     _piCamera?.dispose(); // 🚀 樹莓派新增
     _piHand?.dispose(); // 🚀 樹莓派手部新增
@@ -510,8 +656,21 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
           children: [
             _buildTopBar(),
             Expanded(child: _buildBody()),
-            _buildCoachCard(),
-            _buildStatsBar(),
+            // 🖥️ 電視投放:顯示端讀 remote,控制端讀本機
+            if (widget.isDisplay)
+              ValueListenableBuilder<RehabSessionState>(
+                valueListenable: _remoteState,
+                builder: (_, remote, __) => _buildRemoteCoachCard(remote),
+              )
+            else
+              _buildCoachCard(),
+            if (widget.isDisplay)
+              ValueListenableBuilder<RehabSessionState>(
+                valueListenable: _remoteState,
+                builder: (_, remote, __) => _buildRemoteStatsBar(remote),
+              )
+            else
+              _buildStatsBar(),
           ],
         ),
       ),
@@ -588,6 +747,50 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
   }
 
   Widget _buildBody() {
+    // 🖥️ 電視投放新增:顯示端 → 顯示遠端傳來的畫面+骨架,不開相機
+    if (widget.isDisplay) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(24),
+          child: Container(
+            color: const Color(0xFF1A1D2E),
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                ValueListenableBuilder<Uint8List?>(
+                  valueListenable: _engine.imageNotifier,
+                  builder: (_, jpeg, __) {
+                    if (jpeg == null) {
+                      return const Center(
+                        child: CircularProgressIndicator(
+                            color: Color(0xFF4A65FF)),
+                      );
+                    }
+                    return Image.memory(jpeg,
+                        gaplessPlayback: true, fit: BoxFit.cover);
+                  },
+                ),
+                ValueListenableBuilder<PoseData>(
+                  valueListenable: _engine.poseNotifier,
+                  builder: (_, data, __) {
+                    return TweenAnimationBuilder<PoseData>(
+                      tween: _PoseTween(end: data),
+                      duration: const Duration(milliseconds: 40),
+                      curve: Curves.easeOutCubic,
+                      builder: (_, lerped, __) => CustomPaint(
+                        painter: _SkeletonPainter(lerped, _scoreThreshold),
+                      ),
+                    );
+                  },
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
     // 🚀 樹莓派新增:外接來源時顯示 JPEG 畫面,不是 CameraPreview
     if (_isExternalCamera && _piCamera != null && _piHand != null) {
       return Padding(
@@ -871,6 +1074,47 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
     );
   }
 
+  // 🖥️ 電視投放:顯示端教練卡,讀遠端傳來的 feedback/instruction
+  Widget _buildRemoteCoachCard(RehabSessionState state) {
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF5F6FA),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFDDE0F0)),
+      ),
+      child: Row(
+        children: [
+          const Text('🤖', style: TextStyle(fontSize: 24)),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  state.feedback,
+                  style: const TextStyle(
+                    color: Color(0xFF1A1D2E),
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                if (state.instruction.isNotEmpty)
+                  Text(
+                    state.instruction,
+                    style: const TextStyle(
+                        color: Color(0xFF4A65FF), fontSize: 12),
+                  ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildStatsBar() {
   return Padding(
     padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
@@ -886,6 +1130,23 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
     ),
   );
 }
+
+// 🖥️ 電視投放:顯示端次數列,讀遠端傳來的 repCount
+  Widget _buildRemoteStatsBar(RehabSessionState state) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+      child: Row(
+        children: [
+          Expanded(child: _statCard('完成次數', '${state.repCount}')),
+          const SizedBox(width: 12),
+          Expanded(
+              child: _statCard('目前難度', widget.action.difficultyLabel)),
+          const SizedBox(width: 12),
+          _buildStopButton(),
+        ],
+      ),
+    );
+  }
 
   Widget _statCard(String label, String value) {
     return Container(
