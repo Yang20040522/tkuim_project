@@ -210,6 +210,8 @@ class BodyPoseEngine {
   bool _isReceiver = false;
   // JPEG 生成節流(限制 ~30fps,避免每幀都轉太吃資源)
   bool _jpegProcessing = false;
+  // 🖥️ 投放開關:只有真的在投放電視時才生成 JPEG,平常訓練不生成(省效能)
+  bool castEnabled = false;
 
   bool get isReceiver => _isReceiver;
 
@@ -333,7 +335,8 @@ class BodyPoseEngine {
     _pendingInference = _runInference(converted);
 
     // ── 電視投放新增:限制 ~30fps 生成 JPEG,給顯示端串流用 ──
-    if (!_jpegProcessing) {
+    // ── 電視投放新增:只有投放時才生成 JPEG(castEnabled),平常訓練跳過省效能 ──
+    if (castEnabled && !_jpegProcessing) {
       _jpegProcessing = true;
       _generateJpeg(image).then((_) {
         Future.delayed(const Duration(milliseconds: 33), () {

@@ -153,12 +153,16 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
     VoiceService.init();
     _start();
 
-    // 🖥️ 電視投放新增
-    _initRtc();
-    if (_clientService.isConnected) {
-      _socketSub = _clientService.messages.listen(_handleRemoteCommand);
-    } else if (_serverService.isClientConnected) {
-      _socketSub = _serverService.messages.listen(_handleRemoteCommand);
+    // 🖥️ 電視投放:只有真的連了電視才初始化,沒連就完全跳過(省效能)
+    final bool _tvConnected =
+        _clientService.isConnected || _serverService.isClientConnected;
+    if (_tvConnected) {
+      _initRtc();
+      if (_clientService.isConnected) {
+        _socketSub = _clientService.messages.listen(_handleRemoteCommand);
+      } else if (_serverService.isClientConnected) {
+        _socketSub = _serverService.messages.listen(_handleRemoteCommand);
+      }
     }
 
     // 🖥️ 電視投放新增:控制端進訓練時,通知電視開對應的顯示端畫面
@@ -197,8 +201,12 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
     if (widget.isDisplay) return; // 🖥️ 顯示端到此為止
 
     await _engine.startCamera();
-    _engine.poseNotifier.addListener(_onPoseUpdate);
-    _engine.imageNotifier.addListener(_onImageUpdate); // 🖥️ 控制端:傳畫面
+    _engine.poseNotifier.addListener(_onPoseUpdate); // ← 偵測核心,補回來
+    // 🖥️ 電視投放:只有連了電視的控制端才傳畫面,沒連不生成 JPEG(省效能)
+    if (_clientService.isConnected || _serverService.isClientConnected) {
+      _engine.imageNotifier.addListener(_onImageUpdate);
+      _engine.castEnabled = true;
+    }
 
     if (!_recordingStarted) {
       _recordingStarted = true;

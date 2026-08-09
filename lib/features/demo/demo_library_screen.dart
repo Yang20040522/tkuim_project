@@ -16,6 +16,9 @@ class _DemoItem {
   final List<String> modelSrcs;
   final List<String> modelAlts;
   final DemoCategory category;
+  final String? cameraOrbit;   // ← 新增(選填)
+  final String? fieldOfView;   // ← 新增(選填)
+  final String? cameraTarget;  // ← 新增(選填)
 
   const _DemoItem({
     required this.emoji,
@@ -25,6 +28,9 @@ class _DemoItem {
     required this.modelSrcs,
     required this.modelAlts,
     required this.category,
+    this.cameraOrbit,          // ← 新增
+    this.fieldOfView,          // ← 新增
+    this.cameraTarget,         // ← 新增
   });
 }
 
@@ -42,6 +48,18 @@ class _DemoLibraryScreenState extends State<DemoLibraryScreen>
 
   // ── 所有動作資料 ──────────────────────────────────────────
   final List<_DemoItem> _items = const [
+    _DemoItem(
+      emoji: '🖐️',
+      title: '翻掌訓練',
+      subtitle: '前臂旋轉・拖曳旋轉・雙指縮放',
+      tabLabels: ['示範'],
+      modelSrcs: ['assets/models/forearm_supination.glb'],
+      modelAlts: ['翻掌示範'],
+      category: DemoCategory.arm,
+      cameraOrbit: '0deg 75deg 5%',    // ← 你調好的
+      fieldOfView: '5deg',             // ← 你調好的
+      cameraTarget: '0m 5m 0m',        // ← 你調好的
+    ),
     _DemoItem(
       emoji: '🙋',
       title: '伸手舉高訓練',
@@ -489,6 +507,9 @@ class _DemoLibraryScreenState extends State<DemoLibraryScreen>
                       autoRotateDelay: 1000,
                       autoPlay: true,
                       cameraControls: true,
+                      cameraOrbit: item.cameraOrbit,     // ← 新增
+                      fieldOfView: item.fieldOfView,     // ← 新增
+                      cameraTarget: item.cameraTarget,   // ← 新增
                       backgroundColor: const Color(0xFF1A1D2E),
                     ),
                   ),

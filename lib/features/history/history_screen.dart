@@ -180,9 +180,6 @@ class _HistoryScreenState extends State<HistoryScreen> {
   Widget build(BuildContext context) {
     final filtered = _filteredRecords;
 
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _loadHistory();
-    });
 
     return Scaffold(
       backgroundColor: const Color(0xFFFFFFFF),

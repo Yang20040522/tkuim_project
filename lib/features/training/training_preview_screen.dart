@@ -15,16 +15,29 @@ import '../../models/training_action.dart';
 class ActionDemo3D {
   final List<String> modelSrcs; // 一或多個 glb(左右手/腳)
   final List<String> tabLabels; // 對應的分頁標籤
+  final String? cameraOrbit;   // ← 新增,選填,沒設就用 ModelViewer 預設
+  final String? fieldOfView;   // ← 新增
+  final String? cameraTarget;   // 新增
 
   const ActionDemo3D({
     required this.modelSrcs,
     required this.tabLabels,
+    this.cameraOrbit,           // ← 新增
+    this.fieldOfView,           // ← 新增
+    this.cameraTarget,
   });
 }
 
 /// ActionType → 3D 示範資料的對照表
 /// 沒列在這裡的動作 = 沒有 3D 示範
 const Map<ActionType, ActionDemo3D> kActionDemo3DMap = {
+  ActionType.turnPalm: ActionDemo3D(
+    modelSrcs: ['assets/models/forearm_supination.glb'],
+    tabLabels: ['示範'],
+    cameraOrbit: '0deg 75deg 5%',   // ← 只有翻掌拉近
+    fieldOfView: '5deg',   // ← 只有翻掌放大
+    cameraTarget: '0m 5m 0m',   // ← 對準點,調這個
+  ),
   ActionType.reach: ActionDemo3D(
     modelSrcs: [
       'assets/models/turn_Right_hand.glb',
@@ -265,6 +278,9 @@ class _TrainingPreviewScreenState extends State<TrainingPreviewScreen> {
                     autoRotateDelay: 1000,
                     autoPlay: true,
                     cameraControls: true,
+                    cameraOrbit: _demo.cameraOrbit,   // ← 新增
+                    cameraTarget: _demo.cameraTarget,   // ← 新增
+                    fieldOfView: _demo.fieldOfView,
                     backgroundColor: const Color(0xFF1A1D2E),
                   ),
                 ),

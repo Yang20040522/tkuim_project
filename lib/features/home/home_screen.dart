@@ -12,7 +12,7 @@ import '../training/action_list_screen.dart';
 import '../demo/demo_library_screen.dart';   // ← 新增
 import '../plan/plan_screen.dart';
 import '../demo/standard_analysis_screen.dart';
-import '../chat/chat_screen.dart';
+import '../chat/chat_home_screen.dart';
 import '../account/profile_screen.dart';
 import '../stats/stats_screen.dart';
 
@@ -164,7 +164,7 @@ class _HomeScreenState extends State<HomeScreen> {
   late final List<Widget> _pages = [
     const _HomeContent(),
     const PlanScreen(),
-    const ChatScreen(),
+    const ChatHomeScreen(),
     const StatsScreen(),
     const ProfileScreen(),
   ];
