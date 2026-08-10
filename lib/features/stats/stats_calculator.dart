@@ -385,6 +385,65 @@ class StatsCalculator {
     ];
   }
 
+  /// 找出「練最多次的動作」,回傳它的準確度進步軌跡
+  /// 至少要 3 筆紀錄才有意義
+  Future<ProgressTrend> getProgressTrend() async {
+    final records = await _historyService.getHistory();
+    if (records.isEmpty) return ProgressTrend.empty;
+
+    // 依動作分組
+    final Map<String, List<TrainingRecord>> byAction = {};
+    for (final r in records) {
+      byAction.putIfAbsent(r.actionName, () => []).add(r);
+    }
+
+    // 找練最多次的動作
+    String? topAction;
+    int maxCount = 0;
+    byAction.forEach((name, list) {
+      if (list.length > maxCount) {
+        maxCount = list.length;
+        topAction = name;
+      }
+    });
+
+    if (topAction == null || maxCount < 3) {
+      return ProgressTrend(
+        actionName: topAction ?? '',
+        accuracies: const [],
+        improvement: 0,
+        hasEnoughData: false,
+      );
+    }
+
+    // 把該動作的紀錄依時間排序(舊 → 新)
+    final list = byAction[topAction]!
+      ..sort((a, b) => a.timestamp.compareTo(b.timestamp));
+
+    // 算每筆的準確度
+    final accuracies = <double>[];
+    for (final r in list) {
+      if (r.targetReps <= 0) {
+        accuracies.add(0);
+        continue;
+      }
+      final perfect =
+          (r.targetReps - r.mistakeLogs.length).clamp(0, r.targetReps);
+      accuracies.add(perfect / r.targetReps * 100);
+    }
+
+    // 進步幅度 = 最後一筆 - 第一筆
+    final improvement =
+        (accuracies.last - accuracies.first).round();
+
+    return ProgressTrend(
+      actionName: topAction!,
+      accuracies: accuracies,
+      improvement: improvement,
+      hasEnoughData: true,
+    );
+  }
+
   /// 找出使用者第一次達到「連續 X 天」的日期
   DateTime? _findFirstStreakDate(
       List<TrainingRecord> records, int threshold) {
@@ -496,4 +555,26 @@ class Achievement {
     required this.unlocked,
     this.unlockedAt,
   });
+}
+
+/// 進步軌跡:某個動作的準確度隨時間變化
+class ProgressTrend {
+  final String actionName;        // 分析的是哪個動作
+  final List<double> accuracies;  // 依時間排序的準確度序列
+  final int improvement;          // 進步幅度(最近 - 最初),可負
+  final bool hasEnoughData;       // 資料夠不夠畫(至少要幾筆)
+
+  const ProgressTrend({
+    required this.actionName,
+    required this.accuracies,
+    required this.improvement,
+    required this.hasEnoughData,
+  });
+
+  static const empty = ProgressTrend(
+    actionName: '',
+    accuracies: [],
+    improvement: 0,
+    hasEnoughData: false,
+  );
 }
