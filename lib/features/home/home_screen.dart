@@ -16,7 +16,7 @@ import '../history/history_screen.dart';
 import '../training/action_list_screen.dart';
 import '../demo/demo_library_screen.dart';   // ← 新增
 import '../plan/plan_screen.dart';
-import '../demo/standard_analysis_screen.dart';
+import '../analysis/standard_analysis_screen.dart';
 import '../chat/chat_home_screen.dart';
 import '../account/profile_screen.dart';
 import '../stats/stats_screen.dart';

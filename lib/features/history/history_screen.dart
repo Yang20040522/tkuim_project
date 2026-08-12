@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import '../../models/training_action.dart';
 import '../../services/history_service.dart';
 import 'video_playback_screen.dart';
+import '../analysis/comparison_report_screen.dart';
+import '../analysis/video_analysis_service.dart';
 
 // ── 分類定義（與 action_list_screen.dart 保持一致）──
 //
@@ -691,44 +693,202 @@ class _HistoryScreenState extends State<HistoryScreen> {
           // ── 播放錄影按鈕(只有存在 videoPath 才顯示)───────────────
           if (hasVideo) ...[
             const SizedBox(height: 10),
-            GestureDetector(
-              onTap: () => Navigator.of(context).push(MaterialPageRoute(
-                builder: (_) => VideoPlaybackScreen(
-                  videoPath: record.videoPath!,
-                  title: '${record.actionName} · ${record.timestamp}',
-                ),
-              )),
-              child: Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF4A65FF).withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(
-                      color: const Color(0xFF4A65FF).withOpacity(0.3)),
-                ),
-                child: const Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(Icons.play_circle_outline,
-                        color: Color(0xFF4A65FF), size: 18),
-                    SizedBox(width: 6),
-                    Text(
-                      '播放錄影',
-                      style: TextStyle(
-                        color: Color(0xFF4A65FF),
-                        fontSize: 12,
-                        fontWeight: FontWeight.w700,
+            Row(
+              children: [
+                Expanded(
+                  child: GestureDetector(
+                    onTap: () => Navigator.of(context).push(MaterialPageRoute(
+                      builder: (_) => VideoPlaybackScreen(
+                        videoPath: record.videoPath!,
+                        title: '${record.actionName} · ${record.timestamp}',
+                      ),
+                    )),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF4A65FF).withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(
+                            color: const Color(0xFF4A65FF).withOpacity(0.3)),
+                      ),
+                      child: const Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.play_circle_outline,
+                              color: Color(0xFF4A65FF), size: 18),
+                          SizedBox(width: 6),
+                          Text(
+                            '播放錄影',
+                            style: TextStyle(
+                              color: Color(0xFF4A65FF),
+                              fontSize: 12,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ],
                       ),
                     ),
-                  ],
+                  ),
                 ),
-              ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: GestureDetector(
+                    onTap: () => _analyzeRecording(
+                        context, record.videoPath!, record.actionName),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF4CAF50).withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(
+                            color: const Color(0xFF4CAF50).withOpacity(0.3)),
+                      ),
+                      child: const Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.analytics_outlined,
+                              color: Color(0xFF4CAF50), size: 18),
+                          SizedBox(width: 6),
+                          Text(
+                            '分析錄影',
+                            style: TextStyle(
+                              color: Color(0xFF4CAF50),
+                              fontSize: 12,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ],
             ),
           ],
         ],
       ),
     );
+  }
+
+  // ═══════════════════════════════════════════════════════════════
+  //  分析歷史錄影
+  // ═══════════════════════════════════════════════════════════════
+
+  Future<void> _analyzeRecording(
+      BuildContext context, String videoPath, String actionName) async {
+    // 1. 讀取所有模板
+    final templates = await VideoAnalysisService.loadAllTemplates();
+
+    if (!context.mounted) return;
+
+    if (templates.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('尚無治療師模板可比對,請先在「動作標準分析」建立模板'),
+        ),
+      );
+      return;
+    }
+
+    // 2. 選模板(相關動作排前面)
+    templates.sort((a, b) {
+      final ta = (a['actionType'] ?? '').toString();
+      final tb = (b['actionType'] ?? '').toString();
+      final aMatch = actionName.contains(ta) || ta.contains(actionName);
+      final bMatch = actionName.contains(tb) || tb.contains(actionName);
+      if (aMatch && !bMatch) return -1;
+      if (!aMatch && bMatch) return 1;
+      return 0;
+    });
+
+    final selected = await showModalBottomSheet<Map<String, dynamic>>(
+      context: context,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('選擇要比對的模板',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800)),
+              const SizedBox(height: 12),
+              ...templates.take(10).map((t) => ListTile(
+                    leading: const Icon(Icons.folder_open,
+                        color: Color(0xFF4A65FF)),
+                    title: Text(t['templateName'] ?? '未命名'),
+                    subtitle: Text('動作類型:${t['actionType'] ?? '未知'}'),
+                    onTap: () => Navigator.pop(ctx, t),
+                  )),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    if (selected == null || !context.mounted) return;
+
+    // 3. 顯示分析中
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => Dialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        child: const Padding(
+          padding: EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              CircularProgressIndicator(color: Color(0xFF4A65FF)),
+              SizedBox(height: 16),
+              Text('分析中...',
+                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700)),
+              SizedBox(height: 4),
+              Text('請稍候,分析需 30-60 秒',
+                  style: TextStyle(color: Color(0xFF6B7280), fontSize: 12)),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    try {
+      // 4. 跑分析(委派給共用 service)
+      final patientResult =
+          await VideoAnalysisService.analyzeVideo(videoPath: videoPath);
+
+      if (!context.mounted) return;
+      Navigator.of(context).pop();   // 關閉 loading
+
+      if (patientResult == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('分析失敗:無法從影片偵測到骨架')),
+        );
+        return;
+      }
+
+      // 5. 導到報告畫面
+      Navigator.of(context).push(MaterialPageRoute(
+        builder: (_) => ComparisonReportScreen(
+          patientResult: patientResult,
+          templateJson: selected,
+          patientVideoPath: videoPath,
+        ),
+      ));
+    } catch (e) {
+      if (context.mounted) {
+        Navigator.of(context).pop();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('分析錯誤:$e')),
+        );
+      }
+    }
   }
 
   void _showClearDialog() {
