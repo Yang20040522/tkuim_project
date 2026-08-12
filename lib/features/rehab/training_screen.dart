@@ -1,4 +1,4 @@
-// lib/screens/training_screen.dart
+// lib/features/rehab/training_screen.dart
 //
 // ══════════════════════════════════════════════════════════════════
 //  重構後的主控畫面
@@ -15,14 +15,20 @@
 //  🚀 修正:HandOverlayWidget 加上 sourceSize,讓骨架點位能跟
 //     Image.memory(fit: BoxFit.cover) 的裁切/縮放對齊，
 //     解決樹莓派鏡頭骨架貼不上手指的問題（詳見 hand_overlay_widget.dart）。
+//  🖥️ 電視投放新增:比照 body_training_screen.dart 的做法，
+//     控制端(手機)把手部 landmarks + 訓練狀態透過 Socket 傳給電視，
+//     顯示端(電視)不開相機、不跑 RehabSessionController，
+//     只讀遠端資料並用 HandOverlayWidget 畫出骨架。
 // ══════════════════════════════════════════════════════════════════
 
+import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_webrtc/flutter_webrtc.dart';
 
 //import '../../services/pi_hand_source.dart';
 import '../../services/pi_pose_model.dart';
@@ -32,6 +38,7 @@ import '../../controllers/rehab_session_controller.dart';
 import '../../models/training_action.dart';
 import '../../services/history_service.dart';
 import '../../services/mediapipe_model.dart';
+import '../../services/mediapipe_service.dart'; // 🖥️ 電視投放新增:拿 Landmark 型別
 import '../../services/screen_recorder_service.dart';
 
 import '../../widgets/hand_overlay_widget.dart';
@@ -50,16 +57,23 @@ import '../../actions/elbow_forward_action.dart';
 import '../../actions/body_rehab_action.dart';
 import '../../features/plan/plan_repository.dart';
 
+// 🖥️ 電視投放新增
+import '../tv_cast/webrtc_service.dart';
+import '../tv_cast/socket_server_service.dart';
+import '../tv_cast/socket_client_service.dart';
+
 
 
 class TrainingScreen extends StatefulWidget {
   final TrainingAction action;
   final DifficultyOption difficulty;
+  final bool isDisplay; // 🖥️ 電視投放新增:true = 這台當電視顯示端
 
   const TrainingScreen({
     super.key,
     required this.action,
     required this.difficulty,
+    this.isDisplay = false, // 🖥️ 電視投放新增
   });
 
   @override
@@ -91,6 +105,15 @@ class _TrainingScreenState extends State<TrainingScreen>
   late AnimationController _slideCtrl;
   late Animation<Offset> _slideAnim;
 
+  // 🖥️ 電視投放新增
+  final _serverService = SocketServerService();
+  final _clientService = SocketClientService();
+  final _rtcService = WebRtcService();
+  final _remoteRenderer = RTCVideoRenderer();
+  StreamSubscription? _socketSub;
+  final ValueNotifier<_RemoteHandState> _remoteState =
+      ValueNotifier(const _RemoteHandState());
+
   bool get _showStickGuide => widget.action.type == ActionType.turnPalm;
   bool get _showPinchGuide => widget.action.type == ActionType.sidePinch;
 
@@ -98,6 +121,9 @@ class _TrainingScreenState extends State<TrainingScreen>
   void initState() {
     super.initState();
 
+    // 🖥️ 電視投放新增:顯示端不需要建立本機 controller / 相機資源。
+    // 但為了盡量不動原本的建構流程與型別(late 欄位),仍建立一個
+    // controller 物件,只是顯示端完全不會呼叫 _onSourceReady()/start()。
     _controller = _buildController(useExternal: false);
 
     _pulseCtrl = AnimationController(
@@ -118,6 +144,32 @@ class _TrainingScreenState extends State<TrainingScreen>
     ).animate(CurvedAnimation(parent: _slideCtrl, curve: Curves.easeOut));
 
     _listenController();
+
+    // 🖥️ 電視投放新增:只有真的連了電視才初始化,沒連就完全跳過(省效能)
+    final bool tvConnected =
+        _clientService.isConnected || _serverService.isClientConnected;
+    if (tvConnected) {
+      _initRtc();
+      if (_clientService.isConnected) {
+        _socketSub = _clientService.messages.listen(_handleRemoteCommand);
+      } else if (_serverService.isClientConnected) {
+        _socketSub = _serverService.messages.listen(_handleRemoteCommand);
+      }
+    }
+
+    // 🖥️ 電視投放新增:控制端(手機)進訓練時,通知電視開對應的顯示端畫面
+    if (!widget.isDisplay) {
+      final startMsg = {
+        'type': 'START_TRAINING',
+        'actionName': widget.action.name,
+        'difficultyLevel': widget.difficulty.level.name,
+      };
+      if (_clientService.isConnected) {
+        _clientService.sendCommand(startMsg);
+      } else if (_serverService.isClientConnected) {
+        _serverService.sendMessage(startMsg);
+      }
+    }
   }
 
   // 🚀 樹莓派新增:依來源建立對應的 model + controller
@@ -139,11 +191,88 @@ class _TrainingScreenState extends State<TrainingScreen>
     _controller.stateStream.listen((state) {
       if (!mounted) return;
       setState(() {});
+
+      // 🖥️ 電視投放新增:控制端把手部骨架 + 狀態傳給電視
+      if (!widget.isDisplay &&
+          (_clientService.isConnected || _serverService.isClientConnected) &&
+          state.handLandmarks.isNotEmpty) {
+        final poseMsg = {
+          'type': 'HAND_POSE_UPDATE',
+          'landmarks':
+              state.handLandmarks.map((lm) => [lm.x, lm.y, lm.z]).toList(),
+        };
+        final statusMsg = {
+          'type': 'TRAINING_UPDATE',
+          'repCount': state.repCount,
+          'feedback': state.feedback,
+          'instruction': state.instruction,
+          'progress': state.progress,
+          'speedState': state.speedState,
+          'targetReps': state.targetReps,
+          'isCountingDown': state.isCountingDown,
+          'countdownSeconds': state.countdownSeconds,
+        };
+        if (_clientService.isConnected) {
+          _clientService.sendCommand(poseMsg);
+          _clientService.sendCommand(statusMsg);
+        } else {
+          _serverService.sendMessage(poseMsg);
+          _serverService.sendMessage(statusMsg);
+        }
+      }
+
       if (state.isComplete && !_completionShown) {
         _completionShown = true;
         _handleCompletion(state);
       }
     });
+  }
+
+  // 🖥️ 電視投放新增:WebRTC 初始化(目前主要用於 signaling 通道,
+  // 實際畫面/骨架資料走 Socket,跟 body_training_screen.dart 一致)
+  Future<void> _initRtc() async {
+    await _remoteRenderer.initialize();
+    _rtcService.onRemoteStream.listen((stream) {
+      if (mounted) setState(() => _remoteRenderer.srcObject = stream);
+    });
+    if (!widget.isDisplay) {
+      await _rtcService.init(isController: true, captureVideo: false);
+    }
+  }
+
+  // 🖥️ 電視投放新增:顯示端收遠端指令
+  void _handleRemoteCommand(Map<String, dynamic> msg) {
+    if (!mounted || !widget.isDisplay) return;
+    final type = msg['type'];
+
+    if (type == 'HAND_POSE_UPDATE') {
+      final rawLm = msg['landmarks'] as List;
+      final landmarks = rawLm
+          .map((e) => Landmark(
+                (e[0] as num).toDouble(),
+                (e[1] as num).toDouble(),
+                (e[2] as num).toDouble(),
+              ))
+          .toList();
+      _remoteState.value =
+          _remoteState.value.copyWith(handLandmarks: landmarks);
+    } else if (type == 'TRAINING_UPDATE') {
+      final c = _remoteState.value;
+      _remoteState.value = c.copyWith(
+        repCount: msg['repCount'] ?? c.repCount,
+        feedback: msg['feedback'] ?? c.feedback,
+        instruction: msg['instruction'] ?? c.instruction,
+        progress: (msg['progress'] as num?)?.toDouble() ?? c.progress,
+        speedState: msg['speedState'] ?? c.speedState,
+        targetReps: msg['targetReps'] ?? c.targetReps,
+        isCountingDown: msg['isCountingDown'] ?? c.isCountingDown,
+        countdownSeconds: msg['countdownSeconds'] ?? c.countdownSeconds,
+      );
+    } else if (type == 'RTC_SIGNAL') {
+      _rtcService.handleSignal(msg['signal']);
+    } else if (type == 'STOP') {
+      Navigator.of(context).pop();
+    }
   }
 
   // 🚀 樹莓派新增:開啟外接鏡頭 → 詢問 IP → 換掉整個 controller
@@ -211,13 +340,19 @@ class _TrainingScreenState extends State<TrainingScreen>
   void dispose() {
     // 保險:如果畫面被意外關掉而沒有走到完整結束流程,錄影可能還在跑,
     // 這裡補一次停止並直接刪除暫存檔(視為不保留)。
-    if (!_completionShown) {
+    if (!widget.isDisplay && !_completionShown) {
       ScreenRecorderService.stopRecording().then((path) {
         if (path != null) {
           File(path).delete().catchError((e) => File(path));
         }
       });
     }
+    // 🖥️ 電視投放新增
+    _socketSub?.cancel();
+    _rtcService.dispose();
+    _remoteRenderer.dispose();
+    _remoteState.dispose();
+
     _controller.dispose();
     _pulseCtrl.dispose();
     _slideCtrl.dispose();
@@ -475,6 +610,12 @@ class _TrainingScreenState extends State<TrainingScreen>
 
   @override
   Widget build(BuildContext context) {
+    // 🖥️ 電視投放新增:顯示端走完全不同的簡化畫面,
+    // 不開相機、不跑 controller,只讀遠端資料。
+    if (widget.isDisplay) {
+      return _buildDisplayScaffold();
+    }
+
     final s = _controller.currentState;
 
     return Scaffold(
@@ -593,6 +734,162 @@ class _TrainingScreenState extends State<TrainingScreen>
           ],
         ),
       ),
+    );
+  }
+
+  // 🖥️ 電視投放新增:顯示端(電視)畫面。
+  // 不開相機、不跑 RehabSessionController,只讀 _remoteState
+  // 並用 HandOverlayWidget 畫出手部骨架(黑底,無真人畫面)。
+  Widget _buildDisplayScaffold() {
+    return Scaffold(
+      backgroundColor: Colors.black,
+      body: SafeArea(
+        child: ValueListenableBuilder<_RemoteHandState>(
+          valueListenable: _remoteState,
+          builder: (_, remote, __) {
+            return Column(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          widget.action.name,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 18,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 10, vertical: 5),
+                        decoration: BoxDecoration(
+                          color: Colors.green.withOpacity(0.15),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(
+                              color: Colors.green.withOpacity(0.4)),
+                        ),
+                        child: const Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.link, color: Colors.green, size: 14),
+                            SizedBox(width: 4),
+                            Text(
+                              '正在接收',
+                              style: TextStyle(
+                                color: Colors.green,
+                                fontSize: 12,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(24),
+                      child: Container(
+                        color: const Color(0xFF161824),
+                        child: Stack(
+                          fit: StackFit.expand,
+                          children: [
+                            if (remote.handLandmarks.isNotEmpty)
+                              HandOverlayWidget(
+                                landmarks: remote.handLandmarks,
+                                progress: remote.progress,
+                                speedState: remote.speedState,
+                              )
+                            else
+                              const Center(
+                                child: CircularProgressIndicator(
+                                    color: Color(0xFF4A65FF)),
+                              ),
+                            if (remote.isCountingDown)
+                              CountdownOverlay(
+                                  seconds: remote.countdownSeconds),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                CoachCard(
+                  feedback: remote.feedback,
+                  instruction: remote.instruction,
+                ),
+                Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Text(
+                    '${remote.repCount} / ${remote.targetReps}',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 40,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ),
+              ],
+            );
+          },
+        ),
+      ),
+    );
+  }
+}
+
+// 🖥️ 電視投放新增:顯示端用來裝遠端手部狀態的容器
+class _RemoteHandState {
+  final List<Landmark> handLandmarks;
+  final String feedback;
+  final String instruction;
+  final int repCount;
+  final int targetReps;
+  final double progress;
+  final int speedState;
+  final bool isCountingDown;
+  final int countdownSeconds;
+
+  const _RemoteHandState({
+    this.handLandmarks = const [],
+    this.feedback = '等待連線中...',
+    this.instruction = '',
+    this.repCount = 0,
+    this.targetReps = 10,
+    this.progress = 0,
+    this.speedState = 0,
+    this.isCountingDown = false,
+    this.countdownSeconds = 0,
+  });
+
+  _RemoteHandState copyWith({
+    List<Landmark>? handLandmarks,
+    String? feedback,
+    String? instruction,
+    int? repCount,
+    int? targetReps,
+    double? progress,
+    int? speedState,
+    bool? isCountingDown,
+    int? countdownSeconds,
+  }) {
+    return _RemoteHandState(
+      handLandmarks: handLandmarks ?? this.handLandmarks,
+      feedback: feedback ?? this.feedback,
+      instruction: instruction ?? this.instruction,
+      repCount: repCount ?? this.repCount,
+      targetReps: targetReps ?? this.targetReps,
+      progress: progress ?? this.progress,
+      speedState: speedState ?? this.speedState,
+      isCountingDown: isCountingDown ?? this.isCountingDown,
+      countdownSeconds: countdownSeconds ?? this.countdownSeconds,
     );
   }
 }

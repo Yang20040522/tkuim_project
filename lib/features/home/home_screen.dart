@@ -2,6 +2,11 @@
 //
 // 首頁(新版)— 儀表板風格 + 底部 5 tab
 // 「今日準確度」「連續達成」接 HistoryService 真實資料
+//
+// 🖥️ 電視投放修正:_handleRemoteCommand 原本只處理全身動作,
+//    手部動作被直接忽略(return),導致電視端收到手部訓練指令時毫無反應。
+//    現在改成:全身動作 → BodyTrainingScreen(isDisplay:true)
+//              手部動作 → TrainingScreen(isDisplay:true)
 
 import 'package:flutter/material.dart';
 
@@ -30,6 +35,7 @@ import '../tv_cast/webrtc_service.dart';
 import '../tv_cast/socket_server_service.dart';
 import '../tv_cast/socket_client_service.dart';
 import '../rehab/body_training_screen.dart';
+import '../rehab/training_screen.dart'; // 🖥️ 電視投放新增:手部動作顯示端要用
 import '../../actions/standing_knee_raise_action.dart';
 import '../../actions/draw_circle_action.dart';
 import '../../actions/reach_action.dart';
@@ -102,19 +108,29 @@ class _HomeScreenState extends State<HomeScreen> {
       orElse: () => action.difficulties.first,
     );
 
-    // 只處理全身動作,手部動作先忽略
-    if (!_isBodyAction(action.type)) return;
+    if (_isBodyAction(action.type)) {
+      // 🖥️ 全身動作 → 電視端開全身骨架顯示畫面
+      _rtcService.init(isController: false);
 
-    _rtcService.init(isController: false);
-
-    Navigator.of(context).push(MaterialPageRoute(
-      builder: (_) => BodyTrainingScreen(
-        action: _createBodyRehabAction(action, difficulty),
-        trainingActionMeta: action,
-        difficultyMeta: difficulty,
-        isDisplay: true, // ← 電視顯示端
-      ),
-    ));
+      Navigator.of(context).push(MaterialPageRoute(
+        builder: (_) => BodyTrainingScreen(
+          action: _createBodyRehabAction(action, difficulty),
+          trainingActionMeta: action,
+          difficultyMeta: difficulty,
+          isDisplay: true, // ← 電視顯示端
+        ),
+      ));
+    } else {
+      // 🖥️ 手部動作 → 電視端開手部骨架顯示畫面
+      // (修正前這裡是 return,手部動作被直接忽略)
+      Navigator.of(context).push(MaterialPageRoute(
+        builder: (_) => TrainingScreen(
+          action: action,
+          difficulty: difficulty,
+          isDisplay: true, // ← 電視顯示端
+        ),
+      ));
+    }
   }
 
   bool _isBodyAction(ActionType type) {

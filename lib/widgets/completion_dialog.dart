@@ -64,9 +64,19 @@ class _CompletionDialogState extends State<CompletionDialog> {
   // null = 尚未決定,true = 保留,false = 不保留
   bool? _keepVideo;
 
+  // 使用者選完之後,先讓確認文字顯示一下,再把整個區塊收合消失
+  bool _videoBlockHidden = false;
+
   void _selectKeepVideo(bool keep) {
+    if (_keepVideo != null) return; // 避免重複觸發
     setState(() => _keepVideo = keep);
     widget.onVideoDecision?.call(keep);
+
+    // 讓使用者先看到「已保留/已捨棄」的確認文字,
+    // 停留一下再讓整個小區塊收合消失,才不會覺得「按了沒反應」。
+    Future.delayed(const Duration(milliseconds: 550), () {
+      if (mounted) setState(() => _videoBlockHidden = true);
+    });
   }
 
   @override
@@ -98,11 +108,19 @@ class _CompletionDialogState extends State<CompletionDialog> {
               // ── 資訊區:有溫度的文案 + 時長/難度 ───────────────────
               _buildInfoBlock(timeText),
 
-              // ── 保留錄影詢問區塊 ─────────────────────────────────
-              if (widget.hasVideo) ...[
-                const SizedBox(height: 14),
-                _buildVideoKeepBlock(),
-              ],
+              // ── 保留錄影詢問區塊(選完後會自動收合消失)──────────────
+              if (widget.hasVideo)
+                AnimatedSize(
+                  duration: const Duration(milliseconds: 300),
+                  curve: Curves.easeOut,
+                  alignment: Alignment.topCenter,
+                  child: _videoBlockHidden
+                      ? const SizedBox.shrink()
+                      : Padding(
+                          padding: const EdgeInsets.only(top: 14),
+                          child: _buildVideoKeepBlock(),
+                        ),
+                ),
 
               const SizedBox(height: 22),
               _divider(widget.isPaused ? '想做什麼?' : '接下來要做什麼?'),
@@ -257,26 +275,50 @@ class _CompletionDialogState extends State<CompletionDialog> {
             style: TextStyle(color: Color(0xFF6B7280), fontSize: 11),
           ),
           const SizedBox(height: 10),
-          Row(
-            children: [
-              Expanded(
-                child: _videoChoiceButton(
-                  label: '保留',
-                  icon: Icons.check_circle_outline,
-                  selected: _keepVideo == true,
-                  onTap: () => _selectKeepVideo(true),
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: _videoChoiceButton(
-                  label: '不保留',
-                  icon: Icons.delete_outline,
-                  selected: _keepVideo == false,
-                  onTap: () => _selectKeepVideo(false),
-                ),
-              ),
-            ],
+          AnimatedSwitcher(
+            duration: const Duration(milliseconds: 200),
+            child: _keepVideo == null
+                ? Row(
+                    key: const ValueKey('video_choice_buttons'),
+                    children: [
+                      Expanded(
+                        child: _videoChoiceButton(
+                          label: '保留',
+                          icon: Icons.check_circle_outline,
+                          selected: false,
+                          onTap: () => _selectKeepVideo(true),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: _videoChoiceButton(
+                          label: '不保留',
+                          icon: Icons.delete_outline,
+                          selected: false,
+                          onTap: () => _selectKeepVideo(false),
+                        ),
+                      ),
+                    ],
+                  )
+                : Row(
+                    key: const ValueKey('video_choice_confirmed'),
+                    children: [
+                      Icon(
+                        _keepVideo! ? Icons.check_circle : Icons.delete,
+                        color: const Color(0xFF4A65FF),
+                        size: 18,
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        _keepVideo! ? '已保留這段影片' : '已捨棄這段影片',
+                        style: const TextStyle(
+                          color: Color(0xFF4A65FF),
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ],
+                  ),
           ),
         ],
       ),
