@@ -777,7 +777,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
   // ═══════════════════════════════════════════════════════════════
 
   Future<void> _analyzeRecording(
-      BuildContext context, String videoPath, String actionName) async {
+    BuildContext context, String videoPath, String actionName) async {
     // 1. 讀取所有模板
     final templates = await VideoAnalysisService.loadAllTemplates();
 
@@ -834,37 +834,104 @@ class _HistoryScreenState extends State<HistoryScreen> {
 
     if (selected == null || !context.mounted) return;
 
-    // 3. 顯示分析中
+    // 3. 分析中對話框(進度條 + 取消按鈕)
+    final progressNotifier = ValueNotifier<double>(0);
+    bool cancelled = false;
+
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (_) => Dialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        child: const Padding(
-          padding: EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              CircularProgressIndicator(color: Color(0xFF4A65FF)),
-              SizedBox(height: 16),
-              Text('分析中...',
-                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700)),
-              SizedBox(height: 4),
-              Text('請稍候,分析需 30-60 秒',
-                  style: TextStyle(color: Color(0xFF6B7280), fontSize: 12)),
-            ],
+      builder: (dialogCtx) {
+        return WillPopScope(
+          onWillPop: () async => false,   // 禁用返回鍵
+          child: Dialog(
+            shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16)),
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text('分析中...',
+                      style: TextStyle(
+                          fontSize: 16, fontWeight: FontWeight.w800)),
+                  const SizedBox(height: 8),
+                  Text('請稍候,可隨時取消',
+                      style: TextStyle(
+                          color: Colors.grey.shade600, fontSize: 12)),
+                  const SizedBox(height: 20),
+                  // 進度條 + 百分比
+                  ValueListenableBuilder<double>(
+                    valueListenable: progressNotifier,
+                    builder: (_, value, __) => Column(
+                      children: [
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(6),
+                          child: LinearProgressIndicator(
+                            value: value,
+                            minHeight: 8,
+                            backgroundColor: const Color(0xFFEDEFF7),
+                            valueColor: const AlwaysStoppedAnimation<Color>(
+                                Color(0xFF4A65FF)),
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          '${(value * 100).toStringAsFixed(0)} %',
+                          style: const TextStyle(
+                              color: Color(0xFF4A65FF),
+                              fontSize: 20,
+                              fontWeight: FontWeight.w900),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  // 取消按鈕
+                  SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton.icon(
+                      onPressed: () {
+                        cancelled = true;
+                        Navigator.of(dialogCtx).pop();
+                      },
+                      icon: const Icon(Icons.close, size: 18),
+                      label: const Text('取消分析',
+                          style: TextStyle(fontWeight: FontWeight.w700)),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: const Color(0xFFF44336),
+                        side: const BorderSide(color: Color(0xFFF44336)),
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
           ),
-        ),
-      ),
+        );
+      },
     );
 
     try {
-      // 4. 跑分析(委派給共用 service)
-      final patientResult =
-          await VideoAnalysisService.analyzeVideo(videoPath: videoPath);
+      // 4. 跑分析(fps=1 讓速度變快 + 進度 + 可取消)
+      final patientResult = await VideoAnalysisService.analyzeVideo(
+        videoPath: videoPath,
+        fps: 1,   // ← 從 2 降到 1,分析速度快一倍
+        onProgress: (p) => progressNotifier.value = p,
+        shouldCancel: () => cancelled,
+      );
 
       if (!context.mounted) return;
-      Navigator.of(context).pop();   // 關閉 loading
+
+      // 如果使用者取消,dialog 已經被關掉,直接 return
+      if (cancelled) {
+        progressNotifier.dispose();
+        return;
+      }
+
+      Navigator.of(context).pop();   // 關閉 loading dialog
+      progressNotifier.dispose();
 
       if (patientResult == null) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -882,8 +949,9 @@ class _HistoryScreenState extends State<HistoryScreen> {
         ),
       ));
     } catch (e) {
-      if (context.mounted) {
+      if (context.mounted && !cancelled) {
         Navigator.of(context).pop();
+        progressNotifier.dispose();
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('分析錯誤:$e')),
         );

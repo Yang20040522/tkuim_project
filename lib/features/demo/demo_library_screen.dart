@@ -61,6 +61,19 @@ class _DemoLibraryScreenState extends State<DemoLibraryScreen>
       cameraTarget: '0m 5m 0m',        // ← 你調好的
     ),
     _DemoItem(
+      emoji: '🤏',
+      title: '手指側捏訓練',
+      subtitle: '拖曳旋轉・雙指縮放',
+      tabLabels: ['示範'],
+      modelSrcs: ['assets/models/lateral_pinch.glb'],
+      modelAlts: ['手指側捏示範'],
+      category: DemoCategory.arm,
+      // 如果訓練示範頁有調鏡頭,這裡也套一樣的參數
+      cameraOrbit: '0deg 75deg 5%',
+      fieldOfView: '5deg',
+      cameraTarget: '0m 5m 0m',
+    ),
+    _DemoItem(
       emoji: '🙋',
       title: '伸手舉高訓練',
       subtitle: '左右手可切換・拖曳旋轉・雙指縮放',
@@ -164,8 +177,21 @@ class _DemoLibraryScreenState extends State<DemoLibraryScreen>
   }
 
   void _toggle(int idx) {
-    setState(() => _expanded[idx] = !_expanded[idx]);
-    _expanded[idx] ? _controllers[idx].forward() : _controllers[idx].reverse();
+    setState(() {
+      final wasExpanded = _expanded[idx];
+      // 先收起所有已展開的(含它自己)
+      for (int i = 0; i < _expanded.length; i++) {
+        if (_expanded[i]) {
+          _expanded[i] = false;
+          _controllers[i].reverse();
+        }
+      }
+      // 原本是收起的 → 展開它;原本是展開的 → 保持收起(等於關閉)
+      if (!wasExpanded) {
+        _expanded[idx] = true;
+        _controllers[idx].forward();
+      }
+    });
   }
 
   List<_DemoItem> get _filteredItems => _selectedCategory == DemoCategory.all
@@ -499,19 +525,21 @@ class _DemoLibraryScreenState extends State<DemoLibraryScreen>
                   borderRadius: BorderRadius.circular(20),
                   child: SizedBox(
                     height: 380,
-                    child: ModelViewer(
-                      key: ValueKey(modelSrc),
-                      src: modelSrc,
-                      alt: modelAlt,
-                      autoRotate: true,
-                      autoRotateDelay: 1000,
-                      autoPlay: true,
-                      cameraControls: true,
-                      cameraOrbit: item.cameraOrbit,     // ← 新增
-                      fieldOfView: item.fieldOfView,     // ← 新增
-                      cameraTarget: item.cameraTarget,   // ← 新增
-                      backgroundColor: const Color(0xFF1A1D2E),
-                    ),
+                    child: expanded
+                        ? ModelViewer(
+                            key: ValueKey(modelSrc),
+                            src: modelSrc,
+                            alt: modelAlt,
+                            autoRotate: true,
+                            autoRotateDelay: 1000,
+                            autoPlay: true,
+                            cameraControls: true,
+                            cameraOrbit: item.cameraOrbit,
+                            fieldOfView: item.fieldOfView,
+                            cameraTarget: item.cameraTarget,
+                            backgroundColor: const Color(0xFF1A1D2E),
+                          )
+                        : const SizedBox.shrink(),   // 摺疊時完全不建 WebView
                   ),
                 ),
               ],

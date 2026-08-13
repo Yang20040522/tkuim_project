@@ -38,11 +38,17 @@ class VideoAnalysisService {
   static Future<MotionAnalysisResult?> analyzeVideo({
     required String videoPath,
     void Function(double progress)? onProgress,
+    bool Function()? shouldCancel,   // ← 新加:取消檢查
     int fps = 2,
     int maxAnalyzeSec = 60,
   }) async {
     final engine = BodyPoseEngine();
-    await engine.init();
+    debugPrint('🎬 初始化引擎中...');
+    await engine.init().timeout(
+      const Duration(seconds: 30),
+      onTimeout: () => throw Exception('引擎初始化超時(30秒)'),
+    );
+    debugPrint('🎬 引擎初始化完成');
 
     try {
       // ── 讀影片實際長度 ──
@@ -64,42 +70,84 @@ class VideoAnalysisService {
       final List<List<double>> frameScores = [];
 
       // ── 逐幀分析 ──
+      int successFrames = 0;
+      int failedFrames = 0;
+
       for (int i = 0; i < totalFrames; i++) {
+        // 檢查是否被取消
+        if (shouldCancel?.call() == true) {
+          debugPrint('🛑 使用者取消分析');
+          break;
+        }
+        
         final int timeMs = i * (1000 ~/ fps);
 
-        final Uint8List? jpegBytes = await VideoThumbnail.thumbnailData(
-          video: videoPath,
-          timeMs: timeMs,
-          imageFormat: ImageFormat.JPEG,
-          quality: 75,
-        );
+        // (a) 截圖(加 10 秒 timeout)
+        Uint8List? jpegBytes;
+        try {
+          jpegBytes = await VideoThumbnail.thumbnailData(
+            video: videoPath,
+            timeMs: timeMs,
+            imageFormat: ImageFormat.JPEG,
+            quality: 75,
+          ).timeout(const Duration(seconds: 10));
+        } catch (e) {
+          debugPrint('⚠️ 第 $i 幀截圖失敗/超時: $e');
+          failedFrames++;
+          onProgress?.call((i + 1) / totalFrames);
+          if (failedFrames > 5) {
+            debugPrint('❌ 連續失敗超過 5 次,終止分析');
+            break;
+          }
+          continue;
+        }
+
         if (jpegBytes == null) {
+          failedFrames++;
           onProgress?.call((i + 1) / totalFrames);
           continue;
         }
 
+        // (b) JPEG 解碼
         final img_lib.Image? decoded = img_lib.decodeJpg(jpegBytes);
         if (decoded == null) {
           onProgress?.call((i + 1) / totalFrames);
           continue;
         }
 
+        // (c) RGB 轉換
         final Uint8List rgbBytes = _imageToRgbBytes(decoded);
-        await engine.processExternalFrame(
-          rgbBytes,
-          decoded.width,
-          decoded.height,
-          isMirror: false,
-        );
 
+        // (d) ONNX 推論(加 5 秒 timeout)
+        try {
+          await engine.processExternalFrame(
+            rgbBytes,
+            decoded.width,
+            decoded.height,
+            isMirror: false,
+          ).timeout(const Duration(seconds: 5));
+        } catch (e) {
+          debugPrint('⚠️ 第 $i 幀推論失敗/超時: $e');
+          onProgress?.call((i + 1) / totalFrames);
+          continue;
+        }
+
+        // (e) 收集結果
         final pose = engine.poseNotifier.value;
         if (pose.keypoints.isNotEmpty) {
           framePoses.add(List<Offset>.from(pose.keypoints));
           frameScores.add(List<double>.from(pose.scores));
+          successFrames++;
         }
 
         onProgress?.call((i + 1) / totalFrames);
+        
+        // 每 5 幀 log 一次進度
+        if ((i + 1) % 5 == 0) {
+          debugPrint('🎬 已處理 ${i + 1}/$totalFrames 幀,成功 $successFrames 幀');
+        }
       }
+      debugPrint('🎬 分析完成:總 $totalFrames 幀,成功 $successFrames 幀,失敗 $failedFrames 幀');
 
       // ── 幀數不足 ──
       if (framePoses.length < 3) return null;

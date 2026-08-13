@@ -38,6 +38,13 @@ const Map<ActionType, ActionDemo3D> kActionDemo3DMap = {
     fieldOfView: '5deg',   // ← 只有翻掌放大
     cameraTarget: '0m 5m 0m',   // ← 對準點,調這個
   ),
+  ActionType.sidePinch: ActionDemo3D(
+    modelSrcs: ['assets/models/lateral_pinch.glb'],
+    tabLabels: ['示範'],
+    cameraOrbit: '0deg 75deg 5%',    // 太小就加,數字自己調
+    fieldOfView: '5deg',             // 太小就加
+    cameraTarget: '0m 5m 0m',        // 不置中就加,X Y Z 自己調
+  ),
   ActionType.reach: ActionDemo3D(
     modelSrcs: [
       'assets/models/turn_Right_hand.glb',
