@@ -123,12 +123,39 @@ class SocketServerService extends ChangeNotifier {
   }
 
   Future<String?> _getIpAddress() async {
-    for (var interface in await NetworkInterface.list()) {
-      for (var addr in interface.addresses) {
-        if (addr.type == InternetAddressType.IPv4 && !addr.isLoopback) {
-          return addr.address;
+    try {
+      final interfaces = await NetworkInterface.list();
+      debugPrint(
+          'Found network interfaces: ${interfaces.map((i) => i.name).toList()}');
+
+      // 1. Try to find Wi-Fi or Ethernet interfaces first
+      for (var interface in interfaces) {
+        final name = interface.name.toLowerCase();
+        if (name.contains('wlan') ||
+            name.contains('en') ||
+            name.contains('eth')) {
+          for (var addr in interface.addresses) {
+            if (addr.type == InternetAddressType.IPv4 && !addr.isLoopback) {
+              debugPrint(
+                  'Selected IP from priority interface (${interface.name}): ${addr.address}');
+              return addr.address;
+            }
+          }
         }
       }
+
+      // 2. Fallback to any non-loopback IPv4 address
+      for (var interface in interfaces) {
+        for (var addr in interface.addresses) {
+          if (addr.type == InternetAddressType.IPv4 && !addr.isLoopback) {
+            debugPrint(
+                'Selected IP from fallback interface (${interface.name}): ${addr.address}');
+            return addr.address;
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint('Error getting IP address: $e');
     }
     return null;
   }

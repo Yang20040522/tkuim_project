@@ -134,7 +134,10 @@ class _PhoneConnectionScreenState extends State<PhoneConnectionScreen> {
           const SizedBox(height: 8),
           TextField(
             controller: _ipController,
-            style: const TextStyle(fontWeight: FontWeight.bold),
+            style: const TextStyle(
+              color: Colors.black,
+              fontWeight: FontWeight.bold,
+            ),
             decoration: InputDecoration(
               hintText: '例如: 192.168.1.150',
               prefixIcon: const Icon(Icons.tv_rounded),
@@ -149,7 +152,7 @@ class _PhoneConnectionScreenState extends State<PhoneConnectionScreen> {
                 borderSide: BorderSide.none,
               ),
             ),
-            keyboardType: TextInputType.number,
+            keyboardType: TextInputType.url,
           ),
           const SizedBox(height: 20),
           const Text(
