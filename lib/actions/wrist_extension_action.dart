@@ -54,8 +54,10 @@ class WristExtensionAction extends BaseRehabAction {
   @override
   String get initialFeedback => '手臂放桌上，手掌朝下，準備翹手腕';
 
+  // ✅ 修正 #3：統一順序為「先下壓 → 再上翹」，跟 _init() 開始訓練時
+  //    的語音提示一致，避免使用者看到兩種不同的順序說明。
   @override
-  String get initialInstruction => '手腕往上翹 → 往下壓，算一次';
+  String get initialInstruction => '手腕先往下壓 → 再往上翹，算一次';
 
   @override
   void dispose() {
@@ -211,6 +213,7 @@ class WristExtensionAction extends BaseRehabAction {
         _lastRepTime = DateTime.now();
         callback.onCountdownChanged(
             isCountingDown: false, seconds: 0, isDone: true);
+        // ✅ 修正 #3：跟 initialInstruction 統一，先下壓再上翹
         callback.onFeedbackChanged(
           '開始！手腕先往下壓',
           '往下壓 → 往上翹，算一次',
@@ -222,7 +225,7 @@ class WristExtensionAction extends BaseRehabAction {
   void _finish() {
     final durationSeconds =
         DateTime.now().difference(_sessionStartTime).inSeconds;
-    callback.onFeedbackChanged('🎉 完成 10 次！訓練結束', '辛苦了，做得很好！');
+    callback.onFeedbackChanged('🎉 完成 $targetReps 次！訓練結束', '辛苦了，做得很好！');
     HandVoiceService.speak('訓練結束');
     callback.onTrainingComplete(
       repCount: _repCount,

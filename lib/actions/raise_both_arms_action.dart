@@ -8,6 +8,15 @@
 //   2. 用「髖-肩-手腕」角度判定,身高/距離無關
 //   3. 防代償整段流程都檢查(聳肩、後仰、左右不同步)
 //   4. 升級門檻 5 次(原版 10 次太多)
+//
+// 🛠️ Bug 修正(2026-08-16):
+//   spineAngle 計算原本用 atan2(spineDx, spineDy),
+//   但畫面座標系 y 軸是「往下遞增」,肩膀在髖部正上方(坐正)時
+//   spineDy 為負值,導致算出來的角度落在 ±180 度附近,而不是 0 度。
+//   原本的 spineAngle.abs() > 20 判斷因此「坐正時也恆成立」,
+//   使用者不管姿勢多標準都會一直卡在「請坐正,不要後仰借力」。
+//   修正方式:atan2 的第二個參數取負號(-spineDy),
+//   讓「坐正」正確對應到 spineAngle ≈ 0 度。
 
 import 'dart:math' as math;
 import 'package:flutter/painting.dart';
@@ -78,7 +87,8 @@ class RaiseBothArmsAction implements BodyRehabAction {
     // 1. 防後仰借力
     final spineDx = lShoulder.dx - lHip.dx;
     final spineDy = lShoulder.dy - lHip.dy;
-    final spineAngle = math.atan2(spineDx, spineDy) * (180 / math.pi);
+    // 🛠️ 修正:第二個參數取負號,讓「坐正」對應 spineAngle ≈ 0 度
+    final spineAngle = math.atan2(spineDx, -spineDy) * (180 / math.pi);
     if (spineAngle.abs() > _spineAngleThreshold) {
       return RehabFeedback(prompt: _throttled('請坐正,不要後仰借力'));
     }

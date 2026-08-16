@@ -3,6 +3,21 @@
 // 左右彎手腕式 — 中風復健跟著做 第10式
 // 雙手手指交扣，由健側手引導換側手腕進行向左與向右的來回彎曲訓練。
 // 使用 MediaPipe Hand Landmarks → extends BaseRehabAction
+//
+// 🛠️ Bug 修正(2026-08-16):
+//   原本「停留 1 秒」的計時完全綁在 isStableLeft/isStableRight
+//   (狀態緩衝區 6 幀多數決)上：只要緩衝區判定連續幀數不足 4 幀是
+//   同一狀態(手部零星漏檢、輕微晃動都可能造成)，_leftHoldActive/
+//   _rightHoldActive 就會被打回 false，下次進入穩定狀態時
+//   _stateHoldStartTime 又重新歸零，1 秒計時整個重來，導致實際上
+//   幾乎永遠撐不滿 1 秒 → 卡在「請保持停留在最大角度」不放、
+//   永遠不會計數。
+//
+//   修正方式:把「穩定判定」(isStableLeft/isStableRight，用來決定
+//   方向、決定該顯示哪個提示文字)跟「停留計時是否該被打斷」拆開。
+//   計時只要當下角度(_smoothedAngle)還在門檻外就持續累計，
+//   不需要每一幀都通過緩衝區多數決才算數，避免零星抖動/漏檢
+//   打斷計時。
 
 import 'dart:async';
 import 'dart:math';
@@ -40,9 +55,13 @@ class WristSideBendAction extends BaseRehabAction {
   bool _hasHeldEnough = false;
   static const int _requiredHoldMs = 1000; // 需在最大角度停留 1 秒
 
+  // 追蹤目前是否已經在「停留計時中」，用來決定提示文字要不要重複觸發
+  bool _leftHoldActive = false;
+  bool _rightHoldActive = false;
+
   WristSideBendAction({
     required RehabActionCallback callback,
-    this.targetReps = 10,   // ← 新增
+    this.targetReps = 10,
   }) : super(callback) {
     _init();
   }
@@ -114,128 +133,134 @@ class WristSideBendAction extends BaseRehabAction {
       state = 'BENDING';
     }
 
-    // 狀態緩衝區去雜訊
+    // 狀態緩衝區去雜訊（用來判斷方向、決定要顯示哪句提示，不用來控制計時中斷）
     _stateBuffer.add(state);
     if (_stateBuffer.length > 6) _stateBuffer.removeAt(0);
 
     final isStableLeft = _stateBuffer.where((s) => s == 'LEFT').length >= 4;
     final isStableRight = _stateBuffer.where((s) => s == 'RIGHT').length >= 4;
 
+    // 🛠️ 修正：停留計時是否該持續，只看「當下這一幀角度是否還在門檻外」，
+    // 不依賴緩衝區多數決。這樣零星的手部漏檢/輕微晃動不會打斷計時。
+    final holdingLeft = _smoothedAngle > angleThreshold;
+    final holdingRight = _smoothedAngle < -angleThreshold;
+
     // ───────────────── 狀態機與影片動作要領判定 ─────────────────
-    
-    if (isStableLeft && _lastConfirmedState != 'LEFT') {
-      // 處理向左彎曲到位
-      if (_stateHoldStartTime == null || _lastConfirmedState != 'HOLD_LEFT') {
+
+    if (isStableLeft) {
+      // 離開右彎穩定狀態，重置右側旗標
+      _rightHoldActive = false;
+
+      if (!_leftHoldActive) {
+        // 剛進入穩定左彎，開始計時（只會觸發一次，不會每幀重置）
+        _leftHoldActive = true;
         _stateHoldStartTime = DateTime.now();
         _hasHeldEnough = false;
-        callback.onFeedbackChanged('➔ 向左彎曲到位！', '請保持停留在最大角度...');
-      }
-
-      final holdDuration = DateTime.now().difference(_stateHoldStartTime!).inMilliseconds;
-      if (holdDuration >= _requiredHoldMs && !_hasHeldEnough) {
-        _hasHeldEnough = true;
-        
-        // 如果上一個完成的完整動作是右彎，則此時可計入一次完整來回
-        if (_lastConfirmedState == 'RIGHT_DONE') {
-          final now = DateTime.now();
-          final durationMs = now.difference(_lastRepTime).inMilliseconds;
-
-          if (durationMs > 1500) {
-            _repCount++;
-            _lastRepTime = now;
-            var score = 100;
-
-            // 動作過慢判定 (超過 5 秒未換側)
-            if (durationMs > 5000) {
-              score -= 10;
-              _mistakeLogs.add('第 $_repCount 次：換側引導速度較慢');
-            }
-            // 幅度邊緣判定
-            if (_smoothedAngle < angleThreshold * 1.1) {
-              score -= 5;
-              _mistakeLogs.add('第 $_repCount 次：左彎幅度可再加大');
-            }
-
-            callback.onFeedbackChanged(
-              '✅ 完成一組左右來回！(本次得分: $score 分)',
-              '很好，接下來請再向右彎',
-            );
-            HandVoiceService.speak('完成一次');
-            callback.onStatsChanged(repCount: _repCount);
-
-            if (_repCount >= targetReps) _finish();
-          } else {
-            _mistakeLogs.add('未計入：左右切換速度過快，未達復健擴展效果');
-            callback.onFeedbackChanged('⚠️ 動作太快', '請依建側手慢慢引導，穩定擺動');
-            HandVoiceService.speak('太快');
-          }
-          _lastConfirmedState = 'LEFT_DONE';
-        } else {
-          // 剛啟動動作或從中立點過來
-          callback.onFeedbackChanged('✅ 左彎停留完成', '接著請慢速向右彎擺');
-          _lastConfirmedState = 'LEFT_DONE';
+        if (_lastConfirmedState != 'LEFT_DONE') {
+          callback.onFeedbackChanged('➔ 向左彎曲到位！', '請保持停留在最大角度...');
         }
-        _stateHoldStartTime = null; // 重置停留計時
       }
-    } 
-    else if (isStableRight && _lastConfirmedState != 'RIGHT') {
-      // 處理向右彎曲到位
-      if (_stateHoldStartTime == null || _lastConfirmedState != 'HOLD_RIGHT') {
+    } else if (isStableRight) {
+      // 離開左彎穩定狀態，重置左側旗標
+      _leftHoldActive = false;
+
+      if (!_rightHoldActive) {
+        _rightHoldActive = true;
         _stateHoldStartTime = DateTime.now();
         _hasHeldEnough = false;
-        callback.onFeedbackChanged('➔ 向右彎曲到位！', '請保持停留在最大角度...');
-      }
-
-      final holdDuration = DateTime.now().difference(_stateHoldStartTime!).inMilliseconds;
-      if (holdDuration >= _requiredHoldMs && !_hasHeldEnough) {
-        _hasHeldEnough = true;
-
-        if (_lastConfirmedState == 'LEFT_DONE') {
-          final now = DateTime.now();
-          final durationMs = now.difference(_lastRepTime).inMilliseconds;
-
-          if (durationMs > 1500) {
-            _repCount++;
-            _lastRepTime = now;
-            var score = 100;
-
-            if (durationMs > 5000) {
-              score -= 10;
-              _mistakeLogs.add('第 $_repCount 次：右彎擺動引導偏慢');
-            }
-            if (_smoothedAngle.abs() < angleThreshold * 1.1) {
-              score -= 5;
-              _mistakeLogs.add('第 $_repCount 次：右彎幅度可再加深');
-            }
-
-            callback.onFeedbackChanged(
-              '✅ 完成一組左右來回！(本次得分: $score 分)',
-              '做得好！接下來再向左彎',
-            );
-            HandVoiceService.speak('完成一次');
-            callback.onStatsChanged(repCount: _repCount);
-
-            if (_repCount >= 10) _finish();
-          } else {
-            _mistakeLogs.add('未計入：換側速度過急');
-            callback.onFeedbackChanged('⚠️ 擺動太快', '請放慢速度，體會關卡延展');
-            HandVoiceService.speak('太快');
-          }
-          _lastConfirmedState = 'RIGHT_DONE';
-        } else {
-          callback.onFeedbackChanged('✅ 右彎停留完成', '接著請慢速向左彎擺');
-          _lastConfirmedState = 'RIGHT_DONE';
+        if (_lastConfirmedState != 'RIGHT_DONE') {
+          callback.onFeedbackChanged('➔ 向右彎曲到位！', '請保持停留在最大角度...');
         }
-        _stateHoldStartTime = null;
+      }
+    } else {
+      // 沒有處於穩定左彎或右彎（例如中立、過渡中）
+      if (state == 'NEUTRAL' && _lastConfirmedState == '') {
+        // 自動校準中立基準點
+        _baseAngleRad = currentAngleRad;
       }
     }
-    else if (state == 'NEUTRAL' && _lastConfirmedState == '') {
-      // 自動校準中立基準點
-      _baseAngleRad = currentAngleRad;
+
+    // 🛠️ 修正：計時中斷判斷獨立出來，只要單幀角度還在門檻外(holdingLeft/holdingRight)
+    // 就繼續累計，不因緩衝區多數決暫時不足而歸零。
+    // 只有角度真的掉出門檻(不再 holdingLeft 也不再 holdingRight)才視為離開該側，重置旗標。
+    if (_leftHoldActive && !holdingLeft) {
+      _leftHoldActive = false;
+      _stateHoldStartTime = null;
+      _hasHeldEnough = false;
+    }
+    if (_rightHoldActive && !holdingRight) {
+      _rightHoldActive = false;
+      _stateHoldStartTime = null;
+      _hasHeldEnough = false;
+    }
+
+    if (_leftHoldActive && !_hasHeldEnough && _stateHoldStartTime != null) {
+      final holdDuration =
+          DateTime.now().difference(_stateHoldStartTime!).inMilliseconds;
+      if (holdDuration >= _requiredHoldMs) {
+        _hasHeldEnough = true;
+        _confirmSide('LEFT_DONE', isLeft: true);
+      }
+    } else if (_rightHoldActive && !_hasHeldEnough && _stateHoldStartTime != null) {
+      final holdDuration =
+          DateTime.now().difference(_stateHoldStartTime!).inMilliseconds;
+      if (holdDuration >= _requiredHoldMs) {
+        _hasHeldEnough = true;
+        _confirmSide('RIGHT_DONE', isLeft: false);
+      }
     }
   }
 
-  // ── 私有邏輯 ─────────────────────────────────────────────
+  // ── 私有邏輯：確認某一側完成停留，判定是否計數 ─────────────
+  void _confirmSide(String doneLabel, {required bool isLeft}) {
+    final oppositeLabel = isLeft ? 'RIGHT_DONE' : 'LEFT_DONE';
+
+    if (_lastConfirmedState == oppositeLabel) {
+      final now = DateTime.now();
+      final durationMs = now.difference(_lastRepTime).inMilliseconds;
+
+      if (durationMs > 1500) {
+        _repCount++;
+        _lastRepTime = now;
+        var score = 100;
+
+        if (durationMs > 5000) {
+          score -= 10;
+          _mistakeLogs.add(
+              '第 $_repCount 次：${isLeft ? "換側引導速度較慢" : "右彎擺動引導偏慢"}');
+        }
+        final angleForCheck =
+            isLeft ? _smoothedAngle : _smoothedAngle.abs();
+        if (angleForCheck < 15.0 * 1.1) {
+          score -= 5;
+          _mistakeLogs.add(
+              '第 $_repCount 次：${isLeft ? "左彎幅度可再加大" : "右彎幅度可再加深"}');
+        }
+
+        callback.onFeedbackChanged(
+          '✅ 完成一組左右來回！(本次得分: $score 分)',
+          isLeft ? '很好，接下來請再向右彎' : '做得好！接下來再向左彎',
+        );
+        HandVoiceService.speak('完成一次');
+        callback.onStatsChanged(repCount: _repCount);
+
+        if (_repCount >= targetReps) _finish();
+      } else {
+        _mistakeLogs.add(isLeft ? '未計入：左右切換速度過快，未達復健擴展效果' : '未計入：換側速度過急');
+        callback.onFeedbackChanged(
+          isLeft ? '⚠️ 動作太快' : '⚠️ 擺動太快',
+          isLeft ? '請依建側手慢慢引導，穩定擺動' : '請放慢速度，體會關卡延展',
+        );
+        HandVoiceService.speak('太快');
+      }
+    } else {
+      callback.onFeedbackChanged(
+        isLeft ? '✅ 左彎停留完成' : '✅ 右彎停留完成',
+        isLeft ? '接著請慢速向右彎擺' : '接著請慢速向左彎擺',
+      );
+    }
+    _lastConfirmedState = doneLabel;
+  }
 
   void _init() {
     _isTransitioning = true;
@@ -273,7 +298,7 @@ class WristSideBendAction extends BaseRehabAction {
 
   void _finish() {
     final durationSeconds = DateTime.now().difference(_sessionStartTime).inSeconds;
-    callback.onFeedbackChanged('🎉 完成 10 次手腕左右彎擺！', '辛苦了，手腕復健表現得很好！');
+    callback.onFeedbackChanged('🎉 完成 $targetReps 次手腕左右彎擺！', '辛苦了，手腕復健表現得很好！');
     callback.onTrainingComplete(
       repCount: _repCount,
       durationSeconds: durationSeconds,

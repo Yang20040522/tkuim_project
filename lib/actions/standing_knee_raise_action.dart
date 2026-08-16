@@ -2,6 +2,11 @@
 //
 // 站姿抬腳式訓練 — 判定邏輯。
 // implements BodyRehabAction, 可直接丟進 body_training_screen。
+//
+// ✅ 修正重點：原本只判定左腳（leftHip/leftKnee/leftAnkle），
+//    如果患側是右腳會永遠判定不到目標區。
+//    比照 ReachAction 的做法，加入 selectLeftLeg() / selectRightLeg()，
+//    讓外部（UI 按鈕）可以選擇要訓練哪一腳。
 
 import 'dart:math' as math;
 import '../models/body_frame.dart';
@@ -17,17 +22,39 @@ class StandingKneeRaiseAction implements BodyRehabAction {
   bool _hasTriggeredRaise = false;
   DateTime _lastVoiceTime = DateTime.now();
 
+  // ── 左右腳選擇 ────────────────────────────────────────────
+  RehabJoint? _activeHip;
+  RehabJoint? _activeKnee;
+  RehabJoint? _activeAnkle;
+
   StandingKneeRaiseAction({
     this.difficulty = RehabDifficulty.easy,
     this.targetCount = 3,
   });
+
+  // ── 供 UI 按鈕呼叫：選擇左腳或右腳 ──────────────────────────
+  bool get legSelected => _activeHip != null;
+
+  void selectLeftLeg() {
+    _activeHip = RehabJoint.leftHip;
+    _activeKnee = RehabJoint.leftKnee;
+    _activeAnkle = RehabJoint.leftAnkle;
+  }
+
+  void selectRightLeg() {
+    _activeHip = RehabJoint.rightHip;
+    _activeKnee = RehabJoint.rightKnee;
+    _activeAnkle = RehabJoint.rightAnkle;
+  }
 
   // ── 合約要求 ──────────────────────────────────────────────
   @override
   String get title => '站姿抬腳式訓練';
 
   @override
-  String get initialHint => '雙腳與肩同寬站立，手扶椅背或拐杖，準備進行抬腳訓練';
+  String get initialHint => legSelected
+      ? '雙腳與肩同寬站立，手扶椅背或拐杖，準備進行抬腳訓練'
+      : '請先選擇要訓練的腳（左腳／右腳）';
 
   @override
   String get difficultyLabel {
@@ -44,20 +71,23 @@ class StandingKneeRaiseAction implements BodyRehabAction {
   // ── 合約核心: 每幀判定 ────────────────────────────────────
   @override
   RehabFeedback update(BodyFrame frame) {
-    // 取得上半身骨架（防代償用）
+    // 尚未選腳 → 等待 UI 按鈕，不做任何偵測
+    if (!legSelected) return RehabFeedback.none;
+
+    // 取得上半身骨架（防代償用，雙肩仍需雙側資料）
     final leftShoulder = frame.joints[RehabJoint.leftShoulder];
     final rightShoulder = frame.joints[RehabJoint.rightShoulder];
-    
-    // 取得下半身骨架（動作判定用，以左腳為患側抬腿為例）
-    final leftHip = frame.joints[RehabJoint.leftHip];
-    final leftKnee = frame.joints[RehabJoint.leftKnee];
-    final leftAnkle = frame.joints[RehabJoint.leftAnkle];
+
+    // 取得下半身骨架（動作判定用，依選擇的腳而定）
+    final hip = frame.joints[_activeHip!];
+    final knee = frame.joints[_activeKnee!];
+    final ankle = frame.joints[_activeAnkle!];
 
     if (leftShoulder == null ||
         rightShoulder == null ||
-        leftHip == null ||
-        leftKnee == null ||
-        leftAnkle == null) {
+        hip == null ||
+        knee == null ||
+        ankle == null) {
       return RehabFeedback.none;
     }
 
@@ -68,9 +98,11 @@ class StandingKneeRaiseAction implements BodyRehabAction {
       return RehabFeedback(prompt: _speakThrottled('請保持身體直立，不要歪斜或聳肩喔'));
     }
 
-    // 2. 防代償：防身體後仰
-    final spineDx = leftShoulder.dx - leftHip.dx;
-    final spineDy = leftShoulder.dy - leftHip.dy;
+    // 2. 防代償：防身體後仰（用選擇那側的肩膀-髖部）
+    final activeShoulder =
+        _activeHip == RehabJoint.leftHip ? leftShoulder : rightShoulder;
+    final spineDx = activeShoulder.dx - hip.dx;
+    final spineDy = activeShoulder.dy - hip.dy;
     final spineAngle = math.atan2(spineDx, spineDy) * (180 / math.pi);
     if (spineAngle < -15) {
       return RehabFeedback(prompt: _speakThrottled('站直一點，身體不要往後仰'));
@@ -78,29 +110,29 @@ class StandingKneeRaiseAction implements BodyRehabAction {
 
     // 3. 計算關節角度
     // 髖關節角度（大腿與軀幹的夾角）：利用肩膀、髖部、膝蓋計算
-    final hipAngle = _calculateAngle(leftShoulder, leftHip, leftKnee);
+    final hipAngle = _calculateAngle(activeShoulder, hip, knee);
     // 膝關節彎曲角度：利用髖部、膝蓋、腳踝計算
-    final kneeAngle = _calculateAngle(leftHip, leftKnee, leftAnkle);
+    final kneeAngle = _calculateAngle(hip, knee, ankle);
 
     // 4. 目標區與難度判定
     bool isInTargetZone = false;
-    
+
     switch (difficulty) {
       case RehabDifficulty.easy:
         // 初級：大腿微抬，膝蓋高於腳踝，髖關節彎曲角度（小於 140 度即可）
-        isInTargetZone = leftKnee.dy < leftHip.dy && hipAngle < 140.0;
+        isInTargetZone = knee.dy < hip.dy && hipAngle < 140.0;
         break;
       case RehabDifficulty.medium:
         // 中級（影片標準）：大腿抬平接近 90 度（hipAngle 約 90-110 度），且膝蓋自然彎曲（kneeAngle 約 80-110 度）
-        isInTargetZone = leftKnee.dy < leftHip.dy && 
-                         hipAngle <= 110.0 && 
-                         kneeAngle >= 80.0 && kneeAngle <= 110.0;
+        isInTargetZone = knee.dy < hip.dy &&
+            hipAngle <= 110.0 &&
+            kneeAngle >= 80.0 && kneeAngle <= 110.0;
         break;
       case RehabDifficulty.hard:
         // 高級：大腿抬得更高（hipAngle < 90 度），且膝蓋能精準控制在約 90 度，停留更穩定
-        isInTargetZone = leftKnee.dy < leftHip.dy && 
-                         hipAngle < 90.0 && 
-                         kneeAngle >= 85.0 && kneeAngle <= 100.0;
+        isInTargetZone = knee.dy < hip.dy &&
+            hipAngle < 90.0 &&
+            kneeAngle >= 85.0 && kneeAngle <= 100.0;
         break;
     }
 
@@ -123,7 +155,7 @@ class StandingKneeRaiseAction implements BodyRehabAction {
           scored: true,
         );
       }
-    } else if (leftKnee.dy > leftHip.dy + 0.1) {
+    } else if (knee.dy > hip.dy + 0.1) {
       // 當膝蓋放低，回到接近原起始站姿時，重置觸發開關，允許下一次計分
       _hasTriggeredRaise = false;
     }

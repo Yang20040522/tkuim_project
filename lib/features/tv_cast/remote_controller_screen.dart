@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
+import 'package:camera/camera.dart'; // ← 新增:控制端要用 CameraPreview
 import 'package:flutter/material.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 import '../../models/training_action.dart';
@@ -129,6 +130,13 @@ class _RemoteControllerScreenState extends State<RemoteControllerScreen> {
       if (!mounted) return;
       setState(() {});
       await _engine.startCamera();
+
+      // ⚠️ 修正:這個畫面本身就是「TV 遙控模式」,控制端(手機)的
+      // 職責就是把畫面串流給顯示端看。之前這個開關從沒被打開過,
+      // 顯示端 (isDisplay:true) 那邊會永遠收不到 JPEG、
+      // imageNotifier 永遠是 null,電視畫面一直空白/卡轉圈。
+      _engine.castEnabled = true;
+
       _engine.poseNotifier.addListener(_onPoseUpdate);
 
       // Send JPEG frames over socket since WebRTC video is disabled to avoid conflict
@@ -225,6 +233,9 @@ class _RemoteControllerScreenState extends State<RemoteControllerScreen> {
   @override
   void dispose() {
     _socketSub?.cancel();
+    // ⚠️ 修正:離開畫面時把開關關掉,避免這個 singleton engine
+    // 被其他畫面重用時,castEnabled 殘留 true 造成非預期的 JPEG 生成。
+    _engine.castEnabled = false;
     _engine.poseNotifier.removeListener(_onPoseUpdate);
     _engine.imageNotifier.removeListener(_onImageUpdate);
     _engine.dispose();
@@ -412,15 +423,27 @@ class _RemoteControllerScreenState extends State<RemoteControllerScreen> {
                             gaplessPlayback: true, fit: BoxFit.cover);
                       },
                     )
-                  else if (_localRenderer.srcObject != null)
-                    RTCVideoView(_localRenderer,
-                        mirror: true,
-                        objectFit:
-                            RTCVideoViewObjectFit.RTCVideoViewObjectFitCover)
                   else
-                    const Center(
-                        child: CircularProgressIndicator(
-                            color: Color(0xFF4A65FF))),
+                    // ⚠️ 修正:控制端(手機)是用 captureVideo:false 初始化
+                    // WebRTC 的(刻意不開視訊,避免跟 AI 相機衝突,見 _start()),
+                    // 所以 _localRenderer.srcObject 原本就不會有值,
+                    // 舊版邏輯會讓手機自己這頁一直卡在轉圈圈。
+                    // 改成直接用 BodyPoseEngine 自己開的相機畫面預覽,
+                    // 這樣不需要額外再開一路 WebRTC 視訊。
+                    ValueListenableBuilder<bool>(
+                      valueListenable: _engine.cameraReady,
+                      builder: (_, ready, __) {
+                        final cam = _engine.cameraController;
+                        if (ready &&
+                            cam != null &&
+                            cam.value.isInitialized) {
+                          return CameraPreview(cam);
+                        }
+                        return const Center(
+                            child: CircularProgressIndicator(
+                                color: Color(0xFF4A65FF)));
+                      },
+                    ),
                   ValueListenableBuilder<PoseData>(
                     valueListenable: _engine.poseNotifier,
                     builder: (_, data, __) {

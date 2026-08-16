@@ -11,13 +11,22 @@ const _handActions = [
   ActionType.wristSideBend,
 ];
 
-// 全身動作清單(與 home_screen 同步)
+// 全身動作清單(與 home_screen / action_list_screen 同步)
+// ⚠️ 修正:原本漏了 sitToStand、lateralStep 兩個動作,
+// 導致做完「坐站訓練」「側跨步訓練」後,完成對話框的
+// 「或換個動作」清單裡看不到這兩個選項,而且全身復健
+// 手風琴也不會自動展開。
+// TODO: 這份清單目前跟 action_list_screen.dart 是各自維護的兩份,
+// 之後建議抽成 training_action.dart 裡的共用常數,
+// 兩邊都 import 同一份,避免再次漏同步。
 const _bodyActions = [
   ActionType.wipeBody,
   ActionType.drawCircle,
   ActionType.reach,
   ActionType.raiseBothArms,
   ActionType.elbowForward,
+  ActionType.sitToStand,
+  ActionType.lateralStep,
   ActionType.bodyTest,
 ];
 
@@ -551,7 +560,7 @@ class _OtherActionsSectionState extends State<_OtherActionsSection> {
         _buildAccordion(
           title: '全身復健',
           icon: '🦴',
-          subtitle: '擦拭 · 畫圓 · 舉高 · 雙手抬舉 · 手肘前伸',
+          subtitle: '抬腳 · 畫圓 · 舉高 · 雙手抬舉 · 手肘前伸 · 坐站 · 側跨步',
           isExpanded: _bodyExpanded,
           onToggle: () => setState(() => _bodyExpanded = !_bodyExpanded),
           children: kTrainingActions
