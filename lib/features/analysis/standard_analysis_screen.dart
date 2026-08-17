@@ -26,6 +26,9 @@ import '../../models/pose_data.dart';
 import '../../services/body_pose_engine.dart';
 import 'motion_feature_extractor.dart';
 
+import 'hand_analysis_service.dart';
+import 'hand_feature_extractor.dart';
+
 class StandardAnalysisScreen extends StatefulWidget {
   const StandardAnalysisScreen({super.key});
 
@@ -50,6 +53,12 @@ class _StandardAnalysisScreenState extends State<StandardAnalysisScreen> {
   String _currentActionType = '';
   bool _isPreset = false;   // 是否為內建影片
   bool _isAnalyzing = false;
+
+  // ── 分析類型(全身 / 手部) ──
+  String _analysisType = 'body';   // 'body' 或 'hand'
+
+  // ── 手部分析結果(如果是手部) ──
+  HandAnalysisResult? _handResult;
 
   // ── 使用者輸入動作名稱 ──
   final TextEditingController _actionNameController = TextEditingController();
@@ -252,6 +261,12 @@ class _StandardAnalysisScreenState extends State<StandardAnalysisScreen> {
   Future<void> _startAnalysis() async {
     if (_selectedVideoPath == null) return;
 
+    // 根據分析類型分派
+    if (_analysisType == 'hand') {
+      await _startHandAnalysis();
+      return;
+    }
+
     setState(() {
       _isAnalyzing = true;
       _processedFrames = 0;
@@ -339,6 +354,60 @@ class _StandardAnalysisScreenState extends State<StandardAnalysisScreen> {
                 '分析完成:$_processedFrames 幀,成功偵測 $_framesWithPose 幀'),
           ),
         );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('分析錯誤:$e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isAnalyzing = false);
+    }
+  }
+
+  /// 手部影片分析(獨立於全身分析)
+  Future<void> _startHandAnalysis() async {
+    if (_selectedVideoPath == null) return;
+
+    setState(() {
+      _isAnalyzing = true;
+      _processedFrames = 0;
+      _framesWithPose = 0;
+      _handResult = null;
+    });
+
+    try {
+      final result = await HandAnalysisService.analyzeVideo(
+        videoPath: _selectedVideoPath!,
+        fps: 3,
+        onProgress: (p) {
+          if (mounted) {
+            setState(() {
+              _processedFrames = (p * 100).round();
+              _totalFrames = 100;
+            });
+          }
+        },
+      );
+
+      if (mounted) {
+        setState(() {
+          _handResult = result;
+        });
+
+        if (result == null) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('分析失敗:無法從影片偵測到手部')),
+          );
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('手部分析完成:${result.totalFrames} 幀,'
+                  '${result.estimatedReps} 次動作'),
+            ),
+          );
+        }
       }
     } catch (e) {
       if (mounted) {
@@ -790,6 +859,36 @@ Widget _miniChip(String text, Color color) {
               ),
             ),
 
+            const SizedBox(height: 16),
+
+            // ── 選擇分析類型 ──
+            const Text(
+              '選擇分析類型',
+              style: TextStyle(
+                color: Color(0xFF6B7280),
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Expanded(child: _buildAnalysisTypeCard(
+                  type: 'body',
+                  icon: Icons.accessibility_new,
+                  title: '全身動作',
+                  subtitle: 'RTMPose 133 點',
+                )),
+                const SizedBox(width: 12),
+                Expanded(child: _buildAnalysisTypeCard(
+                  type: 'hand',
+                  icon: Icons.back_hand,
+                  title: '手部動作',
+                  subtitle: 'MediaPipe 21 點',
+                )),
+              ],
+            ),
+
             const SizedBox(height: 24),
 
             // 選影片區塊
@@ -1039,6 +1138,148 @@ Widget _miniChip(String text, Color color) {
               ),
               const SizedBox(height: 12),
             ],
+            // ══════════════════════════════════════════════════════════════
+            // 手部分析結果(僅在手部分析模式顯示)
+            // ══════════════════════════════════════════════════════════════
+            if (_handResult != null) ...[
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: const Color(0xFF4A65FF), width: 1.5),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // ── 標題 ──
+                    const Row(
+                      children: [
+                        Icon(Icons.back_hand, color: Color(0xFF4A65FF), size: 18),
+                        SizedBox(width: 6),
+                        Text(
+                          '手部動作特徵分析',
+                          style: TextStyle(
+                            color: Color(0xFF1A1D2E),
+                            fontSize: 14,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+
+                    // ── 1. 主要活動手指 ──
+                    const Text(
+                      '主要活動手指',
+                      style: TextStyle(
+                        color: Color(0xFF6B7280),
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Wrap(
+                      spacing: 6,
+                      runSpacing: 6,
+                      children: _handResult!.mainFingerIndices.map((idx) {
+                        final movement = _handResult!.fingerTotalMovement[idx] ?? 0;
+                        return Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 10, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFE0E7FF),
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                          child: Text(
+                            '${HandFeatureExtractor.fingerName(idx)} (${movement.toStringAsFixed(2)})',
+                            style: const TextStyle(
+                              color: Color(0xFF4A65FF),
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        );
+                      }).toList(),
+                    ),
+
+                    const Divider(height: 24),
+
+                    // ── 2. 動作次數 ──
+                    _buildAngleStat(
+                      '估算動作次數',
+                      '${_handResult!.estimatedReps} 次',
+                      const Color(0xFF4CAF50),
+                    ),
+                    const SizedBox(height: 8),
+
+                    // ── 3. 動作規律性 ──
+                    _buildAngleStat(
+                      '動作規律性',
+                      '${(_handResult!.regularityScore * 100).toStringAsFixed(0)}%',
+                      _handResult!.regularityScore > 0.7
+                          ? const Color(0xFF4CAF50)
+                          : _handResult!.regularityScore > 0.4
+                              ? const Color(0xFFFF9800)
+                              : const Color(0xFFF44336),
+                    ),
+                    const SizedBox(height: 8),
+
+                    // ── 4. 拇指-食指開合距離 ──
+                    _buildAngleStat(
+                      '開合距離範圍',
+                      '${_handResult!.minPinchDistance.toStringAsFixed(3)} → '
+                          '${_handResult!.maxPinchDistance.toStringAsFixed(3)}',
+                      const Color(0xFF4A65FF),
+                    ),
+                    const SizedBox(height: 8),
+                    _buildAngleStat(
+                      '平均開合距離',
+                      _handResult!.avgPinchDistance.toStringAsFixed(3),
+                      const Color(0xFF6B7280),
+                    ),
+                    const SizedBox(height: 8),
+
+                    // ── 5. 手腕旋轉角度 ──
+                    _buildAngleStat(
+                      '手腕旋轉角度範圍',
+                      '${_handResult!.wristRotationRange.toStringAsFixed(1)}°',
+                      const Color(0xFFFF9800),
+                    ),
+                    const SizedBox(height: 8),
+
+                    // ── 6. 分析資料點 ──
+                    _buildAngleStat(
+                      '分析資料點',
+                      '${_handResult!.totalFrames} 幀',
+                      const Color(0xFF6B7280),
+                    ),
+
+                    const SizedBox(height: 12),
+
+                    // ── 說明 ──
+                    Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF5F6FA),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(
+                        '💡 手部復健指標:主要活動手指、動作次數、'
+                        '開合幅度(側捏/抓握指標)、手腕旋轉(翻掌指標)、'
+                        '動作規律性(復健穩定度)',
+                        style: TextStyle(
+                          color: Colors.grey.shade700,
+                          fontSize: 11,
+                          height: 1.5,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 12),
+            ],
           ],
         ),
       ),
@@ -1062,6 +1303,69 @@ Widget _miniChip(String text, Color color) {
             style: TextStyle(
                 color: color, fontSize: 14, fontWeight: FontWeight.w800)),
       ],
+    );
+  }
+
+  /// 分析類型切換卡
+  Widget _buildAnalysisTypeCard({
+    required String type,
+    required IconData icon,
+    required String title,
+    required String subtitle,
+  }) {
+    final bool isSelected = _analysisType == type;
+    return GestureDetector(
+      onTap: _isAnalyzing
+          ? null
+          : () {
+              setState(() {
+                _analysisType = type;
+                // 換類型時清空既有選擇
+                _selectedVideoPath = null;
+                _currentActionType = '';
+                _resetAnalysisState();
+                _handResult = null;
+              });
+            },
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 12),
+        decoration: BoxDecoration(
+          color: isSelected ? const Color(0xFF4A65FF) : Colors.white,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: isSelected ? const Color(0xFF4A65FF) : const Color(0xFFDDE0F0),
+            width: isSelected ? 2 : 1,
+          ),
+        ),
+        child: Column(
+          children: [
+            Icon(
+              icon,
+              size: 32,
+              color: isSelected ? Colors.white : const Color(0xFF6B7280),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              title,
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w800,
+                color: isSelected ? Colors.white : const Color(0xFF1A1D2E),
+              ),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              subtitle,
+              style: TextStyle(
+                fontSize: 10,
+                color: isSelected
+                    ? Colors.white.withOpacity(0.8)
+                    : Colors.grey.shade600,
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
