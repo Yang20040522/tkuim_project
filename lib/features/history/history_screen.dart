@@ -5,6 +5,9 @@ import 'video_playback_screen.dart';
 import '../analysis/comparison_report_screen.dart';
 import '../analysis/video_analysis_service.dart';
 
+import '../analysis/hand_analysis_service.dart';
+import '../analysis/hand_feature_extractor.dart';
+
 // ── 分類定義（與 action_list_screen.dart 保持一致）──
 //
 // 手部復健：翻掌 / 側捏 / 翹手腕 / 左右彎手腕
@@ -914,23 +917,65 @@ class _HistoryScreenState extends State<HistoryScreen> {
     );
 
     try {
-      // 4. 跑分析(fps=1 讓速度變快 + 進度 + 可取消)
+      // 4. 自動判斷手部 or 全身動作
+      const handKeywords = ['側捏', '翻掌', '翹手腕', '彎手腕', '手'];
+      final isHandAction = handKeywords.any((k) => actionName.contains(k));
+
+      debugPrint('🔍 分析類型:${isHandAction ? "手部" : "全身"} · $actionName');
+
+      if (isHandAction) {
+        // ── 手部分析 ──
+        final handResult = await HandAnalysisService.analyzeVideo(
+          videoPath: videoPath,
+          fps: 3,
+          onProgress: (p) => progressNotifier.value = p,
+          shouldCancel: () => cancelled,
+        );
+
+        if (!context.mounted) return;
+        if (cancelled) {
+          progressNotifier.dispose();
+          return;
+        }
+
+        Navigator.of(context).pop();   // 關閉 loading dialog
+        progressNotifier.dispose();
+
+        if (handResult == null) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('分析失敗:無法從影片偵測到手部')),
+          );
+          return;
+        }
+
+        // 顯示手部分析結果(暫時用 SnackBar,之後可導到專屬報告畫面)
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('手部分析完成:${handResult.totalFrames} 幀,'
+                '${handResult.estimatedReps} 次動作,'
+                '規律性 ${(handResult.regularityScore * 100).toStringAsFixed(0)}%'),
+            duration: const Duration(seconds: 6),
+          ),
+        );
+        return;
+      }
+
+      // ── 全身分析(原本邏輯) ──
       final patientResult = await VideoAnalysisService.analyzeVideo(
         videoPath: videoPath,
-        fps: 1,   // ← 從 2 降到 1,分析速度快一倍
+        fps: 1,
         onProgress: (p) => progressNotifier.value = p,
         shouldCancel: () => cancelled,
       );
 
       if (!context.mounted) return;
 
-      // 如果使用者取消,dialog 已經被關掉,直接 return
       if (cancelled) {
         progressNotifier.dispose();
         return;
       }
 
-      Navigator.of(context).pop();   // 關閉 loading dialog
+      Navigator.of(context).pop();
       progressNotifier.dispose();
 
       if (patientResult == null) {
@@ -940,7 +985,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
         return;
       }
 
-      // 5. 導到報告畫面
+      // 5. 導到報告畫面(只有全身有比對報告)
       Navigator.of(context).push(MaterialPageRoute(
         builder: (_) => ComparisonReportScreen(
           patientResult: patientResult,
