@@ -6,7 +6,7 @@ import '../analysis/comparison_report_screen.dart';
 import '../analysis/video_analysis_service.dart';
 
 import '../analysis/hand_analysis_service.dart';
-import '../analysis/hand_feature_extractor.dart';
+import '../analysis/hand_comparison_report_screen.dart';
 
 // ── 分類定義（與 action_list_screen.dart 保持一致）──
 //
@@ -795,6 +795,29 @@ class _HistoryScreenState extends State<HistoryScreen> {
       return;
     }
 
+    // 判斷這支影片是手部/全身,只顯示對應類型的模板
+    const handKeywords = ['側捏', '翻掌', '翹手腕', '彎手腕'];
+    final isHandAction = handKeywords.any((k) => actionName.contains(k));
+    final wantedModelType = isHandAction ? 'hand' : 'body';
+
+    templates.removeWhere((t) {
+      final modelType = (t['modelType'] ?? 'body').toString();
+      return modelType != wantedModelType;
+    });
+
+    if (templates.isEmpty) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            '尚無${isHandAction ? "手部" : "全身"}類型的模板,'
+            '請先在「動作標準分析」建立對應類型的模板',
+          ),
+        ),
+      );
+      return;
+    }
+
     // 2. 選模板(相關動作排前面)
     templates.sort((a, b) {
       final ta = (a['actionType'] ?? '').toString();
@@ -918,7 +941,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
 
     try {
       // 4. 自動判斷手部 or 全身動作
-      const handKeywords = ['側捏', '翻掌', '翹手腕', '彎手腕', '手'];
+      const handKeywords = ['側捏', '翻掌', '翹手腕', '彎手腕'];
       final isHandAction = handKeywords.any((k) => actionName.contains(k));
 
       debugPrint('🔍 分析類型:${isHandAction ? "手部" : "全身"} · $actionName');
@@ -948,15 +971,14 @@ class _HistoryScreenState extends State<HistoryScreen> {
           return;
         }
 
-        // 顯示手部分析結果(暫時用 SnackBar,之後可導到專屬報告畫面)
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('手部分析完成:${handResult.totalFrames} 幀,'
-                '${handResult.estimatedReps} 次動作,'
-                '規律性 ${(handResult.regularityScore * 100).toStringAsFixed(0)}%'),
-            duration: const Duration(seconds: 6),
+        // 手部分析完成 → 導到手部比對報告畫面
+        Navigator.of(context).push(MaterialPageRoute(
+          builder: (_) => HandComparisonReportScreen(
+            patientResult: handResult,
+            templateJson: selected,
+            patientVideoPath: videoPath,
           ),
-        );
+        ));
         return;
       }
 

@@ -462,7 +462,10 @@ class _StandardAnalysisScreenState extends State<StandardAnalysisScreen> {
   // ═══════════════════════════════════════════════════════════════
 
   Future<void> _saveAsTemplate() async {
-    if (_mainJointIndices.isEmpty) return;
+    // 判斷是否有可儲存的分析結果
+    final bool hasBody = _analysisType == 'body' && _mainJointIndices.isNotEmpty;
+    final bool hasHand = _analysisType == 'hand' && _handResult != null;
+    if (!hasBody && !hasHand) return;
 
     // 讓使用者輸入模板名稱
     final nameCtrl =
@@ -491,30 +494,59 @@ class _StandardAnalysisScreenState extends State<StandardAnalysisScreen> {
     if (saveName == null || saveName.isEmpty) return;
 
     try {
-      // 組 JSON 資料
-      final Map<String, dynamic> data = {
-        'templateName': saveName,
-        'actionType': _currentActionType,
-        'createdAt': DateTime.now().toIso8601String(),
-        'totalFrames': _framePoses.length,
-        'estimatedReps': _estimatedReps,
-        'symmetryScore': _symmetryScore,
-        'stabilityScore': _stabilityScore,
-        'mainJoints': _mainJointIndices
-            .map((idx) => {
-                  'index': idx,
-                  'name': _jointName(idx),
-                  'movement': _jointTotalMovement[idx] ?? 0,
-                })
-            .toList(),
-        'actionIntensity': _actionIntensity,
-        'framePoses': _framePoses
-            .map((frame) => frame
-                .map((offset) => {'x': offset.dx, 'y': offset.dy})
-                .toList())
-            .toList(),
-        'frameScores': _frameScores,
-      };
+      Map<String, dynamic> data;
+
+      if (hasBody) {
+        // ═══ 全身模板 ═══
+        data = {
+          'modelType': 'body',                     // ← 新增區分欄位
+          'templateName': saveName,
+          'actionType': _currentActionType,
+          'createdAt': DateTime.now().toIso8601String(),
+          'totalFrames': _framePoses.length,
+          'estimatedReps': _estimatedReps,
+          'symmetryScore': _symmetryScore,
+          'stabilityScore': _stabilityScore,
+          'mainJoints': _mainJointIndices
+              .map((idx) => {
+                    'index': idx,
+                    'name': _jointName(idx),
+                    'movement': _jointTotalMovement[idx] ?? 0,
+                  })
+              .toList(),
+          'actionIntensity': _actionIntensity,
+          'framePoses': _framePoses
+              .map((frame) => frame
+                  .map((offset) => {'x': offset.dx, 'y': offset.dy})
+                  .toList())
+              .toList(),
+          'frameScores': _frameScores,
+        };
+      } else {
+        // ═══ 手部模板 ═══
+        data = {
+          'modelType': 'hand',                     // ← 新增區分欄位
+          'templateName': saveName,
+          'actionType': _currentActionType,
+          'createdAt': DateTime.now().toIso8601String(),
+          'totalFrames': _handResult!.totalFrames,
+          'estimatedReps': _handResult!.estimatedReps,
+          'minPinchDistance': _handResult!.minPinchDistance,
+          'maxPinchDistance': _handResult!.maxPinchDistance,
+          'avgPinchDistance': _handResult!.avgPinchDistance,
+          'wristRotationRange': _handResult!.wristRotationRange,
+          'avgWristRotation': _handResult!.avgWristRotation,
+          'regularityScore': _handResult!.regularityScore,
+          'actionIntensity': _handResult!.actionIntensity,
+          'mainFingers': _handResult!.mainFingerIndices
+              .map((idx) => {
+                    'index': idx,
+                    'name': HandFeatureExtractor.fingerName(idx),
+                    'movement': _handResult!.fingerTotalMovement[idx] ?? 0,
+                  })
+              .toList(),
+        };
+      }
 
       // 存到手機內部目錄
       final dir = await getApplicationDocumentsDirectory();
@@ -529,7 +561,8 @@ class _StandardAnalysisScreenState extends State<StandardAnalysisScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('模板已儲存:${file.path.split('/').last}'),
+            content: Text('模板已儲存(${_analysisType == "hand" ? "手部" : "全身"}):'
+                '${file.path.split('/').last}'),
             backgroundColor: const Color(0xFF4CAF50),
           ),
         );
@@ -1274,6 +1307,30 @@ Widget _miniChip(String text, Color color) {
                           height: 1.5,
                         ),
                       ),
+                    ),
+                    const SizedBox(height: 12),
+                    // ── 儲存為模板按鈕(手部) ──
+                    SizedBox(
+                      width: double.infinity,
+                      height: 44,
+                      child: ElevatedButton.icon(
+                        onPressed: _saveAsTemplate,
+                        icon: const Icon(Icons.save_alt, size: 18),
+                        label: const Text('儲存為手部模板',
+                            style: TextStyle(
+                                fontSize: 14, fontWeight: FontWeight.w700)),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF4CAF50),
+                          foregroundColor: Colors.white,
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12)),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      '💡 儲存後可作為手部訓練病人動作比對的參考模板',
+                      style: TextStyle(color: Colors.grey.shade600, fontSize: 11),
                     ),
                   ],
                 ),
