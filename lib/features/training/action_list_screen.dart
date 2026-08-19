@@ -60,6 +60,7 @@ class _ActionListScreenState extends State<ActionListScreen> with TickerProvider
 
   // ── 新增:目標次數輸入框控制器 ──
   final TextEditingController _repsController = TextEditingController(text: '10');
+  bool _autoLevelUp = true;   // 🆕 true=自動升級難度, false=達標後跳出詢問
 
   late AnimationController _fadeCtrl;
   late Animation<double> _fadeAnim;
@@ -123,6 +124,7 @@ class _ActionListScreenState extends State<ActionListScreen> with TickerProvider
         ),
         trainingActionMeta: act,
         difficultyMeta: diff,
+        autoLevelUp: _autoLevelUp,
       );
     } else if (act.type == ActionType.drawCircle) {
       screen = BodyTrainingScreen(
@@ -132,6 +134,7 @@ class _ActionListScreenState extends State<ActionListScreen> with TickerProvider
         ),
         trainingActionMeta: act,
         difficultyMeta: diff,
+        autoLevelUp: _autoLevelUp,
       );
     } else if (act.type == ActionType.reach) {
       screen = BodyTrainingScreen(
@@ -141,6 +144,7 @@ class _ActionListScreenState extends State<ActionListScreen> with TickerProvider
         ),
         trainingActionMeta: act,
         difficultyMeta: diff,
+        autoLevelUp: _autoLevelUp,
       );
     } else if (act.type == ActionType.raiseBothArms) {
       screen = BodyTrainingScreen(
@@ -150,6 +154,7 @@ class _ActionListScreenState extends State<ActionListScreen> with TickerProvider
         ),
         trainingActionMeta: act,
         difficultyMeta: diff,
+        autoLevelUp: _autoLevelUp,
       );
     } else if (act.type == ActionType.elbowForward) {
       screen = BodyTrainingScreen(
@@ -159,6 +164,7 @@ class _ActionListScreenState extends State<ActionListScreen> with TickerProvider
         ),
         trainingActionMeta: act,
         difficultyMeta: diff,
+        autoLevelUp: _autoLevelUp,
       );
     } else if (act.type == ActionType.sitToStand) {
       screen = BodyTrainingScreen(
@@ -168,6 +174,7 @@ class _ActionListScreenState extends State<ActionListScreen> with TickerProvider
         ),
         trainingActionMeta: act,
         difficultyMeta: diff,
+        autoLevelUp: _autoLevelUp,
       );
     } else if (act.type == ActionType.lateralStep) {
       screen = BodyTrainingScreen(
@@ -177,6 +184,7 @@ class _ActionListScreenState extends State<ActionListScreen> with TickerProvider
         ),
         trainingActionMeta: act,
         difficultyMeta: diff,
+        autoLevelUp: _autoLevelUp,
       );
     } else {
       screen = TrainingScreen(action: act, difficulty: diff);
@@ -690,7 +698,7 @@ class _ActionListScreenState extends State<ActionListScreen> with TickerProvider
     );
   }
 
-  // ── 目標次數輸入框 ─────────────────────────────
+  // ── 目標次數輸入框 + 升級模式開關 ─────────────────────────
   Widget _buildRepsInput() {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
@@ -708,15 +716,15 @@ class _ActionListScreenState extends State<ActionListScreen> with TickerProvider
                 fontSize: 14,
                 fontWeight: FontWeight.w600),
           ),
-          const Spacer(),
+          const SizedBox(width: 10),
           SizedBox(
-            width: 64,
+            width: 48, // ← 縮小(原本 64)
             child: TextField(
               controller: _repsController,
               keyboardType: TextInputType.number,
               textAlign: TextAlign.center,
               style: const TextStyle(
-                  fontSize: 16,
+                  fontSize: 15,
                   fontWeight: FontWeight.w800,
                   color: Color(0xFF1A1D2E)),
               decoration: InputDecoration(
@@ -733,8 +741,53 @@ class _ActionListScreenState extends State<ActionListScreen> with TickerProvider
               ),
             ),
           ),
-          const SizedBox(width: 6),
+          const SizedBox(width: 4),
           const Text('下', style: TextStyle(color: Color(0xFF6B7280), fontSize: 13)),
+
+          const Spacer(), // 🆕 把開關推到最右邊
+
+          // 🆕 升級模式開關
+          GestureDetector(
+            onTap: () => setState(() => _autoLevelUp = !_autoLevelUp),
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 150),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+              decoration: BoxDecoration(
+                color: _autoLevelUp
+                    ? const Color(0xFF4A65FF).withValues(alpha: 0.1)
+                    : const Color(0xFFFFF3E0),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(
+                  color: _autoLevelUp
+                      ? const Color(0xFF4A65FF)
+                      : const Color(0xFFFF9800),
+                ),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    _autoLevelUp ? Icons.bolt : Icons.touch_app,
+                    size: 15,
+                    color: _autoLevelUp
+                        ? const Color(0xFF4A65FF)
+                        : const Color(0xFFFF9800),
+                  ),
+                  const SizedBox(width: 4),
+                  Text(
+                    _autoLevelUp ? '自動升級' : '手動確認',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      color: _autoLevelUp
+                          ? const Color(0xFF4A65FF)
+                          : const Color(0xFFFF9800),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
         ],
       ),
     );
