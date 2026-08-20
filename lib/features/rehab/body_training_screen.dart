@@ -260,15 +260,33 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
         final controllable =
             action is LevelUpControllable ? action as LevelUpControllable : null;
 
-        if (widget.autoLevelUp) {
-          controllable?.confirmLevelUp(); // 🆕 補上這行,真正解凍並套用新難度
-          setState(() {
-            _saveCurrentLevelRecord();
-            _previousLevel = _nextLevel(_previousLevel);
-            _currentLevelStart = DateTime.now();
-            _currentLevelReps = 0;
-            _instruction = '難度提升,請繼續保持';
-          });
+                if (widget.autoLevelUp) {
+          // 先判斷目前這階之後還有沒有下一階(跟手動模式同一套算法)
+          final currentMeta = widget.trainingActionMeta ??
+              kTrainingActions.firstWhere(
+                (a) => a.name == widget.action.title,
+                orElse: () => kTrainingActions.first,
+              );
+          final currentLevelIdx = _levelToInt(_previousLevel) - 1;
+          final hasNextLevel = currentLevelIdx >= 0 &&
+              currentLevelIdx + 1 < currentMeta.difficulties.length;
+
+          if (hasNextLevel) {
+            // 還有下一階 → 自動升級(原本的行為)
+            controllable?.confirmLevelUp(); // 真正解凍並套用新難度
+            setState(() {
+              _saveCurrentLevelRecord();
+              _previousLevel = _nextLevel(_previousLevel);
+              _currentLevelStart = DateTime.now();
+              _currentLevelReps = 0;
+              _instruction = '難度提升,請繼續保持';
+            });
+          } else {
+            // 已經是最高難度 → 自動結束整場訓練
+            // (最後這階的紀錄會由 _handleRealEnd 內的 _saveCurrentLevelRecord 存)
+            setState(() => _isPaused = true); // 擋掉後續 pose frame,避免重複進結束流程
+            _handleRealEnd();
+          }
         } else if (!_levelUpDialogShowing) {
           _handleLevelUpDetected();
         }
