@@ -17,7 +17,7 @@ import 'body_rehab_action.dart';
 
 enum _ElbowState { waitReady, extending, holding, retracting }
 
-class ElbowForwardAction implements BodyRehabAction {
+class ElbowForwardAction implements BodyRehabAction, LevelUpControllable {
   RehabDifficulty difficulty;
   int successCount = 0;
   int _targetCount = 5;
@@ -39,6 +39,8 @@ class ElbowForwardAction implements BodyRehabAction {
   DateTime _lastRepTime = DateTime.fromMillisecondsSinceEpoch(0);
   DateTime _holdStartTime = DateTime.now();
   DateTime _retractStartTime = DateTime.now();
+
+  bool _pendingLevelUp = false; // 🆕
 
   ElbowForwardAction({
     this.difficulty = RehabDifficulty.easy,
@@ -62,6 +64,7 @@ class ElbowForwardAction implements BodyRehabAction {
   // ── 每幀判定 ──────────────────────────────────────────
   @override
   RehabFeedback update(BodyFrame frame) {
+    if (_pendingLevelUp) return RehabFeedback.none;
     final lShoulder = frame.joints[RehabJoint.leftShoulder];
     final rShoulder = frame.joints[RehabJoint.rightShoulder];
     final lElbow = frame.joints[RehabJoint.leftElbow];
@@ -177,11 +180,11 @@ class ElbowForwardAction implements BodyRehabAction {
             _state = _ElbowState.waitReady;
 
             if (successCount >= _targetCount) {
-              final leveled = _upgrade();
-              return RehabFeedback(
-                prompt: leveled ? '完美過關,解鎖下一個難度' : '完成一組,辛苦了',
+              _pendingLevelUp = true; // 🆕
+              return const RehabFeedback(
+                prompt: '完美過關!',
                 scored: true,
-                leveledUp: leveled,
+                leveledUp: true,
               );
             }
             return const RehabFeedback(
@@ -227,5 +230,24 @@ class ElbowForwardAction implements BodyRehabAction {
       return true;
     }
     return false;
+  }
+
+  @override
+  bool get isPendingLevelUp => _pendingLevelUp; // 🆕
+
+  @override
+  void confirmLevelUp({int? customTargetReps}) { // 🆕
+    _pendingLevelUp = false;
+    _upgrade();
+    if (customTargetReps != null && customTargetReps > 0) {
+      _targetCount = customTargetReps;
+    }
+  }
+
+  @override
+  void declineLevelUp() { // 🆕
+    _pendingLevelUp = false;
+    successCount = 0;
+    _state = _ElbowState.waitReady;
   }
 }

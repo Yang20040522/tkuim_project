@@ -26,7 +26,7 @@ import 'body_rehab_action.dart';
 
 enum _RaiseState { waitReady, raising, holding, lowering }
 
-class RaiseBothArmsAction implements BodyRehabAction {
+class RaiseBothArmsAction implements BodyRehabAction, LevelUpControllable {
   RehabDifficulty difficulty;
   int successCount = 0;
   int _targetCount = 5;
@@ -48,6 +48,7 @@ class RaiseBothArmsAction implements BodyRehabAction {
   DateTime _lastRepTime = DateTime.fromMillisecondsSinceEpoch(0);
   DateTime _holdStartTime = DateTime.now();
   DateTime _lowerStartTime = DateTime.now();
+  bool _pendingLevelUp = false;
 
   RaiseBothArmsAction({
     this.difficulty = RehabDifficulty.easy,
@@ -71,6 +72,7 @@ class RaiseBothArmsAction implements BodyRehabAction {
   // ── 每幀判定 ──────────────────────────────────────────
   @override
   RehabFeedback update(BodyFrame frame) {
+    if (_pendingLevelUp) return RehabFeedback.none;
     final lShoulder = frame.joints[RehabJoint.leftShoulder];
     final rShoulder = frame.joints[RehabJoint.rightShoulder];
     final lWrist = frame.joints[RehabJoint.leftWrist];
@@ -181,11 +183,11 @@ class RaiseBothArmsAction implements BodyRehabAction {
             _state = _RaiseState.waitReady;
 
             if (successCount >= _targetCount) {
-              final leveled = _upgrade();
-              return RehabFeedback(
-                prompt: leveled ? '完美過關,解鎖下一個難度' : '完成一組,辛苦了',
+              _pendingLevelUp = true; // 🆕
+              return const RehabFeedback(
+                prompt: '完美過關!',
                 scored: true,
-                leveledUp: leveled,
+                leveledUp: true,
               );
             }
             return const RehabFeedback(
@@ -235,5 +237,24 @@ class RaiseBothArmsAction implements BodyRehabAction {
       return true;
     }
     return false;
+  }
+
+  @override
+  bool get isPendingLevelUp => _pendingLevelUp; // 🆕
+
+  @override
+  void confirmLevelUp({int? customTargetReps}) { // 🆕
+    _pendingLevelUp = false;
+    _upgrade();
+    if (customTargetReps != null && customTargetReps > 0) {
+      _targetCount = customTargetReps;
+    }
+  }
+
+  @override
+  void declineLevelUp() { // 🆕
+    _pendingLevelUp = false;
+    successCount = 0;
+    _state = _RaiseState.waitReady;
   }
 }

@@ -7,13 +7,15 @@ import '../models/body_frame.dart';
 import 'body_rehab_action.dart';
 //import 'wipe_body_action.dart' show RehabDifficulty; // 共用同一個難度 enum
 
-class DrawCircleAction implements BodyRehabAction {
+class DrawCircleAction implements BodyRehabAction, LevelUpControllable {
   RehabDifficulty difficulty;
   int successCount = 0;
   int targetCount;   // 拿掉 final
 
   double _sweptAngle = 0.0;
   double _lastAngle = double.nan;
+
+  bool _pendingLevelUp = false; // 🆕
 
   RehabJoint? _activeWrist;
   RehabJoint? _activeShoulder;
@@ -47,6 +49,8 @@ class DrawCircleAction implements BodyRehabAction {
   // ── 合約核心:每幀判定 ────────────────────────────────────
   @override
   RehabFeedback update(BodyFrame frame) {
+    if (_pendingLevelUp) return RehabFeedback.none; // 🆕 等待確認期間,暫停判定
+
     final leftShoulder = frame.joints[RehabJoint.leftShoulder];
     final rightShoulder = frame.joints[RehabJoint.rightShoulder];
     final leftWrist = frame.joints[RehabJoint.leftWrist];
@@ -105,7 +109,8 @@ class DrawCircleAction implements BodyRehabAction {
         successCount++;
 
         if (successCount >= targetCount) {
-          _upgradeDifficulty();
+          _pendingLevelUp = true; // 🆕 先不升級,等使用者確認
+          //_upgradeDifficulty();
           return const RehabFeedback(
             prompt: '太棒了!解鎖下一個難度!',
             scored: true,
@@ -143,5 +148,25 @@ class DrawCircleAction implements BodyRehabAction {
     } else if (difficulty == RehabDifficulty.medium) {
       difficulty = RehabDifficulty.hard;
     }
+  }
+
+  @override
+  bool get isPendingLevelUp => _pendingLevelUp; // 🆕
+
+  @override
+  void confirmLevelUp({int? customTargetReps}) { // 🆕
+    _pendingLevelUp = false;
+    _upgradeDifficulty();
+    if (customTargetReps != null && customTargetReps > 0) {
+      targetCount = customTargetReps;
+    }
+  }
+
+  @override
+  void declineLevelUp() { // 🆕
+    _pendingLevelUp = false;
+    successCount = 0;
+    _sweptAngle = 0.0;
+    _lastAngle = double.nan;
   }
 }

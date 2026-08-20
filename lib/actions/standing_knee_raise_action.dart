@@ -14,13 +14,16 @@ import 'body_rehab_action.dart';
 
 // enum RehabDifficulty { easy, medium, hard }
 
-class StandingKneeRaiseAction implements BodyRehabAction {
+class StandingKneeRaiseAction implements BodyRehabAction, LevelUpControllable {
   RehabDifficulty difficulty;
   int successCount = 0;
   int targetCount;
 
   bool _hasTriggeredRaise = false;
   DateTime _lastVoiceTime = DateTime.now();
+
+  // 🆕 是否正等待使用者決定要不要升級(達標後、確認前為 true)
+  bool _pendingLevelUp = false;
 
   // ── 左右腳選擇 ────────────────────────────────────────────
   RehabJoint? _activeHip;
@@ -71,6 +74,7 @@ class StandingKneeRaiseAction implements BodyRehabAction {
   // ── 合約核心: 每幀判定 ────────────────────────────────────
   @override
   RehabFeedback update(BodyFrame frame) {
+    if (_pendingLevelUp) return RehabFeedback.none;
     // 尚未選腳 → 等待 UI 按鈕，不做任何偵測
     if (!legSelected) return RehabFeedback.none;
 
@@ -143,7 +147,8 @@ class StandingKneeRaiseAction implements BodyRehabAction {
         successCount++;
 
         if (successCount >= targetCount) {
-          _upgradeDifficulty();
+          //_upgradeDifficulty();
+          _pendingLevelUp = true;
           return const RehabFeedback(
             prompt: '太棒了！動作非常標準，解鎖下一個難度！',
             scored: true,
@@ -200,5 +205,24 @@ class StandingKneeRaiseAction implements BodyRehabAction {
     } else if (difficulty == RehabDifficulty.medium) {
       difficulty = RehabDifficulty.hard;
     }
+  }
+
+  @override
+  bool get isPendingLevelUp => _pendingLevelUp; // 🆕
+
+  @override
+  void confirmLevelUp({int? customTargetReps}) { // 🆕
+    _pendingLevelUp = false;
+    _upgradeDifficulty();
+    if (customTargetReps != null && customTargetReps > 0) {
+      targetCount = customTargetReps;
+    }
+  }
+
+  @override
+  void declineLevelUp() { // 🆕
+    _pendingLevelUp = false;
+    successCount = 0;
+    _hasTriggeredRaise = false;
   }
 }

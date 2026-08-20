@@ -138,6 +138,9 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
   bool _recordingStarted = false;
   
   bool _levelUpDialogShowing = false;
+  bool _hasNextLevel = false;          // 🆕
+  String _nextLevelLabel = '';         // 🆕
+  final TextEditingController _levelUpRepsController = TextEditingController();         // 🆕
 
   DateTime _currentLevelStart = DateTime.now();
   int _currentLevelReps = 0;
@@ -253,7 +256,12 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
 
       // 🆕 達標了 → 依照 autoLevelUp 開關決定「自動升級」還是「跳出詢問」
       if (justReachedLevelUp) {
+        final action = widget.action;
+        final controllable =
+            action is LevelUpControllable ? action as LevelUpControllable : null;
+
         if (widget.autoLevelUp) {
+          controllable?.confirmLevelUp(); // 🆕 補上這行,真正解凍並套用新難度
           setState(() {
             _saveCurrentLevelRecord();
             _previousLevel = _nextLevel(_previousLevel);
@@ -353,12 +361,8 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
   }
 
   // 🆕 達標時呼叫:跳出「要不要升級」詢問視窗
-  Future<void> _handleLevelUpDetected() async {
+  void _handleLevelUpDetected() {
     if (_levelUpDialogShowing) return;
-    _levelUpDialogShowing = true;
-
-    setState(() => _isPaused = true);
-    VoiceService.stop();
 
     final currentMeta = widget.trainingActionMeta ??
         kTrainingActions.firstWhere(
@@ -370,52 +374,54 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
     final nextLevelIdx = currentLevelIdx + 1;
     final hasNextLevel =
         currentLevelIdx >= 0 && nextLevelIdx < currentMeta.difficulties.length;
-
     final nextDifficulty =
         hasNextLevel ? currentMeta.difficulties[nextLevelIdx] : null;
 
-    final repsController = hasNextLevel
-        ? TextEditingController(text: '${nextDifficulty!.targetReps}')
-        : null;
+    setState(() {
+      _isPaused = true;
+      _levelUpDialogShowing = true;
+      _hasNextLevel = hasNextLevel;
+      _nextLevelLabel = nextDifficulty?.label ?? '';
+      _levelUpRepsController.text = '${nextDifficulty?.targetReps ?? 10}';
+    });
+    VoiceService.stop();
+  }
 
-    final wantUpgrade = await showDialog<bool>(
-      context: context,
-      barrierDismissible: false,
-      builder: (dialogCtx) => _LevelUpChoiceDialog(
-        hasNextLevel: hasNextLevel,
-        nextLevelLabel: nextDifficulty?.label ?? '',
-        repsController: repsController,
-        onYes: () => Navigator.of(dialogCtx).pop(true),
-        onNo: () => Navigator.of(dialogCtx).pop(false),
-      ),
+  void _confirmLevelUp() {
+    //final currentMeta = widget.trainingActionMeta ??
+        kTrainingActions.firstWhere(
+          (a) => a.name == widget.action.title,
+          orElse: () => kTrainingActions.first,
+        );
+    //final currentLevelIdx = _levelToInt(_previousLevel) - 1;
+    //final nextLevelIdx = currentLevelIdx + 1;
+    //final nextDifficulty = currentMeta.difficulties[nextLevelIdx];
+
+    final action = widget.action;
+    final controllable =
+        action is LevelUpControllable ? action as LevelUpControllable : null;
+
+    _saveCurrentLevelRecord();
+    final customReps = int.tryParse(_levelUpRepsController.text);
+    controllable?.confirmLevelUp(
+      customTargetReps: (customReps != null && customReps > 0) ? customReps : null,
     );
 
-    if (!mounted) {
-      repsController?.dispose();
-      return;
-    }
-    _levelUpDialogShowing = false;
+    setState(() {
+      _levelUpDialogShowing = false;
+      _previousLevel = _nextLevel(_previousLevel);
+      _currentLevelStart = DateTime.now();
+      _currentLevelReps = 0;
+      _instruction = '難度提升,請繼續保持';
+      _isPaused = false;
+    });
+  }
 
-    if (wantUpgrade == true && hasNextLevel) {
-      // 選「要」且還有下一階 → 存這一階紀錄,套用自訂次數,開新難度畫面
-      _saveCurrentLevelRecord();
-
-      final customReps = int.tryParse(repsController!.text);
-      final targetDifficulty = (customReps != null && customReps > 0)
-          ? nextDifficulty!.copyWithReps(customReps)
-          : nextDifficulty!;
-
-      repsController.dispose();
-      await _navigateToAction(currentMeta, targetDifficulty);
-    } else {
-      // 選「不要」,或已經是最高難度 → 留在原難度重新開始
-      repsController?.dispose();
-      final stayDifficulty = (currentLevelIdx >= 0 &&
-              currentLevelIdx < currentMeta.difficulties.length)
-          ? currentMeta.difficulties[currentLevelIdx]
-          : (widget.difficultyMeta ?? currentMeta.difficulties.first);
-      await _navigateToAction(currentMeta, stayDifficulty);
-    }
+  void _declineLevelUp() {
+    setState(() {
+      _levelUpDialogShowing = false;
+    });
+    _handleRealEnd(); // 🆕 不繼續練,直接進入結束流程(存紀錄、跳完成畫面)
   }
 
   void _saveCurrentLevelRecord() {
@@ -747,36 +753,42 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
     _piHand?.dispose(); // 🚀 樹莓派手部新增
     _handService.dispose(); // 🚀 樹莓派手部新增
     _engine.dispose();
+    _levelUpRepsController.dispose(); // 🆕
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: const Color(0xFFFFFFFF),
-      body: SafeArea(
-        child: Column(
-          children: [
-            _buildTopBar(),
-            Expanded(child: _buildBody()),
-            // 🖥️ 電視投放:顯示端讀 remote,控制端讀本機
-            if (widget.isDisplay)
-              ValueListenableBuilder<RehabSessionState>(
-                valueListenable: _remoteState,
-                builder: (_, remote, __) => _buildRemoteCoachCard(remote),
-              )
-            else
-              _buildCoachCard(),
-            if (widget.isDisplay)
-              ValueListenableBuilder<RehabSessionState>(
-                valueListenable: _remoteState,
-                builder: (_, remote, __) => _buildRemoteStatsBar(remote),
-              )
-            else
-              _buildStatsBar(),
-          ],
+    return Stack(
+      children: [
+        Scaffold(
+          backgroundColor: const Color(0xFFFFFFFF),
+          body: SafeArea(
+            child: Column(
+              children: [
+                _buildTopBar(),
+                Expanded(child: _buildBody()),
+                // 🖥️ 電視投放:顯示端讀 remote,控制端讀本機
+                if (widget.isDisplay)
+                  ValueListenableBuilder<RehabSessionState>(
+                    valueListenable: _remoteState,
+                    builder: (_, remote, __) => _buildRemoteCoachCard(remote),
+                  )
+                else
+                  _buildCoachCard(),
+                if (widget.isDisplay)
+                  ValueListenableBuilder<RehabSessionState>(
+                    valueListenable: _remoteState,
+                    builder: (_, remote, __) => _buildRemoteStatsBar(remote),
+                  )
+                else
+                  _buildStatsBar(),
+              ],
+            ),
+          ),
         ),
-      ),
+        if (_levelUpDialogShowing) _buildLevelUpOverlay(), // 🆕
+      ],
     );
   }
 
@@ -1306,7 +1318,137 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
       ),
     );
   }
+
+  Widget _buildLevelUpOverlay() {
+    return Material(
+      color: Colors.transparent,
+      child: Positioned.fill(
+        child: Container(
+          color: Colors.black54,
+          child: Center(
+            child: Container(
+              margin: const EdgeInsets.symmetric(horizontal: 32),
+              padding: const EdgeInsets.all(24),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(24),
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text('🎉', style: TextStyle(fontSize: 48)),
+                  const SizedBox(height: 10),
+                  Text(
+                    _hasNextLevel ? '動作做得很棒！' : '已經是最高難度了！',
+                    style: const TextStyle(
+                      color: Color(0xFF1A1D2E),
+                      fontSize: 20,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    _hasNextLevel ? '要挑戰下一階「$_nextLevelLabel」嗎？' : '再接再厲，繼續保持！',
+                    style: const TextStyle(color: Color(0xFF6B7280), fontSize: 13),
+                    textAlign: TextAlign.center,
+                  ),
+                  if (_hasNextLevel) ...[
+                    const SizedBox(height: 16),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        const Text(
+                          '下一階要做幾下',
+                          style: TextStyle(
+                              color: Color(0xFF374151),
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600),
+                        ),
+                        const SizedBox(width: 10),
+                        SizedBox(
+                          width: 56,
+                          child: TextField(
+                            controller: _levelUpRepsController,
+                            keyboardType: TextInputType.number,
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w800,
+                                color: Color(0xFF1A1D2E)),
+                            decoration: InputDecoration(
+                              isDense: true,
+                              contentPadding:
+                                  const EdgeInsets.symmetric(vertical: 8),
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(8),
+                                borderSide:
+                                    const BorderSide(color: Color(0xFFDDE0F0)),
+                              ),
+                              focusedBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(8),
+                                borderSide:
+                                    const BorderSide(color: Color(0xFF4A65FF)),
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 4),
+                        const Text('下',
+                            style: TextStyle(color: Color(0xFF6B7280), fontSize: 13)),
+                      ],
+                    ),
+                  ],
+                  const SizedBox(height: 22),
+                  SizedBox(
+                    width: double.infinity,
+                    height: 52,
+                    child: ElevatedButton(
+                      onPressed: _hasNextLevel ? _confirmLevelUp : _declineLevelUp,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF4A65FF),
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14)),
+                      ),
+                      child: Text(
+                        _hasNextLevel ? '💪 挑戰下一階' : '🎉 完成訓練',
+                        style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 16,
+                            fontWeight: FontWeight.w700),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  SizedBox(
+                    width: double.infinity,
+                    height: 48,
+                    child: OutlinedButton(
+                      onPressed: _declineLevelUp,
+                      style: OutlinedButton.styleFrom(
+                        side: const BorderSide(color: Color(0xFFDDE0F0)),
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14)),
+                      ),
+                      child: const Text(
+                        '結束訓練',
+                        style: TextStyle(
+                            color: Color(0xFF374151),
+                            fontSize: 15,
+                            fontWeight: FontWeight.w600),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 }
+
+
 
 class _PauseMenuDialog extends StatelessWidget {
   final VoidCallback onResume;
@@ -1378,143 +1520,6 @@ class _PauseMenuDialog extends StatelessWidget {
                   '結束訓練',
                   style: TextStyle(
                       color: Color(0xFFFF4B4B),
-                      fontSize: 15,
-                      fontWeight: FontWeight.w600),
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-// ── 🆕 升級詢問 dialog:達標後跳出,可輸入下一階要做幾下 ──
-class _LevelUpChoiceDialog extends StatelessWidget {
-  final bool hasNextLevel;
-  final String nextLevelLabel;
-  final TextEditingController? repsController;
-  final VoidCallback onYes;
-  final VoidCallback onNo;
-
-  const _LevelUpChoiceDialog({
-    required this.hasNextLevel,
-    required this.nextLevelLabel,
-    required this.repsController,
-    required this.onYes,
-    required this.onNo,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Dialog(
-      backgroundColor: Colors.white,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Text('🎉', style: TextStyle(fontSize: 48)),
-            const SizedBox(height: 10),
-            Text(
-              hasNextLevel ? '動作做得很棒！' : '已經是最高難度了！',
-              style: const TextStyle(
-                color: Color(0xFF1A1D2E),
-                fontSize: 20,
-                fontWeight: FontWeight.w900,
-              ),
-            ),
-            const SizedBox(height: 6),
-            Text(
-              hasNextLevel ? '要挑戰下一階「$nextLevelLabel」嗎？' : '再接再厲，繼續保持！',
-              style: const TextStyle(color: Color(0xFF6B7280), fontSize: 13),
-              textAlign: TextAlign.center,
-            ),
-
-            if (hasNextLevel && repsController != null) ...[
-              const SizedBox(height: 16),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  const Text(
-                    '下一階要做幾下',
-                    style: TextStyle(
-                        color: Color(0xFF374151),
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600),
-                  ),
-                  const SizedBox(width: 10),
-                  SizedBox(
-                    width: 56,
-                    child: TextField(
-                      controller: repsController,
-                      keyboardType: TextInputType.number,
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w800,
-                          color: Color(0xFF1A1D2E)),
-                      decoration: InputDecoration(
-                        isDense: true,
-                        contentPadding:
-                            const EdgeInsets.symmetric(vertical: 8),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(8),
-                          borderSide:
-                              const BorderSide(color: Color(0xFFDDE0F0)),
-                        ),
-                        focusedBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(8),
-                          borderSide:
-                              const BorderSide(color: Color(0xFF4A65FF)),
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 4),
-                  const Text('下',
-                      style: TextStyle(color: Color(0xFF6B7280), fontSize: 13)),
-                ],
-              ),
-            ],
-
-            const SizedBox(height: 22),
-            SizedBox(
-              width: double.infinity,
-              height: 52,
-              child: ElevatedButton(
-                onPressed: onYes,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF4A65FF),
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(14)),
-                ),
-                child: Text(
-                  hasNextLevel ? '💪 挑戰下一階' : '再練一輪',
-                  style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 16,
-                      fontWeight: FontWeight.w700),
-                ),
-              ),
-            ),
-            const SizedBox(height: 10),
-            SizedBox(
-              width: double.infinity,
-              height: 48,
-              child: OutlinedButton(
-                onPressed: onNo,
-                style: OutlinedButton.styleFrom(
-                  side: const BorderSide(color: Color(0xFFDDE0F0)),
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(14)),
-                ),
-                child: const Text(
-                  '先繼續原本的難度',
-                  style: TextStyle(
-                      color: Color(0xFF374151),
                       fontSize: 15,
                       fontWeight: FontWeight.w600),
                 ),

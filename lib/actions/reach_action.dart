@@ -17,7 +17,7 @@ import 'body_rehab_action.dart';
 
 enum _ReachState { waitStart, reachingUp, holding, pullingDown }
 
-class ReachAction implements BodyRehabAction {
+class ReachAction implements BodyRehabAction, LevelUpControllable {
   RehabDifficulty difficulty;
   int successCount = 0;
   int _targetCount = 5;   // 升級門檻(可自訂)
@@ -36,6 +36,7 @@ class ReachAction implements BodyRehabAction {
   DateTime _lastVoiceTime = DateTime.fromMillisecondsSinceEpoch(0);
   DateTime _holdStartTime = DateTime.now();
   DateTime _lastRepTime = DateTime.fromMillisecondsSinceEpoch(0);
+  bool _pendingLevelUp = false;
 
   ReachAction({
     this.difficulty = RehabDifficulty.easy,
@@ -76,6 +77,8 @@ class ReachAction implements BodyRehabAction {
   RehabFeedback update(BodyFrame frame) {
     // 尚未選手 → 等待 UI 按鈕,不做任何偵測
     if (!handSelected) return RehabFeedback.none;
+
+    if (_pendingLevelUp) return RehabFeedback.none;
 
     final lShoulder = frame.joints[RehabJoint.leftShoulder];
     final rShoulder = frame.joints[RehabJoint.rightShoulder];
@@ -154,11 +157,11 @@ class ReachAction implements BodyRehabAction {
             _currentState = _ReachState.waitStart;
 
             if (successCount >= _targetCount) {
-              final leveled = _upgrade();
-              return RehabFeedback(
-                prompt: leveled ? '完美過關,解鎖下一個難度' : '完成一組,辛苦了',
+              _pendingLevelUp = true; // 🆕
+              return const RehabFeedback(
+                prompt: '完美過關!',
                 scored: true,
-                leveledUp: leveled,
+                leveledUp: true,
               );
             }
             return const RehabFeedback(prompt: '完成一次,請繼續', scored: true);
@@ -212,5 +215,24 @@ class ReachAction implements BodyRehabAction {
       return true;
     }
     return false;
+  }
+  
+  @override
+  bool get isPendingLevelUp => _pendingLevelUp; // 🆕
+
+  @override
+  void confirmLevelUp({int? customTargetReps}) { // 🆕
+    _pendingLevelUp = false;
+    _upgrade();
+    if (customTargetReps != null && customTargetReps > 0) {
+      _targetCount = customTargetReps;
+    }
+  }
+
+  @override
+  void declineLevelUp() { // 🆕
+    _pendingLevelUp = false;
+    successCount = 0;
+    _currentState = _ReachState.waitStart;
   }
 }

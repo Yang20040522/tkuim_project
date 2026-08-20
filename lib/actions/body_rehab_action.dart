@@ -35,5 +35,11 @@ abstract class BodyRehabAction {
   RehabFeedback update(BodyFrame frame);
 }
 
+abstract class LevelUpControllable {
+  bool get isPendingLevelUp;
+  void confirmLevelUp({int? customTargetReps});
+  void declineLevelUp();
+}
+
 // 復健難度三階(全身共用)
 enum RehabDifficulty { easy, medium, hard }

@@ -15,7 +15,7 @@ import 'body_rehab_action.dart';
 
 enum _SquatState { standing, squattingDown, holding, standingUp }
 
-class SitToStandAction implements BodyRehabAction {
+class SitToStandAction implements BodyRehabAction, LevelUpControllable {
   RehabDifficulty difficulty;
   int _successCount = 0;
   int _targetCount = 8;
@@ -23,6 +23,8 @@ class SitToStandAction implements BodyRehabAction {
   _SquatState _state = _SquatState.standing;
   DateTime _lastSpeakTime = DateTime.fromMillisecondsSinceEpoch(0);
   DateTime _holdStartTime = DateTime.now();
+
+  bool _pendingLevelUp = false;
 
   SitToStandAction({
     this.difficulty = RehabDifficulty.easy,
@@ -46,6 +48,7 @@ class SitToStandAction implements BodyRehabAction {
 
   @override
   RehabFeedback update(BodyFrame frame) {
+    if (_pendingLevelUp) return RehabFeedback.none;
     // 1. 取下肢關節
     final lHip = frame.joints[RehabJoint.leftHip];
     final lKnee = frame.joints[RehabJoint.leftKnee];
@@ -116,11 +119,11 @@ class SitToStandAction implements BodyRehabAction {
 
           // 達標 → 升級或結束(跟前三個動作一致)
           if (_successCount >= _targetCount) {
-            final leveled = _upgrade();
-            return RehabFeedback(
+            _pendingLevelUp = true; // 🆕
+            return const RehabFeedback(
               scored: true,
-              leveledUp: leveled,
-              prompt: leveled ? '腿部表現很棒,解鎖下一個難度' : '完成一組,辛苦了',
+              leveledUp: true,
+              prompt: '腿部表現很棒!',
             );
           }
           return RehabFeedback(
@@ -168,5 +171,24 @@ class SitToStandAction implements BodyRehabAction {
       return true;
     }
     return false; // 已是 hard,不升
+  }
+
+  @override
+  bool get isPendingLevelUp => _pendingLevelUp; // 🆕
+
+  @override
+  void confirmLevelUp({int? customTargetReps}) { // 🆕
+    _pendingLevelUp = false;
+    _upgrade();
+    if (customTargetReps != null && customTargetReps > 0) {
+      _targetCount = customTargetReps;
+    }
+  }
+
+  @override
+  void declineLevelUp() { // 🆕
+    _pendingLevelUp = false;
+    _successCount = 0;
+    _state = _SquatState.standing;
   }
 }

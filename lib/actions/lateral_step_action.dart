@@ -17,7 +17,7 @@ import 'body_rehab_action.dart';
 
 enum _StepState { standing, steppingOut, holding, returning }
 
-class LateralStepAction implements BodyRehabAction {
+class LateralStepAction implements BodyRehabAction, LevelUpControllable {
   RehabDifficulty difficulty;
   int _successCount = 0;
   int _targetCount = 8;
@@ -26,6 +26,7 @@ class LateralStepAction implements BodyRehabAction {
   String? _activeSide; // 'LEFT' / 'RIGHT' / null
   DateTime _lastSpeakTime = DateTime.fromMillisecondsSinceEpoch(0);
   DateTime _holdStartTime = DateTime.now();
+  bool _pendingLevelUp = false;
 
   LateralStepAction({
     this.difficulty = RehabDifficulty.easy,
@@ -49,6 +50,7 @@ class LateralStepAction implements BodyRehabAction {
 
   @override
   RehabFeedback update(BodyFrame frame) {
+    if (_pendingLevelUp) return RehabFeedback.none;
     // 取下肢關節
     final lHip = frame.joints[RehabJoint.leftHip];
     final lKnee = frame.joints[RehabJoint.leftKnee];
@@ -135,11 +137,11 @@ class LateralStepAction implements BodyRehabAction {
           _activeSide = null;
 
           if (_successCount >= _targetCount) {
-            final leveled = _upgrade();
-            return RehabFeedback(
+            _pendingLevelUp = true; // 🆕
+            return const RehabFeedback(
               scored: true,
-              leveledUp: leveled,
-              prompt: leveled ? '下肢控制很棒,解鎖下一個難度' : '完成一組,辛苦了',
+              leveledUp: true,
+              prompt: '下肢控制很棒!',
             );
           }
           return RehabFeedback(
@@ -185,5 +187,25 @@ class LateralStepAction implements BodyRehabAction {
       return true;
     }
     return false;
+  }
+
+  @override
+  bool get isPendingLevelUp => _pendingLevelUp; // 🆕
+
+  @override
+  void confirmLevelUp({int? customTargetReps}) { // 🆕
+    _pendingLevelUp = false;
+    _upgrade();
+    if (customTargetReps != null && customTargetReps > 0) {
+      _targetCount = customTargetReps;
+    }
+  }
+
+  @override
+  void declineLevelUp() { // 🆕
+    _pendingLevelUp = false;
+    _successCount = 0;
+    _state = _StepState.standing;
+    _activeSide = null;
   }
 }
