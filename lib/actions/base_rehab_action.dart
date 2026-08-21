@@ -22,3 +22,10 @@ abstract class BaseRehabAction {
   /// 釋放資源（Timer 等），子類別視需要 override
   void dispose() {}
 }
+
+// 🆕 可選介面:動作若想支援「使用者自行決定要不要升級」就實作這個
+  abstract class LevelUpControllable {
+    bool get isPendingLevelUp;
+    void confirmLevelUp({int? customTargetReps});
+    void declineLevelUp();
+  }

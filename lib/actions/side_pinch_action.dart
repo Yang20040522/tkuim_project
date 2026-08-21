@@ -9,9 +9,10 @@ import 'base_rehab_action.dart';
 import 'rehab_action_callback.dart';
 import '../services/hand_voice_service.dart';
 
-class SidePinchAction extends BaseRehabAction {
+class SidePinchAction extends BaseRehabAction implements LevelUpControllable {
   final int difficulty; // 1=初階 2=中階 3=進階
-  final int targetReps;   // ← 新增
+  //final int targetReps;   // ← 新增
+  int targetReps;
 
   final List<String> _mistakeLogs = [];
   DateTime _sessionStartTime = DateTime.now();
@@ -22,6 +23,7 @@ class SidePinchAction extends BaseRehabAction {
 
   int _currentLevel = 1;
   bool _isTransitioning = false;
+  bool _pendingLevelUp = false; // 🆕
   DateTime _transitionStartTime = DateTime.now();
   int _lastCountdownSec = -1;
   Timer? _transitionTimer;
@@ -62,6 +64,7 @@ class SidePinchAction extends BaseRehabAction {
 
   @override
   void processLandmarks(List<Landmark> landmarks) {
+    if (_pendingLevelUp) return;
     if (landmarks.length < 18) return;
 
     if (_isTransitioning) {
@@ -206,7 +209,13 @@ class SidePinchAction extends BaseRehabAction {
   void _checkLevelUp() {
     final finalScore = _repCount > 0 ? 80 : 0; // 簡化：完成10次即80分
     if (_currentLevel < 3 && finalScore >= 80) {
-      _startLevel(_currentLevel + 1);
+      _pendingLevelUp = true; // 🆕 先不升級,等使用者確認
+      final nextLevel = _currentLevel + 1;
+      final nextLevelName = nextLevel == 2 ? '中階 (標準側捏)' : '進階 (懸空連擊)';
+      callback.onLevelUpReady(
+        nextLevel: nextLevel,
+        nextLevelLabel: 'Lv.$nextLevel - $nextLevelName',
+      ); // 🆕
     } else {
       final durationSeconds =
           DateTime.now().difference(_sessionStartTime).inSeconds;
@@ -218,6 +227,32 @@ class SidePinchAction extends BaseRehabAction {
         mistakeLogs: List.from(_mistakeLogs),
       );
     }
+  }
+
+  @override
+  bool get isPendingLevelUp => _pendingLevelUp; // 🆕
+
+  @override
+  void confirmLevelUp({int? customTargetReps}) { // 🆕
+    _pendingLevelUp = false;
+    if (customTargetReps != null && customTargetReps > 0) {
+      targetReps = customTargetReps;
+    }
+    _startLevel(_currentLevel + 1);
+  }
+
+  @override
+  void declineLevelUp() { // 🆕 選不要升級 → 直接結束訓練
+    _pendingLevelUp = false;
+    final durationSeconds =
+        DateTime.now().difference(_sessionStartTime).inSeconds;
+    callback.onFeedbackChanged('🎉 訓練結束！', '辛苦了');
+    HandVoiceService.speak('訓練結束');
+    callback.onTrainingComplete(
+      repCount: _repCount,
+      durationSeconds: durationSeconds,
+      mistakeLogs: List.from(_mistakeLogs),
+    );
   }
 
   // ── 數學工具 ─────────────────────────────────────────────────────

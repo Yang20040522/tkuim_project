@@ -187,7 +187,11 @@ class _ActionListScreenState extends State<ActionListScreen> with TickerProvider
         autoLevelUp: _autoLevelUp,
       );
     } else {
-      screen = TrainingScreen(action: act, difficulty: diff);
+      screen = TrainingScreen(
+        action: act,
+        difficulty: diff,
+        autoLevelUp: _autoLevelUp, // 🆕
+      );
     }
 
     // 有 3D 示範的動作 → 先進示範頁;沒有的 → 直接進訓練

@@ -47,6 +47,9 @@ class RehabSessionState {
   final int targetReps;   // ← 新增
   final String currentLevelLabel;   // ✅ 加這行(欄位宣告)
   final int currentLevel;   // ✅ 新增
+  final bool pendingLevelUp;   // 🆕 是否正等待使用者確認升級
+  final int pendingNextLevel;  // 🆕 等待確認的下一階是第幾階
+  final String pendingNextLevelLabel; // 🆕 等待確認的下一階標籤文字
 
   const RehabSessionState({
     this.handLandmarks = const [],
@@ -67,6 +70,9 @@ class RehabSessionState {
     this.targetReps = 10,   // ← 新增
     this.currentLevelLabel = '',    // ✅ 加這行(預設值)
     this.currentLevel = 1,   // ✅ 新增
+    this.pendingLevelUp = false,   // 🆕
+    this.pendingNextLevel = 1,     // 🆕
+    this.pendingNextLevelLabel = '', // 🆕
   });
 
   RehabSessionState copyWith({
@@ -88,6 +94,9 @@ class RehabSessionState {
     int? targetReps,   // ← 新增
     String? currentLevelLabel,      // ✅ 加這行(copyWith 參數)
     int? currentLevel,   // ✅ 新增
+    bool? pendingLevelUp,   // 🆕
+    int? pendingNextLevel,  // 🆕
+    String? pendingNextLevelLabel, // 🆕
   }) {
     return RehabSessionState(
       handLandmarks: handLandmarks ?? this.handLandmarks,
@@ -108,6 +117,9 @@ class RehabSessionState {
       targetReps: targetReps ?? this.targetReps,   // ← 新增
       currentLevelLabel: currentLevelLabel ?? this.currentLevelLabel,  // ✅ 加這行(組裝新物件)
       currentLevel: currentLevel ?? this.currentLevel,   // ✅ 新增
+      pendingLevelUp: pendingLevelUp ?? this.pendingLevelUp,   // 🆕
+      pendingNextLevel: pendingNextLevel ?? this.pendingNextLevel,  // 🆕
+      pendingNextLevelLabel: pendingNextLevelLabel ?? this.pendingNextLevelLabel, // 🆕
     );
   }
 }
@@ -234,6 +246,24 @@ class RehabSessionController implements RehabActionCallback {
     _isPaused = false;
   }
 
+  // 🆕 使用者確認要升級
+  void confirmLevelUp({int? customTargetReps}) {
+    final logic = _actionLogic;
+    if (logic is LevelUpControllable) {
+      (logic as LevelUpControllable).confirmLevelUp(customTargetReps: customTargetReps);
+    }
+    _emit(_state.copyWith(pendingLevelUp: false));
+  }
+
+  // 🆕 使用者選擇不升級 → 結束訓練
+  void declineLevelUp() {
+    final logic = _actionLogic;
+    if (logic is LevelUpControllable) {
+      (logic as LevelUpControllable).declineLevelUp();
+    }
+    _emit(_state.copyWith(pendingLevelUp: false));
+  }
+
   Future<void> flipCamera() async {
     _emit(_state.copyWith(handLandmarks: [], handDetected: false, bodyLandmarks: []));
     if (_actionLogic is TurnPalmAction) {
@@ -315,6 +345,18 @@ class RehabSessionController implements RehabActionCallback {
     _emit(_state.copyWith(
       currentLevelLabel: levelLabel,
       currentLevel: newLevel,   // ✅ 補上這行,之前漏加了
+    ));
+  }
+
+  @override
+  void onLevelUpReady({
+    required int nextLevel,
+    required String nextLevelLabel,
+  }) {
+    _emit(_state.copyWith(
+      pendingLevelUp: true,
+      pendingNextLevel: nextLevel,
+      pendingNextLevelLabel: nextLevelLabel,
     ));
   }
 

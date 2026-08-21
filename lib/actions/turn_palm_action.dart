@@ -13,12 +13,14 @@ import '../services/hand_voice_service.dart';
 
 enum _Stage { stage1, transitioning, stage2 }
 
-class TurnPalmAction extends BaseRehabAction {
+class TurnPalmAction extends BaseRehabAction implements LevelUpControllable {
   final bool overlayMirrored;
   final int startingLevel;
-  final int targetReps;   // ← 新增
+  //final int targetReps;   // ← 新增
+  int targetReps;   // ← 新增(拿掉 final,支援自訂次數覆蓋)
 
   int _currentLevel = 1;
+  bool _pendingLevelUp = false;
   _Stage _currentStage = _Stage.stage1;
 
   // 階段一
@@ -87,6 +89,7 @@ class TurnPalmAction extends BaseRehabAction {
 
   @override
   void processLandmarks(List<Landmark> landmarks) {
+    if (_pendingLevelUp) return; // 🆕
     if (landmarks.length < 18) return;
 
     switch (_currentStage) {
@@ -290,7 +293,8 @@ class TurnPalmAction extends BaseRehabAction {
 
           if (_repCount >= targetReps) {
             if (_currentLevel == 1 && score >= 80) {
-              _startLevel(2);
+              _pendingLevelUp = true; // 🆕 先不升級,等使用者確認
+              callback.onLevelUpReady(nextLevel: 2, nextLevelLabel: '中階 (幅度加大)'); // 🆕
             } else {
               final durationSeconds =
                   DateTime.now().difference(_sessionStartTime).inSeconds;
@@ -342,6 +346,32 @@ class TurnPalmAction extends BaseRehabAction {
     callback.onFeedbackChanged('$diffText 翻掌', '請握住短棍，對齊虛線保持直立 5 秒');
     callback.onStatsChanged(repCount: 0);
     callback.onCountdownChanged(isCountingDown: false, seconds: 5, isDone: false);
+  }
+
+  @override
+  bool get isPendingLevelUp => _pendingLevelUp; // 🆕
+
+  @override
+  void confirmLevelUp({int? customTargetReps}) { // 🆕
+    _pendingLevelUp = false;
+    if (customTargetReps != null && customTargetReps > 0) {
+      targetReps = customTargetReps;
+    }
+    _startLevel(2);
+  }
+
+  @override
+  void declineLevelUp() { // 🆕 選不要升級 → 直接結束訓練
+    _pendingLevelUp = false;
+    final durationSeconds =
+        DateTime.now().difference(_sessionStartTime).inSeconds;
+    callback.onFeedbackChanged('🎉 訓練結束！', '辛苦了');
+    HandVoiceService.speak('訓練結束');
+    callback.onTrainingComplete(
+      repCount: _repCount,
+      durationSeconds: durationSeconds,
+      mistakeLogs: List.from(_mistakeLogs),
+    );
   }
 
   // ── 數學工具 ─────────────────────────────────────────────────────

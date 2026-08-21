@@ -68,12 +68,14 @@ class TrainingScreen extends StatefulWidget {
   final TrainingAction action;
   final DifficultyOption difficulty;
   final bool isDisplay; // 🖥️ 電視投放新增:true = 這台當電視顯示端
+  final bool autoLevelUp;
 
   const TrainingScreen({
     super.key,
     required this.action,
     required this.difficulty,
     this.isDisplay = false, // 🖥️ 電視投放新增
+    this.autoLevelUp = true,
   });
 
   @override
@@ -96,6 +98,10 @@ class _TrainingScreenState extends State<TrainingScreen>
 
   // 是否正暫停中(暫停選單開啟期間為 true)
   bool _isPaused = false;
+
+  bool _showingLevelUpOverlay = false; // 🆕
+  bool _levelUpJustHandled = false; // 🆕 使用者剛按過按鈕,忽略接下來殘留的pending訊號
+  final TextEditingController _levelUpRepsController = TextEditingController(); // 🆕
 
   // 停止錄影後、使用者尚未決定去留前的暫存路徑
   String? _pendingVideoPath;
@@ -218,6 +224,21 @@ class _TrainingScreenState extends State<TrainingScreen>
         } else {
           _serverService.sendMessage(poseMsg);
           _serverService.sendMessage(statusMsg);
+        }
+      }
+
+      if (state.pendingLevelUp && !_showingLevelUpOverlay && !_levelUpJustHandled) {
+        if (widget.autoLevelUp) {
+          _levelUpJustHandled = true; // 🆕 鎖住,避免同一次達標連續觸發好幾次confirmLevelUp
+          _controller.confirmLevelUp();
+          Future.delayed(const Duration(milliseconds: 500), () {
+            _levelUpJustHandled = false; // 🆕 解鎖,讓下一次真正達標時能正常運作
+          });
+        } else {
+          setState(() {
+            _showingLevelUpOverlay = true;
+            _levelUpRepsController.text = '${state.targetReps}';
+          });
         }
       }
 
@@ -356,6 +377,7 @@ class _TrainingScreenState extends State<TrainingScreen>
     _controller.dispose();
     _pulseCtrl.dispose();
     _slideCtrl.dispose();
+    _levelUpRepsController.dispose(); // 🆕
     super.dispose();
   }
 
@@ -430,6 +452,30 @@ class _TrainingScreenState extends State<TrainingScreen>
         _navigateToAction(result.action!, result.difficulty!);
         break;
     }
+  }
+
+  void _confirmLevelUp() {
+    _levelUpJustHandled = true; // 🆕 鎖住,避免殘留訊號重新跳出視窗
+    final customReps = int.tryParse(_levelUpRepsController.text);
+    _controller.confirmLevelUp(
+      customTargetReps: (customReps != null && customReps > 0) ? customReps : null,
+    );
+    setState(() => _showingLevelUpOverlay = false);
+
+    // 短暫延遲後解鎖,讓下一次真正的達標訊號可以正常運作
+    Future.delayed(const Duration(milliseconds: 500), () {
+      _levelUpJustHandled = false;
+    });
+  }
+
+  void _declineLevelUp() {
+    _levelUpJustHandled = true; // 🆕
+    _controller.declineLevelUp();
+    setState(() => _showingLevelUpOverlay = false);
+
+    Future.delayed(const Duration(milliseconds: 500), () {
+      _levelUpJustHandled = false;
+    });
   }
 
   // ─── 按停止鍵觸發:先跳「暫停選單」,不動任何狀態或錄影 ─────────
@@ -618,7 +664,9 @@ class _TrainingScreenState extends State<TrainingScreen>
 
     final s = _controller.currentState;
 
-    return Scaffold(
+    return Stack(
+      children: [
+        Scaffold(
       backgroundColor: const Color(0xFFFFFFFF),
       body: SafeArea(
         child: Column(
@@ -732,6 +780,124 @@ class _TrainingScreenState extends State<TrainingScreen>
               ),
             ),
           ],
+        ),
+      ),
+    ),
+        if (_showingLevelUpOverlay) _buildLevelUpOverlay(), // 🆕
+      ],
+    );
+  }
+
+  Widget _buildLevelUpOverlay() {
+    final s = _controller.currentState;
+    return Material(
+      color: Colors.transparent,
+      child: Positioned.fill(
+        child: Container(
+          color: Colors.black54,
+          child: Center(
+            child: Container(
+              margin: const EdgeInsets.symmetric(horizontal: 32),
+              padding: const EdgeInsets.all(24),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(24),
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text('🎉', style: TextStyle(fontSize: 48)),
+                  const SizedBox(height: 10),
+                  const Text(
+                    '動作做得很棒！',
+                    style: TextStyle(
+                      color: Color(0xFF1A1D2E),
+                      fontSize: 20,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    '要挑戰下一階「${s.pendingNextLevelLabel}」嗎？',
+                    style: const TextStyle(color: Color(0xFF6B7280), fontSize: 13),
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 16),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Text(
+                        '下一階要做幾下',
+                        style: TextStyle(
+                            color: Color(0xFF374151),
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600),
+                      ),
+                      const SizedBox(width: 10),
+                      SizedBox(
+                        width: 56,
+                        child: TextField(
+                          controller: _levelUpRepsController,
+                          keyboardType: TextInputType.number,
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w800,
+                              color: Color(0xFF1A1D2E)),
+                          decoration: InputDecoration(
+                            isDense: true,
+                            contentPadding: const EdgeInsets.symmetric(vertical: 8),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(8),
+                              borderSide: const BorderSide(color: Color(0xFFDDE0F0)),
+                            ),
+                            focusedBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(8),
+                              borderSide: const BorderSide(color: Color(0xFF4A65FF)),
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 4),
+                      const Text('下', style: TextStyle(color: Color(0xFF6B7280), fontSize: 13)),
+                    ],
+                  ),
+                  const SizedBox(height: 22),
+                  SizedBox(
+                    width: double.infinity,
+                    height: 52,
+                    child: ElevatedButton(
+                      onPressed: _confirmLevelUp,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF4A65FF),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                      ),
+                      child: const Text(
+                        '💪 挑戰下一階',
+                        style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w700),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  SizedBox(
+                    width: double.infinity,
+                    height: 48,
+                    child: OutlinedButton(
+                      onPressed: _declineLevelUp,
+                      style: OutlinedButton.styleFrom(
+                        side: const BorderSide(color: Color(0xFFDDE0F0)),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                      ),
+                      child: const Text(
+                        '結束訓練',
+                        style: TextStyle(color: Color(0xFF374151), fontSize: 15, fontWeight: FontWeight.w600),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
         ),
       ),
     );
