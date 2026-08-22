@@ -23,6 +23,12 @@ abstract class RehabActionCallback {
     required int newTargetReps,
   });
 
+  // 🆕 達標了,等待使用者確認要不要升級(尚未真正升級)
+  void onLevelUpReady({
+    required int nextLevel,
+    required String nextLevelLabel,
+  });
+
   void onTrainingComplete({
     required int repCount,
     required int durationSeconds,
