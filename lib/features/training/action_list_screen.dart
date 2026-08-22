@@ -5,6 +5,11 @@
 //
 // ✅ 新增:目標次數輸入框,使用者可自訂訓練次數
 // ✅ 修改:選擇難度等級 / 目標次數 / 開始訓練 / 查看訓練紀錄 改為固定在畫面底部(已縮小留白)
+// 🆕 2026-08-22:
+//   - 手部動作(_startTraining 的 else 分支)補上 autoLevelUp,
+//     避免手部動作一律用預設 true,忽略使用者選的升級模式。
+//   - _buildDifficultySelector():若該動作只有一個難度,直接顯示
+//     該難度的靜態標籤,不再顯示一排「只有一個選項」的可點選按鈕。
 
 import 'package:flutter/material.dart';
 
@@ -187,7 +192,11 @@ class _ActionListScreenState extends State<ActionListScreen> with TickerProvider
         autoLevelUp: _autoLevelUp,
       );
     } else {
-      screen = TrainingScreen(action: act, difficulty: diff);
+      screen = TrainingScreen(
+        action: act,
+        difficulty: diff,
+        autoLevelUp: _autoLevelUp, // 🆕(原本沒帶,手部動作一律用預設 true)
+      );
     }
 
     // 有 3D 示範的動作 → 先進示範頁;沒有的 → 直接進訓練
@@ -636,10 +645,49 @@ class _ActionListScreenState extends State<ActionListScreen> with TickerProvider
     );
   }
 
+  // 🆕 只有一個難度時,直接顯示那個難度,不需要讓使用者選
   Widget _buildDifficultySelector() {
     if (_selectedAction == null) return const SizedBox();
+    final diffs = _selectedAction!.difficulties;
+
+    if (diffs.length == 1) {
+      final diff = diffs.first;
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 10),
+        decoration: BoxDecoration(
+          color: const Color(0xFF4A65FF),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Column(
+          children: [
+            Text(
+              diff.label,
+              style: const TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.w700,
+                fontSize: 13,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 2),
+            Text(
+              diff.description,
+              style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.75),
+                fontSize: 10,
+              ),
+              textAlign: TextAlign.center,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ],
+        ),
+      );
+    }
+
     return Row(
-      children: _selectedAction!.difficulties.map((diff) {
+      children: diffs.map((diff) {
         final isSelected = _selectedDifficulty?.level == diff.level;
         return Expanded(
           child: GestureDetector(

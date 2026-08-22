@@ -8,6 +8,10 @@
 //   hard   ≤ 90° + 撐住 2 秒(深側弓步)
 //
 // 重點防代償:留在原地的腳要伸直,不能跟著彎
+//
+// 🩺 2026-08-21 治療師回饋:
+//   支撐腳(留在原地那隻)容錯值原本不分難度,一律 145°。
+//   改成三階分級:初階更寬鬆(容許支撐腳稍微彎),高階更嚴格(要求完全打直)。
 
 import 'dart:math' as math;
 import 'package:flutter/painting.dart';
@@ -46,6 +50,13 @@ class LateralStepAction implements BodyRehabAction, LevelUpControllable {
         RehabDifficulty.easy => '初級',
         RehabDifficulty.medium => '中級',
         RehabDifficulty.hard => '高級',
+      };
+
+  // 🩺 支撐腳(留在原地那隻)防代償容忍度:初階寬鬆,高階嚴格
+  double get _inactiveLegTolerance => switch (difficulty) {
+        RehabDifficulty.easy => 138.0,
+        RehabDifficulty.medium => 145.0,
+        RehabDifficulty.hard => 152.0,
       };
 
   @override
@@ -96,8 +107,8 @@ class LateralStepAction implements BodyRehabAction, LevelUpControllable {
         final inactiveAngle =
             _activeSide == 'LEFT' ? rightKneeAngle : leftKneeAngle;
 
-        // 防代償:留在原地的腳不能彎
-        if (inactiveAngle < 145.0) {
+        // 防代償:留在原地的腳不能彎(容忍度依難度分級)
+        if (inactiveAngle < _inactiveLegTolerance) {
           return RehabFeedback(
               prompt: _throttled('留在原地的腳請保持伸直,不要跟著彎'));
         }

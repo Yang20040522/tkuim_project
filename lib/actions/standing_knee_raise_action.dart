@@ -7,6 +7,15 @@
 //    如果患側是右腳會永遠判定不到目標區。
 //    比照 ReachAction 的做法，加入 selectLeftLeg() / selectRightLeg()，
 //    讓外部（UI 按鈕）可以選擇要訓練哪一腳。
+//
+// 🩺 2026-08-20 治療師回饋:
+//   抬腳時腳掌應盡量放平往上抬，不要往下垂。
+//   新增 leftBigToe/rightBigToe、leftHeel/rightHeel 座標時才會啟用此檢查
+//   (資料源尚未接上前直接跳過，不影響原本判定)。
+//
+// 🩺 2026-08-21 治療師回饋:
+//   聳肩容忍度、身體後仰容忍度原本中/高階相同或固定值,沒有明顯分級。
+//   改成三階分級:初階最寬鬆,高階最嚴格。
 
 import 'dart:math' as math;
 import '../models/body_frame.dart';
@@ -29,6 +38,8 @@ class StandingKneeRaiseAction implements BodyRehabAction, LevelUpControllable {
   RehabJoint? _activeHip;
   RehabJoint? _activeKnee;
   RehabJoint? _activeAnkle;
+  RehabJoint? _activeBigToe; // 🆕
+  RehabJoint? _activeHeel;   // 🆕
 
   StandingKneeRaiseAction({
     this.difficulty = RehabDifficulty.easy,
@@ -42,12 +53,16 @@ class StandingKneeRaiseAction implements BodyRehabAction, LevelUpControllable {
     _activeHip = RehabJoint.leftHip;
     _activeKnee = RehabJoint.leftKnee;
     _activeAnkle = RehabJoint.leftAnkle;
+    _activeBigToe = RehabJoint.leftBigToe; // 🆕
+    _activeHeel = RehabJoint.leftHeel;     // 🆕
   }
 
   void selectRightLeg() {
     _activeHip = RehabJoint.rightHip;
     _activeKnee = RehabJoint.rightKnee;
     _activeAnkle = RehabJoint.rightAnkle;
+    _activeBigToe = RehabJoint.rightBigToe; // 🆕
+    _activeHeel = RehabJoint.rightHeel;     // 🆕
   }
 
   // ── 合約要求 ──────────────────────────────────────────────
@@ -56,7 +71,7 @@ class StandingKneeRaiseAction implements BodyRehabAction, LevelUpControllable {
 
   @override
   String get initialHint => legSelected
-      ? '雙腳與肩同寬站立，手扶椅背或拐杖，準備進行抬腳訓練'
+      ? '雙腳與肩同寬站立，手扶椅背或拐杖，準備進行抬腳訓練，腳掌盡量放平'
       : '請先選擇要訓練的腳（左腳／右腳）';
 
   @override
@@ -70,6 +85,19 @@ class StandingKneeRaiseAction implements BodyRehabAction, LevelUpControllable {
         return '高級';
     }
   }
+
+  // 🩺 依難度分級的防代償容錯值(聳肩、後仰),初階最寬鬆,高階最嚴格
+  double get _shoulderTolerance => switch (difficulty) {
+        RehabDifficulty.easy => 0.10,
+        RehabDifficulty.medium => 0.06,
+        RehabDifficulty.hard => 0.04,
+      };
+
+  double get _spineToleranceDeg => switch (difficulty) {
+        RehabDifficulty.easy => 20.0,
+        RehabDifficulty.medium => 15.0,
+        RehabDifficulty.hard => 10.0,
+      };
 
   // ── 合約核心: 每幀判定 ────────────────────────────────────
   @override
@@ -97,8 +125,7 @@ class StandingKneeRaiseAction implements BodyRehabAction, LevelUpControllable {
 
     // 1. 防代償：防過度傾斜/聳肩 (保持兩側肩膀水平)
     final shoulderDrop = (leftShoulder.dy - rightShoulder.dy).abs();
-    final maxShoulderTolerance = (difficulty == RehabDifficulty.easy) ? 0.08 : 0.05;
-    if (shoulderDrop > maxShoulderTolerance) {
+    if (shoulderDrop > _shoulderTolerance) {
       return RehabFeedback(prompt: _speakThrottled('請保持身體直立，不要歪斜或聳肩喔'));
     }
 
@@ -108,7 +135,7 @@ class StandingKneeRaiseAction implements BodyRehabAction, LevelUpControllable {
     final spineDx = activeShoulder.dx - hip.dx;
     final spineDy = activeShoulder.dy - hip.dy;
     final spineAngle = math.atan2(spineDx, spineDy) * (180 / math.pi);
-    if (spineAngle < -15) {
+    if (spineAngle < -_spineToleranceDeg) {
       return RehabFeedback(prompt: _speakThrottled('站直一點，身體不要往後仰'));
     }
 
@@ -138,6 +165,21 @@ class StandingKneeRaiseAction implements BodyRehabAction, LevelUpControllable {
             hipAngle < 90.0 &&
             kneeAngle >= 85.0 && kneeAngle <= 100.0;
         break;
+    }
+
+    // 🩺 4.5 腳掌平舉檢查:只在已抬起(knee.dy < hip.dy，代表大腿已離地)時檢查，
+    //    腳趾明顯低於腳跟太多 = 腳掌下垂。資料源沒接上就跳過。
+    if (knee.dy < hip.dy) {
+      final bigToe = frame.joints[_activeBigToe!];
+      final heel = frame.joints[_activeHeel!];
+      if (bigToe != null && heel != null) {
+        const droopMargin = 0.03; // 正規化座標容許誤差
+        final isDrooping = bigToe.dy > heel.dy + droopMargin;
+        if (isDrooping) {
+          final prompt = _speakThrottled('腳掌盡量放平，腳尖不要往下垂');
+          if (prompt != null) return RehabFeedback(prompt: prompt);
+        }
+      }
     }
 
     // 5. 計分與跳關邏輯

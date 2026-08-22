@@ -9,6 +9,24 @@
 // 🚀 修正:TurnPalmAction 的 overlayMirrored 必須依「目前來源是手機還是
 //    樹莓派」動態決定,兩者座標鏡像方向相反,共用同一個 false 會導致
 //    樹莓派模式角度算反(偏差顯示接近 180 度)。
+//
+// 🆕 2026-08-22:
+//   新增 autoLevelUp 開關,建構時傳給支援分級的手部動作
+//   (SidePinchAction/TurnPalmAction)。
+//   frameStream 收到每一幀後,額外檢查目前的 action 是否實作
+//   HandLevelUpControllable、以及是否進入「等待升級確認」狀態,
+//   有變化才更新進 RehabSessionState,讓 UI(training_screen.dart)
+//   可以跳出「要不要升級」的詢問畫面。
+//   同時新增 confirmLevelUp()/declineLevelUp() 給 UI 呼叫。
+//
+// 🛠️ 2026-08-22 修正:
+//   原本用 `final logic = _actionLogic; if (logic is HandLevelUpControllable)`
+//   依賴 Dart 的 type promotion 窄化型別,但在這個專案的 analyzer 環境下
+//   窄化沒有生效,導致 isPendingLevelUp/hasNextLevel/nextLevelLabel/
+//   confirmLevelUp()/declineLevelUp() 全部被判定為 undefined_getter /
+//   undefined_method(仍抓著 BaseRehabAction 的型別找成員)。
+//   改成用明確的 `as HandLevelUpControllable` cast,不依賴 flow analysis,
+//   確保無論 analyzer 版本或設定如何都能正確編譯。
 
 import 'dart:async';
 import 'package:flutter/material.dart';
@@ -48,6 +66,11 @@ class RehabSessionState {
   final String currentLevelLabel;   // ✅ 加這行(欄位宣告)
   final int currentLevel;   // ✅ 新增
 
+  // 🆕 手動升級:是否正等待使用者確認要不要升級
+  final bool isPendingLevelUp;
+  final bool pendingHasNextLevel;
+  final String pendingNextLevelLabel;
+
   const RehabSessionState({
     this.handLandmarks = const [],
     this.handDetected = false,
@@ -67,6 +90,9 @@ class RehabSessionState {
     this.targetReps = 10,   // ← 新增
     this.currentLevelLabel = '',    // ✅ 加這行(預設值)
     this.currentLevel = 1,   // ✅ 新增
+    this.isPendingLevelUp = false,   // 🆕
+    this.pendingHasNextLevel = false, // 🆕
+    this.pendingNextLevelLabel = '',  // 🆕
   });
 
   RehabSessionState copyWith({
@@ -88,6 +114,9 @@ class RehabSessionState {
     int? targetReps,   // ← 新增
     String? currentLevelLabel,      // ✅ 加這行(copyWith 參數)
     int? currentLevel,   // ✅ 新增
+    bool? isPendingLevelUp,        // 🆕
+    bool? pendingHasNextLevel,     // 🆕
+    String? pendingNextLevelLabel, // 🆕
   }) {
     return RehabSessionState(
       handLandmarks: handLandmarks ?? this.handLandmarks,
@@ -108,6 +137,9 @@ class RehabSessionState {
       targetReps: targetReps ?? this.targetReps,   // ← 新增
       currentLevelLabel: currentLevelLabel ?? this.currentLevelLabel,  // ✅ 加這行(組裝新物件)
       currentLevel: currentLevel ?? this.currentLevel,   // ✅ 新增
+      isPendingLevelUp: isPendingLevelUp ?? this.isPendingLevelUp,             // 🆕
+      pendingHasNextLevel: pendingHasNextLevel ?? this.pendingHasNextLevel,    // 🆕
+      pendingNextLevelLabel: pendingNextLevelLabel ?? this.pendingNextLevelLabel, // 🆕
     );
   }
 }
@@ -117,6 +149,7 @@ class RehabSessionController implements RehabActionCallback {
   final IPoseModel model;
   final TrainingAction action;
   final DifficultyOption difficulty;
+  final bool autoLevelUp; // 🆕 true=自動升級(預設), false=達標後卡住等確認
 
   late final BaseRehabAction _actionLogic;
 
@@ -139,6 +172,7 @@ class RehabSessionController implements RehabActionCallback {
     required this.model,
     required this.action,
     required this.difficulty,
+    this.autoLevelUp = true, // 🆕
   }) {
     //final diffIdx = action.difficulties.indexOf(difficulty) + 1;
     final diffIdx = action.difficulties.indexWhere((d) => d.level == difficulty.level) + 1;
@@ -159,6 +193,7 @@ class RehabSessionController implements RehabActionCallback {
           callback: this,
           targetReps: difficulty.targetReps,   // ← 新增
           overlayMirrored: isExternalSource,   // 🚀 新增:依來源動態決定鏡像方向
+          autoLevelUp: autoLevelUp,            // 🆕
         );
 
       case ActionType.wristExtension:
@@ -181,10 +216,20 @@ class RehabSessionController implements RehabActionCallback {
           callback: this,
           difficulty: diffIdx,
           targetReps: difficulty.targetReps,   // ← 新增
+          autoLevelUp: autoLevelUp,            // 🆕
         );
         _state = _state.copyWith(countdownDone: true);
     }
   }
+
+  // 🛠️ 修正:改用明確的 cast 取得 HandLevelUpControllable,不依賴
+  // `is` 之後的 type promotion(在部分 analyzer 狀況下窄化沒有生效,
+  // 導致抓著 BaseRehabAction 的型別找不到 isPendingLevelUp 等成員)。
+  // 只有實作該 interface 的手部動作(側捏、翻掌)才會回傳非 null。
+  HandLevelUpControllable? get _levelUpLogic =>
+      _actionLogic is HandLevelUpControllable
+          ? _actionLogic as HandLevelUpControllable
+          : null;
 
   // ── 生命週期 ──────────────────────────────────────────────────────
 
@@ -213,6 +258,20 @@ class RehabSessionController implements RehabActionCallback {
 
       // 動作判斷全部交給 Dart action
       _actionLogic.processLandmarks(frame.handLandmarks);
+
+      // 🆕 檢查手部動作是否進入「等待升級確認」狀態
+      // (只有實作 HandLevelUpControllable 的動作,例如側捏、翻掌,才有這個狀態)
+      final levelLogic = _levelUpLogic;
+      if (levelLogic != null) {
+        final pending = levelLogic.isPendingLevelUp;
+        if (pending != _state.isPendingLevelUp) {
+          _emit(_state.copyWith(
+            isPendingLevelUp: pending,
+            pendingHasNextLevel: levelLogic.hasNextLevel,
+            pendingNextLevelLabel: levelLogic.nextLevelLabel,
+          ));
+        }
+      }
     });
 
     _emit(_state.copyWith(
@@ -222,16 +281,29 @@ class RehabSessionController implements RehabActionCallback {
   }
 
   // ─── 暫停 / 繼續 ─────────────────────────────────────────────────
-  // 暫停時相機/原生偵測仍在背景運作,但這裡直接忽略每一幀的結果,
-  // 不更新畫面、不餵進動作判斷邏輯,達到「凍結進度」的效果。
-  // 繼續時單純把旗標關掉,下一幀開始就會照原本邏輯接續處理,
-  // 不需要重新 start()、不會遺失或錯亂目前的 rep 數與狀態。
   void pause() {
     _isPaused = true;
   }
 
   void resume() {
     _isPaused = false;
+  }
+
+  // 🆕 手動升級模式:UI 呼叫確認/取消升級
+  void confirmLevelUp({int? customTargetReps}) {
+    final levelLogic = _levelUpLogic;
+    if (levelLogic != null) {
+      levelLogic.confirmLevelUp(customTargetReps: customTargetReps);
+      _emit(_state.copyWith(isPendingLevelUp: false));
+    }
+  }
+
+  void declineLevelUp() {
+    final levelLogic = _levelUpLogic;
+    if (levelLogic != null) {
+      levelLogic.declineLevelUp();
+      _emit(_state.copyWith(isPendingLevelUp: false));
+    }
   }
 
   Future<void> flipCamera() async {

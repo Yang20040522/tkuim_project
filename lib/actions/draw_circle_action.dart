@@ -1,6 +1,14 @@
 // lib/actions/draw_circle_action.dart
 //
 // 畫圓訓練 — 判定邏輯。implements BodyRehabAction,可直接丟進 body_training_screen。
+//
+// 🩺 2026-08-20 治療師回饋:
+//   手在上半圓(高於肩膀)時,大拇指應朝上;下半圓自然下垂即可,不檢查。
+//   新增 leftThumbTip/rightThumbTip 座標時才會啟用此檢查(防呆處理)。
+//
+// 🩺 2026-08-21 治療師回饋:
+//   手臂伸直半徑要求原本中階與高階相同(0.35),沒有差異。
+//   改成三階分級:初階最寬鬆,高階最嚴格。
 
 import 'dart:math' as math;
 import '../models/body_frame.dart';
@@ -19,6 +27,7 @@ class DrawCircleAction implements BodyRehabAction, LevelUpControllable {
 
   RehabJoint? _activeWrist;
   RehabJoint? _activeShoulder;
+  RehabJoint? _activeThumb; // 🆕
 
   DateTime _lastVoiceTime = DateTime.now();
 
@@ -32,7 +41,7 @@ class DrawCircleAction implements BodyRehabAction, LevelUpControllable {
   String get title => '畫圓訓練';
 
   @override
-  String get initialHint => '舉起一隻手,準備畫大圓';
+  String get initialHint => '舉起一隻手,準備畫大圓,上半圓時大拇指朝上';
 
   @override
   String get difficultyLabel {
@@ -45,6 +54,13 @@ class DrawCircleAction implements BodyRehabAction, LevelUpControllable {
         return '高級';
     }
   }
+
+  // 🩺 依難度分級的手臂伸直半徑要求(正規化座標)
+  double get _requiredRadius => switch (difficulty) {
+        RehabDifficulty.easy => 0.22,
+        RehabDifficulty.medium => 0.30,
+        RehabDifficulty.hard => 0.38,
+      };
 
   // ── 合約核心:每幀判定 ────────────────────────────────────
   @override
@@ -68,10 +84,12 @@ class DrawCircleAction implements BodyRehabAction, LevelUpControllable {
       if (leftWrist.dy < leftShoulder.dy) {
         _activeWrist = RehabJoint.leftWrist;
         _activeShoulder = RehabJoint.leftShoulder;
+        _activeThumb = RehabJoint.leftThumbTip; // 🆕
         return RehabFeedback(prompt: _speakThrottled('已鎖定左手,請開始畫大圓'));
       } else if (rightWrist.dy < rightShoulder.dy) {
         _activeWrist = RehabJoint.rightWrist;
         _activeShoulder = RehabJoint.rightShoulder;
+        _activeThumb = RehabJoint.rightThumbTip; // 🆕
         return RehabFeedback(prompt: _speakThrottled('已鎖定右手,請開始畫大圓'));
       }
       return RehabFeedback.none;
@@ -86,12 +104,24 @@ class DrawCircleAction implements BodyRehabAction, LevelUpControllable {
     final dx = wrist.dx - shoulder.dx;
     final dy = wrist.dy - shoulder.dy;
     final radius = math.sqrt(dx * dx + dy * dy);
-    final requiredRadius =
-        (difficulty == RehabDifficulty.easy) ? 0.25 : 0.35;
 
-    if (radius < requiredRadius) {
+    if (radius < _requiredRadius) {
       _lastAngle = double.nan;
       return RehabFeedback(prompt: _speakThrottled('手臂請伸直,畫大一點的圓'));
+    }
+
+    // 🩺 3.5 大拇指朝向檢查:只在手高於肩膀(上半圓)時檢查,
+    //    下半圓(自然下垂)完全不檢查。資料源沒接上就跳過。
+    if (wrist.dy < shoulder.dy) {
+      final thumb = frame.joints[_activeThumb!];
+      if (thumb != null) {
+        const thumbUpMargin = 0.02;
+        final isThumbUp = thumb.dy < wrist.dy - thumbUpMargin;
+        if (!isThumbUp) {
+          final prompt = _speakThrottled('上半圓請保持大拇指朝上');
+          if (prompt != null) return RehabFeedback(prompt: prompt);
+        }
+      }
     }
 
     // 4. 累積角度

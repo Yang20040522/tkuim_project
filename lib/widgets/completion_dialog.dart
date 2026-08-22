@@ -1,4 +1,13 @@
 // lib/widgets/completion_dialog.dart
+//
+// 🆕 2026-08-22:
+//   1. onStartNew 簽名擴充成 (action, difficulty, autoLevelUp),
+//      換動作時使用者可以順便選目標次數跟自動/手動升級模式,
+//      不會被迫沿用切換前的設定。
+//   2. _OtherActionsSection 的確認面板加上「目標次數」輸入框
+//      跟「自動升級／手動確認」切換開關,樣式比照 action_list_screen.dart。
+//   3. 如果該動作只有一個難度,確認面板改顯示該難度的靜態標籤,
+//      不再顯示一整排「只有一個選項」的可點選按鈕。
 
 import 'package:flutter/material.dart';
 import '../models/training_action.dart';
@@ -39,7 +48,13 @@ class CompletionDialog extends StatefulWidget {
 
   final TrainingAction currentAction;
   final DifficultyOption currentDifficulty;
-  final void Function(TrainingAction action, DifficultyOption difficulty) onStartNew;
+
+  // 🆕 多帶一個 autoLevelUp,讓換動作時使用者選的升級模式能傳出去
+  final void Function(
+    TrainingAction action,
+    DifficultyOption difficulty,
+    bool autoLevelUp,
+  ) onStartNew;
 
   /// 暫停模式:標題改「訓練暫停」、文案改成「剛剛做了 X 下,辛苦了」
   final bool isPaused;
@@ -152,7 +167,8 @@ class _CompletionDialogState extends State<CompletionDialog> {
                 _DifficultyRow(
                   action: widget.currentAction,
                   currentDifficulty: widget.currentDifficulty,
-                  onSelect: (diff) => widget.onStartNew(widget.currentAction, diff),
+                  onSelect: (diff) =>
+                      widget.onStartNew(widget.currentAction, diff, true), // 🆕 同動作切難度預設沿用自動升級
                 ),
                 const SizedBox(height: 10),
               ],
@@ -497,7 +513,11 @@ class _DifficultyRow extends StatelessWidget {
 // ── 其他動作選擇區(手部 + 全身兩個 Accordion)──────────────────────────────
 class _OtherActionsSection extends StatefulWidget {
   final TrainingAction currentAction;
-  final void Function(TrainingAction action, DifficultyOption difficulty) onSelect;
+  final void Function(
+    TrainingAction action,
+    DifficultyOption difficulty,
+    bool autoLevelUp, // 🆕
+  ) onSelect;
 
   const _OtherActionsSection({
     required this.currentAction,
@@ -515,6 +535,10 @@ class _OtherActionsSectionState extends State<_OtherActionsSection> {
   TrainingAction? _pendingAction;
   DifficultyOption? _pendingDifficulty;
 
+  // 🆕 換動作確認面板:目標次數 + 升級模式
+  final TextEditingController _pendingRepsController = TextEditingController();
+  bool _pendingAutoLevelUp = true;
+
   @override
   void initState() {
     super.initState();
@@ -522,10 +546,19 @@ class _OtherActionsSectionState extends State<_OtherActionsSection> {
     _bodyExpanded = _bodyActions.contains(widget.currentAction.type);
   }
 
+  @override
+  void dispose() {
+    _pendingRepsController.dispose(); // 🆕
+    super.dispose();
+  }
+
   void _startPending(TrainingAction action) {
+    final firstDiff = action.difficulties.first;
     setState(() {
       _pendingAction = action;
-      _pendingDifficulty = action.difficulties.first;
+      _pendingDifficulty = firstDiff;
+      _pendingRepsController.text = '${firstDiff.targetReps}'; // 🆕
+      _pendingAutoLevelUp = true; // 🆕 每次重新選動作都重置回預設
     });
   }
 
@@ -538,7 +571,14 @@ class _OtherActionsSectionState extends State<_OtherActionsSection> {
 
   void _confirmPending() {
     if (_pendingAction == null || _pendingDifficulty == null) return;
-    widget.onSelect(_pendingAction!, _pendingDifficulty!);
+
+    var diff = _pendingDifficulty!;
+    final customReps = int.tryParse(_pendingRepsController.text); // 🆕
+    if (customReps != null && customReps > 0) {
+      diff = diff.copyWithReps(customReps);
+    }
+
+    widget.onSelect(_pendingAction!, diff, _pendingAutoLevelUp); // 🆕
   }
 
   @override
@@ -727,7 +767,8 @@ class _OtherActionsSectionState extends State<_OtherActionsSection> {
   }
 
   Widget _buildConfirmPanel(TrainingAction action) {
-    final selected = _pendingDifficulty ?? action.difficulties.first;
+    final diffs = action.difficulties;
+    final selected = _pendingDifficulty ?? diffs.first;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
@@ -748,41 +789,150 @@ class _OtherActionsSectionState extends State<_OtherActionsSection> {
                 fontWeight: FontWeight.w600),
           ),
           const SizedBox(height: 8),
-          Row(
-            children: action.difficulties.map((diff) {
-              final isSelected = diff.level == selected.level;
-              return Expanded(
-                child: GestureDetector(
-                  onTap: () => setState(() => _pendingDifficulty = diff),
-                  child: Container(
-                    margin: const EdgeInsets.only(right: 6),
-                    padding: const EdgeInsets.symmetric(
-                        vertical: 9, horizontal: 4),
-                    decoration: BoxDecoration(
-                      color: isSelected
-                          ? const Color(0xFF4A65FF)
-                          : const Color(0xFFF5F6FA),
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(
+
+          // 🆕 只有一個難度時,直接顯示那個難度的靜態標籤,不用一排按鈕
+          if (diffs.length == 1)
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(vertical: 9, horizontal: 8),
+              decoration: BoxDecoration(
+                color: const Color(0xFF4A65FF),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Text(
+                diffs.first.label,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            )
+          else
+            Row(
+              children: diffs.map((diff) {
+                final isSelected = diff.level == selected.level;
+                return Expanded(
+                  child: GestureDetector(
+                    onTap: () => setState(() {
+                      _pendingDifficulty = diff;
+                      _pendingRepsController.text = '${diff.targetReps}'; // 🆕
+                    }),
+                    child: Container(
+                      margin: const EdgeInsets.only(right: 6),
+                      padding: const EdgeInsets.symmetric(
+                          vertical: 9, horizontal: 4),
+                      decoration: BoxDecoration(
                         color: isSelected
                             ? const Color(0xFF4A65FF)
-                            : const Color(0xFFDDE0F0),
+                            : const Color(0xFFF5F6FA),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(
+                          color: isSelected
+                              ? const Color(0xFF4A65FF)
+                              : const Color(0xFFDDE0F0),
+                        ),
                       ),
-                    ),
-                    child: Text(
-                      diff.label,
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        color: isSelected ? Colors.white : const Color(0xFF374151),
-                        fontSize: 12,
-                        fontWeight: FontWeight.w700,
+                      child: Text(
+                        diff.label,
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          color: isSelected ? Colors.white : const Color(0xFF374151),
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                        ),
                       ),
                     ),
                   ),
+                );
+              }).toList(),
+            ),
+
+          const SizedBox(height: 10),
+
+          // 🆕 目標次數 + 升級模式(樣式比照 action_list_screen.dart 的 _buildRepsInput)
+          Row(
+            children: [
+              const Text(
+                '目標次數',
+                style: TextStyle(
+                    color: Color(0xFF374151),
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600),
+              ),
+              const SizedBox(width: 8),
+              SizedBox(
+                width: 42,
+                child: TextField(
+                  controller: _pendingRepsController,
+                  keyboardType: TextInputType.number,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w800,
+                      color: Color(0xFF1A1D2E)),
+                  decoration: InputDecoration(
+                    isDense: true,
+                    contentPadding: const EdgeInsets.symmetric(vertical: 6),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      borderSide: const BorderSide(color: Color(0xFFDDE0F0)),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      borderSide: const BorderSide(color: Color(0xFF4A65FF)),
+                    ),
+                  ),
                 ),
-              );
-            }).toList(),
+              ),
+              const SizedBox(width: 3),
+              const Text('下', style: TextStyle(color: Color(0xFF6B7280), fontSize: 11)),
+              const Spacer(),
+              GestureDetector(
+                onTap: () => setState(() => _pendingAutoLevelUp = !_pendingAutoLevelUp),
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 150),
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: _pendingAutoLevelUp
+                        ? const Color(0xFF4A65FF).withValues(alpha: 0.1)
+                        : const Color(0xFFFFF3E0),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(
+                      color: _pendingAutoLevelUp
+                          ? const Color(0xFF4A65FF)
+                          : const Color(0xFFFF9800),
+                    ),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        _pendingAutoLevelUp ? Icons.bolt : Icons.touch_app,
+                        size: 13,
+                        color: _pendingAutoLevelUp
+                            ? const Color(0xFF4A65FF)
+                            : const Color(0xFFFF9800),
+                      ),
+                      const SizedBox(width: 3),
+                      Text(
+                        _pendingAutoLevelUp ? '自動升級' : '手動確認',
+                        style: TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w700,
+                          color: _pendingAutoLevelUp
+                              ? const Color(0xFF4A65FF)
+                              : const Color(0xFFFF9800),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
           ),
+
           const SizedBox(height: 10),
           Text(
             '確定要切換到「${action.name} · ${selected.label}」嗎?目前訓練紀錄不會被計入。',

@@ -8,6 +8,10 @@
 //   2. 加入三難度梯度(130°/150°/165° + 撐 0/2/3 秒)
 //   3. 取雙手較低的肘角(防作弊:不能只伸好手)
 //   4. 升級門檻 5 次
+//
+// 🩺 2026-08-21 治療師回饋:
+//   防代償容錯值(聳肩、後仰、雙手不同步、撐住掉落)原本不分難度,
+//   一律用同一組偏嚴格的數字。改成依難度分三階:初階最寬鬆,高階最嚴格。
 
 import 'dart:math' as math;
 import 'package:flutter/painting.dart';
@@ -27,12 +31,6 @@ class ElbowForwardAction implements BodyRehabAction, LevelUpControllable {
   static const double _easyTargetAngle = 130.0;    // 微伸
   static const double _mediumTargetAngle = 150.0;  // 接近全直
   static const double _hardTargetAngle = 165.0;    // 完全伸直
-  static const double _dropTolerance = 15.0;       // 撐住允許掉的範圍
-
-  // ── 防代償門檻 ────────────────────────────────────────
-  static const double _shoulderDiffThreshold = 0.07;
-  static const double _spineAngleThreshold = 20.0;
-  static const double _armSyncThreshold = 25.0;    // 雙手肘角度差
 
   _ElbowState _state = _ElbowState.waitReady;
   DateTime _lastVoiceTime = DateTime.fromMillisecondsSinceEpoch(0);
@@ -59,6 +57,31 @@ class ElbowForwardAction implements BodyRehabAction, LevelUpControllable {
         RehabDifficulty.easy => '初級',
         RehabDifficulty.medium => '中級',
         RehabDifficulty.hard => '高級',
+      };
+
+  // 🩺 依難度分級的防代償容錯值
+  double get _shoulderDiffThreshold => switch (difficulty) {
+        RehabDifficulty.easy => 0.10,
+        RehabDifficulty.medium => 0.07,
+        RehabDifficulty.hard => 0.045,
+      };
+
+  double get _spineAngleThreshold => switch (difficulty) {
+        RehabDifficulty.easy => 26.0,
+        RehabDifficulty.medium => 20.0,
+        RehabDifficulty.hard => 14.0,
+      };
+
+  double get _armSyncThreshold => switch (difficulty) {
+        RehabDifficulty.easy => 32.0,
+        RehabDifficulty.medium => 25.0,
+        RehabDifficulty.hard => 16.0,
+      };
+
+  double get _dropTolerance => switch (difficulty) {
+        RehabDifficulty.easy => 22.0,
+        RehabDifficulty.medium => 15.0,
+        RehabDifficulty.hard => 8.0,
       };
 
   // ── 每幀判定 ──────────────────────────────────────────

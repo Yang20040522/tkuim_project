@@ -17,6 +17,16 @@
 //   使用者不管姿勢多標準都會一直卡在「請坐正,不要後仰借力」。
 //   修正方式:atan2 的第二個參數取負號(-spineDy),
 //   讓「坐正」正確對應到 spineAngle ≈ 0 度。
+//
+// 🩺 2026-08-20 治療師回饋(1):
+//   舉到最高點時大拇指應該朝上,若朝後代表肩膀內轉代償。
+//   新增 leftThumbTip/rightThumbTip 座標時才會啟用此檢查(防呆:
+//   資料源尚未接上大拇指關鍵點前,這段直接跳過,不影響原本判定)。
+//
+// 🩺 2026-08-21 治療師回饋(2):
+//   所有防代償容錯值(聳肩、後仰、雙手不同步、撐住掉落)原本不分難度,
+//   一律用同一組偏嚴格的數字,導致初階也常被判定代償。
+//   改成依難度分三階:初階最寬鬆,中階持平原本設定,高階最嚴格。
 
 import 'dart:math' as math;
 import 'package:flutter/painting.dart';
@@ -36,12 +46,6 @@ class RaiseBothArmsAction implements BodyRehabAction, LevelUpControllable {
   static const double _easyTargetAngle = 90.0;     // 水平
   static const double _mediumTargetAngle = 130.0;  // 接近頭頂
   static const double _hardTargetAngle = 150.0;    // 過頭頂
-  static const double _dropTolerance = 15.0;       // 撐住時允許掉的範圍
-
-  // ── 防代償門檻 ────────────────────────────────────────
-  static const double _shoulderDiffThreshold = 0.07;  // 雙肩高度差
-  static const double _armSyncThreshold = 20.0;       // 雙手角度差(度)
-  static const double _spineAngleThreshold = 20.0;    // 脊椎傾斜
 
   _RaiseState _state = _RaiseState.waitReady;
   DateTime _lastVoiceTime = DateTime.fromMillisecondsSinceEpoch(0);
@@ -60,13 +64,38 @@ class RaiseBothArmsAction implements BodyRehabAction, LevelUpControllable {
   String get title => '雙手抬舉式';
 
   @override
-  String get initialHint => '雙手交扣,自然垂放,準備往上抬舉';
+  String get initialHint => '雙手交扣,自然垂放,準備往上抬舉,舉到最高時記得大拇指朝上';
 
   @override
   String get difficultyLabel => switch (difficulty) {
         RehabDifficulty.easy => '初級',
         RehabDifficulty.medium => '中級',
         RehabDifficulty.hard => '高級',
+      };
+
+  // 🩺 依難度分級的防代償容錯值(初階最寬鬆,高階最嚴格)
+  double get _shoulderDiffThreshold => switch (difficulty) {
+        RehabDifficulty.easy => 0.10,
+        RehabDifficulty.medium => 0.07,
+        RehabDifficulty.hard => 0.045,
+      };
+
+  double get _armSyncThreshold => switch (difficulty) {
+        RehabDifficulty.easy => 28.0,
+        RehabDifficulty.medium => 20.0,
+        RehabDifficulty.hard => 12.0,
+      };
+
+  double get _spineAngleThreshold => switch (difficulty) {
+        RehabDifficulty.easy => 26.0,
+        RehabDifficulty.medium => 20.0,
+        RehabDifficulty.hard => 14.0,
+      };
+
+  double get _dropTolerance => switch (difficulty) {
+        RehabDifficulty.easy => 22.0,
+        RehabDifficulty.medium => 15.0,
+        RehabDifficulty.hard => 8.0,
       };
 
   // ── 每幀判定 ──────────────────────────────────────────
@@ -128,6 +157,15 @@ class RaiseBothArmsAction implements BodyRehabAction, LevelUpControllable {
             : 3;
 
     final now = DateTime.now();
+
+    // 🩺 6.5 大拇指朝向檢查(只在撐住/接近頂點時檢查,且資料源有給值才檢查)
+    //    有大拇指座標時才啟用,尚未接上前 thumb 為 null 就直接跳過。
+    if (activeAngle >= targetAngle - _dropTolerance) {
+      final thumbPrompt = _checkThumbUp(frame, leftAngle, rightAngle);
+      if (thumbPrompt != null) {
+        return RehabFeedback(prompt: thumbPrompt);
+      }
+    }
 
     // 7. 狀態機
     switch (_state) {
@@ -200,6 +238,25 @@ class RaiseBothArmsAction implements BodyRehabAction, LevelUpControllable {
     }
 
     return RehabFeedback.none;
+  }
+
+  // 🆕 大拇指朝上檢查:取「舉得比較高的那隻手」判斷即可(通常是患手在努力跟上)
+  //    thumbTip.dy 明顯小於 wrist.dy(影像座標往下為正)才算朝上;
+  //    大拇指座標任一邊拿不到就直接跳過,不影響其他判定。
+  String? _checkThumbUp(BodyFrame frame, double leftAngle, double rightAngle) {
+    final useLeft = leftAngle <= rightAngle; // 取角度較小(較費力/較低)那隻手檢查
+    final thumb = frame.joints[
+        useLeft ? RehabJoint.leftThumbTip : RehabJoint.rightThumbTip];
+    final wrist =
+        frame.joints[useLeft ? RehabJoint.leftWrist : RehabJoint.rightWrist];
+    if (thumb == null || wrist == null) return null; // 資料源還沒接上,跳過
+
+    const thumbUpMargin = 0.02; // 正規化座標的容許誤差
+    final isThumbUp = thumb.dy < wrist.dy - thumbUpMargin;
+    if (!isThumbUp) {
+      return _throttled('請記得大拇指朝上,不要讓手臂往內轉');
+    }
+    return null;
   }
 
   // ── 算「髖-肩-手腕」夾角 ─────────────────────────────────

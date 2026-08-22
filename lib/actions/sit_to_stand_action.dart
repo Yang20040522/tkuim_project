@@ -4,8 +4,12 @@
 //
 // 三個難度:
 //   easy   膝角 ≤ 140°(微蹲)
-//   medium 膝角 ≤ 100°(半蹲,大腿接近平行地面)
-//   hard   膝角 ≤ 100° + 撐住 3 秒
+//   medium 膝角 ≤ 115°(半蹲,較原本 100° 放寬)
+//   hard   膝角 ≤ 95° + 撐住 3 秒(較原本更嚴格)
+//
+// 🩺 2026-08-21 治療師回饋:
+//   原本 medium/hard 目標角度相同(都 100°),沒有差異,只靠撐住秒數分級。
+//   改成三階都各自不同角度,並且膝內夾(代償)容忍度也依難度分級。
 
 import 'dart:math' as math;
 import 'package:flutter/painting.dart';
@@ -46,6 +50,20 @@ class SitToStandAction implements BodyRehabAction, LevelUpControllable {
         RehabDifficulty.hard => '高級',
       };
 
+  // 🩺 依難度分級的目標蹲角(初階最淺,高階最深)
+  double get _targetSquatAngle => switch (difficulty) {
+        RehabDifficulty.easy => 140.0,
+        RehabDifficulty.medium => 115.0,
+        RehabDifficulty.hard => 95.0,
+      };
+
+  // 🩺 膝內夾(代償)容忍度:初階寬鬆,高階嚴格
+  double get _kneeValgusRatio => switch (difficulty) {
+        RehabDifficulty.easy => 0.6,
+        RehabDifficulty.medium => 0.7,
+        RehabDifficulty.hard => 0.8,
+      };
+
   @override
   RehabFeedback update(BodyFrame frame) {
     if (_pendingLevelUp) return RehabFeedback.none;
@@ -65,7 +83,7 @@ class SitToStandAction implements BodyRehabAction, LevelUpControllable {
     // 2. 防代償:膝蓋內夾(Knee Valgus)
     final kneeDistance = (lKnee.dx - rKnee.dx).abs();
     final ankleDistance = (lAnkle.dx - rAnkle.dx).abs();
-    if (kneeDistance < ankleDistance * 0.7) {
+    if (kneeDistance < ankleDistance * _kneeValgusRatio) {
       return RehabFeedback(prompt: _throttled('注意,膝蓋不要往內夾,請打開與肩同寬'));
     }
 
@@ -76,7 +94,7 @@ class SitToStandAction implements BodyRehabAction, LevelUpControllable {
 
     // 4. 難度參數
     const standingThreshold = 160.0;
-    final targetSquatAngle = (difficulty == RehabDifficulty.easy) ? 140.0 : 100.0;
+    final targetSquatAngle = _targetSquatAngle;
 
     // 5. 狀態機
     final now = DateTime.now();

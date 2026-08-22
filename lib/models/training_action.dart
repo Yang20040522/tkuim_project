@@ -3,6 +3,7 @@
 // ✅ 新增：raiseBothArms, elbowForward, wristExtension, wristSideBend
 // ✅ TrainingRecord 新增 videoPath 欄位(訓練錄影)
 // ✅ DifficultyOption 新增 targetReps 欄位,每難度各自預設次數(初階多、進階少)
+// 🩺 2026-08-20:側蹲、坐站標記為「建議恢復狀況較佳者練習」
 
 enum ActionType {
   turnPalm,
@@ -104,7 +105,7 @@ const List<TrainingAction> kTrainingActions = [
     type: ActionType.wipeBody,
     name: '站姿抬腳式訓練',
     emoji: '🦿',
-    description: '站姿下左右抬膝，鍛鍊下肢平衡與核心穩定',
+    description: '站姿下左右抬膝，鍛鍊下肢平衡與核心穩定，腳掌盡量放平往上抬',
     difficulties: [
       DifficultyOption(
           level: DifficultyLevel.level1,
@@ -127,7 +128,7 @@ const List<TrainingAction> kTrainingActions = [
     type: ActionType.drawCircle,
     name: '畫圓訓練',
     emoji: '⭕',
-    description: '訓練肩關節活動度與手臂畫圓控制',
+    description: '訓練肩關節活動度與手臂畫圓控制，上半圓大拇指朝上，下半圓自然下垂',
     difficulties: [
       DifficultyOption(
           level: DifficultyLevel.level1, label: '初級', description: '小圓 — 高容錯',
@@ -175,7 +176,7 @@ const List<TrainingAction> kTrainingActions = [
     type: ActionType.raiseBothArms,
     name: '雙手抬舉式',
     emoji: '🙌',
-    description: '雙手交扣往上抬舉,訓練肩膀活動度與核心穩定',
+    description: '雙手交扣往上抬舉,訓練肩膀活動度與核心穩定，舉到最高時大拇指朝上',
     difficulties: [
       DifficultyOption(
           level: DifficultyLevel.level1,
@@ -252,12 +253,12 @@ const List<TrainingAction> kTrainingActions = [
     type: ActionType.sitToStand,
     name: '坐站訓練',
     emoji: '🪑',
-    description: '訓練腿部力量與站起穩定度',
+    description: '訓練腿部力量與站起穩定度（建議恢復狀況較佳者練習）',
     difficulties: [
       DifficultyOption(
           level: DifficultyLevel.level1,
           label: '初級',
-          description: '微蹲 — 膝蓋彎曲到 140 度',
+          description: '微蹲即達標 — 膝蓋彎曲到 140 度',
           targetReps: 10),
       DifficultyOption(
           level: DifficultyLevel.level2,
@@ -275,12 +276,12 @@ const List<TrainingAction> kTrainingActions = [
     type: ActionType.lateralStep,
     name: '側跨步訓練',
     emoji: '🚶',
-    description: '訓練下肢平衡與單側肌力,防止跌倒',
+    description: '訓練下肢平衡與單側肌力,防止跌倒（建議恢復狀況較佳者練習）',
     difficulties: [
       DifficultyOption(
           level: DifficultyLevel.level1,
           label: '初級',
-          description: '微跨 — 膝蓋彎曲到 140 度',
+          description: '微跨即達標 — 膝蓋彎曲到 140 度',
           targetReps: 10),
       DifficultyOption(
           level: DifficultyLevel.level2,

@@ -11,6 +11,13 @@
 //     用 BoxFit.cover 把原始 JPEG(長寬比通常跟容器不同)裁切填滿容器,
 //     兩套邏輯沒有對齊,骨架才會貼不上身體/手指。
 //     手機鏡頭(CameraPreview)路徑完全不傳 sourceSize,行為不受影響。
+//
+//  🆕 2026-08-22:換動作時把 autoLevelUp 一併帶到下一個畫面
+//     - CompletionDialog 的 onStartNew 簽名擴充為 (action, difficulty, autoLevelUp)
+//     - retry / startNew 都改用「當時使用者選的」autoLevelUp,
+//       不再一律沿用 widget.autoLevelUp
+//     - _navigateToAction 多一個 autoLevelUp 參數,並把方法內所有
+//       widget.autoLevelUp 改成新參數 autoLevelUp
 // ══════════════════════════════════════════════════════════════════
 
 import 'dart:io';
@@ -612,8 +619,8 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
             Navigator.of(dialogCtx).pop(_CompletionResult.retry()),
         onHome: () =>
             Navigator.of(dialogCtx).pop(_CompletionResult.home()),
-        onStartNew: (a, d) =>
-            Navigator.of(dialogCtx).pop(_CompletionResult.startNew(a, d)),
+        onStartNew: (a, d, autoLvl) =>
+            Navigator.of(dialogCtx).pop(_CompletionResult.startNew(a, d, autoLvl)), // 🆕
       ),
     );
 
@@ -635,6 +642,7 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
             action: widget.action,
             trainingActionMeta: widget.trainingActionMeta,
             difficultyMeta: widget.difficultyMeta,
+            autoLevelUp: widget.autoLevelUp, // 🆕(原本漏了,補上)
           ),
         ));
         break;
@@ -642,13 +650,13 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
         Navigator.of(context).pop();
         break;
       case _CompletionKind.startNew:
-        _navigateToAction(result.action!, result.difficulty!);
+        _navigateToAction(result.action!, result.difficulty!, result.autoLevelUp!); // 🆕
         break;
     }
   }
 
   Future<void> _navigateToAction(
-      TrainingAction action, DifficultyOption difficulty) async {
+      TrainingAction action, DifficultyOption difficulty, bool autoLevelUp) async { // 🆕 多一個參數
     _engine.poseNotifier.removeListener(_onPoseUpdate); // 🆕 先停止監聽,避免dispose過程中還觸發更新
     _piCamera?.dispose();
     _piHand?.dispose(); // 🚀 樹莓派新增:離開畫面前記得釋放
@@ -669,7 +677,7 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
         ),
         trainingActionMeta: action,
         difficultyMeta: difficulty,
-        autoLevelUp: widget.autoLevelUp,
+        autoLevelUp: autoLevelUp, // 🆕(原本是 widget.autoLevelUp)
       );
     } else if (action.type == ActionType.drawCircle) {
       screen = BodyTrainingScreen(
@@ -679,7 +687,7 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
         ),
         trainingActionMeta: action,
         difficultyMeta: difficulty,
-        autoLevelUp: widget.autoLevelUp,
+        autoLevelUp: autoLevelUp, // 🆕
       );
     } else if (action.type == ActionType.reach) {
       screen = BodyTrainingScreen(
@@ -689,7 +697,7 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
         ),
         trainingActionMeta: action,
         difficultyMeta: difficulty,
-        autoLevelUp: widget.autoLevelUp,
+        autoLevelUp: autoLevelUp, // 🆕
       );
     } else if (action.type == ActionType.raiseBothArms) {
       screen = BodyTrainingScreen(
@@ -699,7 +707,7 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
         ),
         trainingActionMeta: action,
         difficultyMeta: difficulty,
-        autoLevelUp: widget.autoLevelUp,
+        autoLevelUp: autoLevelUp, // 🆕
       );
     } else if (action.type == ActionType.elbowForward) {
       screen = BodyTrainingScreen(
@@ -709,7 +717,7 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
         ),
         trainingActionMeta: action,
         difficultyMeta: difficulty,
-        autoLevelUp: widget.autoLevelUp,
+        autoLevelUp: autoLevelUp, // 🆕
       );
     } else if (action.type == ActionType.sitToStand) {
       screen = BodyTrainingScreen(
@@ -719,7 +727,7 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
         ),
         trainingActionMeta: action,
         difficultyMeta: difficulty,
-        autoLevelUp: widget.autoLevelUp,
+        autoLevelUp: autoLevelUp, // 🆕
       );
     } else if (action.type == ActionType.lateralStep) {
       screen = BodyTrainingScreen(
@@ -729,10 +737,14 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
         ),
         trainingActionMeta: action,
         difficultyMeta: difficulty,
-        autoLevelUp: widget.autoLevelUp,
+        autoLevelUp: autoLevelUp, // 🆕
       );
     } else {
-      screen = TrainingScreen(action: action, difficulty: difficulty);
+      screen = TrainingScreen(
+        action: action,
+        difficulty: difficulty,
+        autoLevelUp: autoLevelUp, // 🆕(原本沒帶,手部動作換過去會變回預設 true)
+      );
     }
 
     if (!mounted) return;
@@ -1720,12 +1732,13 @@ class _CompletionResult {
   final _CompletionKind kind;
   final TrainingAction? action;
   final DifficultyOption? difficulty;
-  const _CompletionResult._(this.kind, this.action, this.difficulty);
+  final bool? autoLevelUp; // 🆕
+  const _CompletionResult._(this.kind, this.action, this.difficulty, this.autoLevelUp);
   factory _CompletionResult.retry() =>
-      const _CompletionResult._(_CompletionKind.retry, null, null);
+      const _CompletionResult._(_CompletionKind.retry, null, null, null);
   factory _CompletionResult.home() =>
-      const _CompletionResult._(_CompletionKind.home, null, null);
+      const _CompletionResult._(_CompletionKind.home, null, null, null);
   factory _CompletionResult.startNew(
-          TrainingAction a, DifficultyOption d) =>
-      _CompletionResult._(_CompletionKind.startNew, a, d);
+          TrainingAction a, DifficultyOption d, bool autoLevelUp) => // 🆕
+      _CompletionResult._(_CompletionKind.startNew, a, d, autoLevelUp);
 }

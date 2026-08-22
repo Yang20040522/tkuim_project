@@ -4,6 +4,16 @@
 // 階段一：偵測棍子垂直並穩定 5 秒
 // 階段二：偵測內外翻轉次數
 // 全部在 Dart 這裡處理，不再依賴 trainingStream
+//
+// 🆕 2026-08-22 治療師回饋:
+//   支援「自動升級／手動升級」開關(autoLevelUp)。
+//   原本邏輯是「完成 targetReps 次後,若目前是初階且本次分數 ≥80 分 →
+//   自動進中階,否則直接結束訓練」。
+//   改成:
+//     - 有下一階可升(初階且分數達標)時,依 autoLevelUp 決定「直接升級」
+//       或「卡住等使用者確認」;
+//     - 沒有下一階可升(已是中階,或初階分數不夠)時,行為不變,直接結束訓練。
+//   實作 HandLevelUpControllable。
 
 import 'dart:async';
 import '../services/mediapipe_service.dart';
@@ -13,10 +23,11 @@ import '../services/hand_voice_service.dart';
 
 enum _Stage { stage1, transitioning, stage2 }
 
-class TurnPalmAction extends BaseRehabAction {
+class TurnPalmAction extends BaseRehabAction implements HandLevelUpControllable {
   final bool overlayMirrored;
   final int startingLevel;
-  final int targetReps;   // ← 新增
+  int _targetReps; // 🆕 改成可變
+  final bool autoLevelUp; // 🆕
 
   int _currentLevel = 1;
   _Stage _currentStage = _Stage.stage1;
@@ -50,14 +61,21 @@ class TurnPalmAction extends BaseRehabAction {
   int _lastCountdownSec = -1;
   Timer? _transitionTimer;
 
+  // 🆕 手動升級:是否正等待使用者確認
+  bool _pendingLevelUp = false;
+  bool _pendingHasNextLevel = false;
+  String _pendingNextLevelLabel = '';
+
   static const double _smoothingFactor = 0.2;
 
   TurnPalmAction({
     required RehabActionCallback callback,
     this.overlayMirrored = false,
     this.startingLevel = 1,
-    this.targetReps = 10,   // ← 新增
-  }) : super(callback) {
+    int targetReps = 10,
+    this.autoLevelUp = true, // 🆕
+  })  : _targetReps = targetReps,
+        super(callback) {
     _startLevel(startingLevel);
   }
 
@@ -83,11 +101,43 @@ class TurnPalmAction extends BaseRehabAction {
     _resetCountdown();
   }
 
+  // 🆕 對外相容:保留 targetReps 讀取入口
+  int get targetReps => _targetReps;
+
+  // ── HandLevelUpControllable ─────────────────────────────────────
+
+  @override
+  bool get isPendingLevelUp => _pendingLevelUp;
+
+  @override
+  bool get hasNextLevel => _pendingHasNextLevel;
+
+  @override
+  String get nextLevelLabel => _pendingNextLevelLabel;
+
+  @override
+  void confirmLevelUp({int? customTargetReps}) {
+    if (!_pendingLevelUp) return;
+    _pendingLevelUp = false;
+    if (customTargetReps != null && customTargetReps > 0) {
+      _targetReps = customTargetReps;
+    }
+    _startLevel(2);
+  }
+
+  @override
+  void declineLevelUp() {
+    if (!_pendingLevelUp) return;
+    _pendingLevelUp = false;
+    _finishTraining();
+  }
+
   // ── 主要邏輯 ─────────────────────────────────────────────────────
 
   @override
   void processLandmarks(List<Landmark> landmarks) {
     if (landmarks.length < 18) return;
+    if (_pendingLevelUp) return; // 🆕 等待使用者確認期間,暫停判定
 
     switch (_currentStage) {
       case _Stage.stage1:
@@ -288,19 +338,25 @@ class TurnPalmAction extends BaseRehabAction {
           callback.onStatsChanged(repCount: _repCount);
           callback.onStatsChanged(progress: 0, speedState: 0);
 
-          if (_repCount >= targetReps) {
-            if (_currentLevel == 1 && score >= 80) {
-              _startLevel(2);
+          if (_repCount >= _targetReps) {
+            final hasNext = _currentLevel == 1;
+            final passed = score >= 80;
+
+            if (hasNext && passed) {
+              if (autoLevelUp) {
+                _startLevel(2);
+              } else {
+                _pendingLevelUp = true;
+                _pendingHasNextLevel = true;
+                _pendingNextLevelLabel = '中階 (幅度加大)';
+                callback.onFeedbackChanged(
+                  '太棒了！本次 $score 分',
+                  '要挑戰中階「幅度加大」嗎？',
+                );
+                HandVoiceService.speak('過關了');
+              }
             } else {
-              final durationSeconds =
-                  DateTime.now().difference(_sessionStartTime).inSeconds;
-              callback.onFeedbackChanged('🎉 訓練結束！', '辛苦了');
-              HandVoiceService.speak('訓練結束');
-              callback.onTrainingComplete(
-                repCount: _repCount,
-                durationSeconds: durationSeconds,
-                mistakeLogs: List.from(_mistakeLogs),
-              );
+              _finishTraining();
             }
           }
         } else {
@@ -323,6 +379,18 @@ class TurnPalmAction extends BaseRehabAction {
     callback.onStatsChanged(accuracy: dx);
   }
 
+  void _finishTraining() {
+    final durationSeconds =
+        DateTime.now().difference(_sessionStartTime).inSeconds;
+    callback.onFeedbackChanged('🎉 訓練結束！', '辛苦了');
+    HandVoiceService.speak('訓練結束');
+    callback.onTrainingComplete(
+      repCount: _repCount,
+      durationSeconds: durationSeconds,
+      mistakeLogs: List.from(_mistakeLogs),
+    );
+  }
+
   // ── 關卡切換 ─────────────────────────────────────────────────────
 
   void _startLevel(int level) {
@@ -338,7 +406,7 @@ class TurnPalmAction extends BaseRehabAction {
     _smoothedAngleStage1 = 0.0;
 
     final diffText = level == 1 ? '初階' : '中階 (幅度加大)';
-    callback.onLevelUp(newLevel: level, levelLabel: diffText, newTargetReps: targetReps);
+    callback.onLevelUp(newLevel: level, levelLabel: diffText, newTargetReps: _targetReps);
     callback.onFeedbackChanged('$diffText 翻掌', '請握住短棍，對齊虛線保持直立 5 秒');
     callback.onStatsChanged(repCount: 0);
     callback.onCountdownChanged(isCountingDown: false, seconds: 5, isDone: false);

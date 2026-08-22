@@ -8,6 +8,10 @@
 //   3. 起點統一為「手自然下垂」(角度 ≤ 30°)
 //   4. 升級門檻 5 次
 //   5. 訓練前透過 UI 按鈕選擇左手或右手
+//
+// 🩺 2026-08-21 治療師回饋:
+//   脊椎歪斜容忍度、頂點撐住掉落容忍度原本不分難度,一律用同一組數字。
+//   改成三階分級:初階最寬鬆,高階最嚴格。
 
 import 'dart:math' as math;
 import 'package:flutter/painting.dart';
@@ -26,7 +30,6 @@ class ReachAction implements BodyRehabAction, LevelUpControllable {
   static const double _restAngle = 30.0;         // 手垂下身側(寬鬆)
   static const double _horizontalAngle = 80.0;   // 水平(easy 終點)
   static const double _topAngle = 150.0;         // 頭頂(medium/hard 終點)
-  static const double _topDropTolerance = 15.0;  // hard 撐住時允許掉的範圍
 
   _ReachState _currentState = _ReachState.waitStart;
   RehabJoint? _activeWrist;
@@ -72,6 +75,19 @@ class ReachAction implements BodyRehabAction, LevelUpControllable {
         RehabDifficulty.hard => '高級',
       };
 
+  // 🩺 依難度分級的防代償容錯值
+  double get _spineAngleThreshold => switch (difficulty) {
+        RehabDifficulty.easy => 26.0,
+        RehabDifficulty.medium => 20.0,
+        RehabDifficulty.hard => 14.0,
+      };
+
+  double get _topDropTolerance => switch (difficulty) {
+        RehabDifficulty.easy => 22.0,
+        RehabDifficulty.medium => 17.0,
+        RehabDifficulty.hard => 12.0,
+      };
+
   // ── 每幀判定 ──────────────────────────────────────────
   @override
   RehabFeedback update(BodyFrame frame) {
@@ -98,7 +114,7 @@ class ReachAction implements BodyRehabAction, LevelUpControllable {
     final spineDx = lShoulder.dx - lHip.dx;
     final spineDy = lShoulder.dy - lHip.dy;
     final spineAngle = math.atan2(spineDx, spineDy) * (180 / math.pi);
-    if (spineAngle.abs() > 20) {
+    if (spineAngle.abs() > _spineAngleThreshold) {
       return RehabFeedback(prompt: _throttled('身體請保持挺直,不要後仰借力'));
     }
 
