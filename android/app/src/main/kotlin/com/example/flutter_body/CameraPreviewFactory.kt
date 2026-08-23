@@ -16,7 +16,9 @@ class CameraPreviewFactory(private val context: Context) :
 }
 
 class CameraPreviewView(private val context: Context) : PlatformView {
-    val previewView = PreviewView(context)
+    val previewView = PreviewView(context).apply {
+        implementationMode = PreviewView.ImplementationMode.COMPATIBLE // 🆕
+    }
 
     override fun getView(): View = previewView
     override fun dispose() {}
