@@ -139,6 +139,7 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
   bool _completionShown = false;
 
   bool _isPaused = false;
+  bool _isSwitchingCameraUI = false;
 
   int _recordsSavedThisSession = 0;
 
@@ -490,13 +491,17 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
   }
 
   Future<void> _switchCamera() async {
-    // 🚀 樹莓派新增:如果目前是外接來源,「翻轉鏡頭」按鈕改為切回手機鏡頭
+    if (_isSwitchingCameraUI) return; // 🆕 UI層直接擋,連進到engine都不用
+    setState(() => _isSwitchingCameraUI = true); // 🆕
+
     if (_isExternalCamera) {
       await _disableExternalCamera();
-      return;
+    } else {
+      await _engine.switchCamera();
+      if (mounted) setState(() {});
     }
-    await _engine.switchCamera();
-    if (mounted) setState(() {});
+
+    if (mounted) setState(() => _isSwitchingCameraUI = false); // 🆕
   }
 
   // 🚀 樹莓派新增:開啟外接鏡頭來源(身體 + 手部)
@@ -874,16 +879,23 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
             ),
           ),
           GestureDetector(
-            onTap: _switchCamera,
+            onTap: _isSwitchingCameraUI ? null : _switchCamera, // 🆕 切換中直接不給按
             child: Container(
               width: 40, height: 40,
               decoration: BoxDecoration(
-                color: const Color(0xFFF5F6FA),
+                color: _isSwitchingCameraUI
+                    ? const Color(0xFFDDE0F0) // 🆕 切換中顏色變灰,視覺上明確表示不能按
+                    : const Color(0xFFF5F6FA),
                 borderRadius: BorderRadius.circular(12),
                 border: Border.all(color: const Color(0xFFDDE0F0)),
               ),
-              child: const Icon(Icons.flip_camera_ios,
-                  color: Color(0xFF374151), size: 20),
+              child: _isSwitchingCameraUI
+                  ? const SizedBox( // 🆕 切換中顯示小圈圈,取代圖示
+                      width: 16, height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF4A65FF)),
+                    )
+                  : const Icon(Icons.flip_camera_ios,
+                      color: Color(0xFF374151), size: 20),
             ),
           ),
         ],

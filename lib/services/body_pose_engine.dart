@@ -180,6 +180,7 @@ class BodyPoseEngine {
   OrtRunOptions? _runOpts;
   bool _processing = false;
   bool _isFrontCamera = true;
+  bool _isSwitchingCamera = false;
 
   // 🚀 修正新增:區分「手機相機幀」與「外部畫面幀(樹莓派/影片分析)」,
   // 兩者座標映射公式完全不同,不能共用 _isFrontCamera 這個欄位判斷。
@@ -284,8 +285,15 @@ class BodyPoseEngine {
   // ── 切換鏡頭 ──────────────────────────────────────────────────────
   Future<void> switchCamera() async {
     if (_cam == null) return;
-    await _cam!.stopImageStream();
-    await _cam!.dispose();
+    if (_isSwitchingCamera) return; // 🆕 正在切換中,忽略這次多按的
+    _isSwitchingCamera = true; // 🆕
+
+    final oldCam = _cam;
+    _cam = null;
+    cameraReady.value = false;
+
+    await oldCam!.stopImageStream();
+    await oldCam.dispose();
 
     final cameras = await availableCameras();
     final next = cameras.firstWhere(
@@ -306,7 +314,10 @@ class BodyPoseEngine {
     );
     await ctrl.initialize();
     _cam = ctrl;
+    cameraReady.value = true;
     await _cam!.startImageStream(_onFrame);
+
+    _isSwitchingCamera = false; // 🆕 整個流程跑完才解鎖,允許下一次切換
   }
 
   // ── 每幀進入點 ────────────────────────────────────────────────────
