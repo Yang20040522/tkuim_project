@@ -1,5 +1,6 @@
 import 'exercise.dart';
 import 'rehab_plan.dart';
+import 'plan_api_repository.dart'; // 之後接後端 API 時要用到,見檔案最下方說明
 
 abstract class PlanRepository {
   Future<RehabPlan?> getPlanByDate(DateTime date);
@@ -85,10 +86,25 @@ class InMemoryPlanRepository implements PlanRepository {
   }
 }
 
-/// ============ 未來換SQLite/Firebase時，只改這個檔案，UI不用動 ============
-/// class SqlitePlanRepository implements PlanRepository { ... }
-
+/// ============ 之後接後端資料庫時，換這個版本 ============
+/// PlanApiRepository 已經寫好在 plan_api_repository.dart,
+/// 會真正呼叫後端 API(見 plan_api_spec.md 給後端的規格文件)。
+///
+/// 【目前狀態】後端還沒有對應的 /api/plans API,所以現在還是用
+/// InMemoryPlanRepository。等後端做好之後,只要把下面這行:
+///
+///   final PlanRepository planRepository = InMemoryPlanRepository();
+///
+/// 換成:
+///
+///   final PlanRepository planRepository = PlanApiRepository();
+///
+/// plan_screen.dart、plan_builder_screen.dart 完全不用改一行,
+/// 因為畫面都是透過 PlanRepository 這個抽象介面在操作,不管背後是
+/// 記憶體暫存還是真的資料庫都一樣用。
 final PlanRepository planRepository = InMemoryPlanRepository();
+// 之後要切換時,把上面這行註解掉,改用下面這行:
+// final PlanRepository planRepository = PlanApiRepository();
 
 /// 訓練完成後呼叫:如果「今天的計畫」裡剛好有這個動作,標記為完成
 /// 找不到今天的計畫、或計畫裡沒有這個動作、或已經是完成狀態,就什麼都不做
