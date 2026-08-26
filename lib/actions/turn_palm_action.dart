@@ -4,6 +4,20 @@
 // 階段一：偵測棍子垂直並穩定 5 秒
 // 階段二：偵測內外翻轉次數
 // 全部在 Dart 這裡處理，不再依賴 trainingStream
+//
+// ── 本版改動重點（修正「卡住」問題）─────────────────────────────
+// 1. 階段一：單幀抖動超標不再立刻重置倒數，改為「容錯緩衝」
+//    （連續超標超過 _stage1GraceMs 才真正判定失敗重來）
+// 2. 階段一：倒數「顯示」與「實際完成判定」原本是兩套獨立邏輯，
+//    容易因幀率不穩對不上（畫面顯示倒數完成但卡在階段一）。
+//    現在統一由同一個 Timer 直接計算真實經過時間來判斷，
+//    不再依賴 processLandmarks 的呼叫頻率。
+// 3. 階段二：原本用「最近 8 幀中要有 5 幀同狀態」的多數決，
+//    在幀率不穩或翻轉速度快時容易一直湊不滿，導致次數卡住不加。
+//    改為「連續 N 幀同狀態」判定，反應更快、更不容易卡住。
+// 4. 階段二：targetDx 改用手掌尺寸正規化，避免使用者距離鏡頭
+//    遠近不同時，翻轉判定忽鬆忽緊。⚠️ _targetRatioLevel1/2
+//    這兩個常數需要你實測調整，目前只是估計值。
 
 import 'dart:async';
 import '../services/mediapipe_service.dart';
@@ -16,8 +30,7 @@ enum _Stage { stage1, transitioning, stage2 }
 class TurnPalmAction extends BaseRehabAction implements LevelUpControllable {
   final bool overlayMirrored;
   final int startingLevel;
-  //final int targetReps;   // ← 新增
-  int targetReps;   // ← 新增(拿掉 final,支援自訂次數覆蓋)
+  int targetReps; // 拿掉 final,支援自訂次數覆蓋
 
   int _currentLevel = 1;
   bool _pendingLevelUp = false;
@@ -28,6 +41,10 @@ class TurnPalmAction extends BaseRehabAction implements LevelUpControllable {
   bool _isCurrentlyStable = false;
   DateTime _holdStartTime = DateTime.now();
 
+  // 🆕 階段一容錯緩衝：短暫超標不立刻重置
+  DateTime? _badStartTime;
+  static const int _stage1GraceMs = 400; // 容許連續超標 400ms 內都算「還在穩定」
+
   // 倒數
   bool _isCountingDown = false;
   bool _countdownDone = false;
@@ -35,11 +52,18 @@ class TurnPalmAction extends BaseRehabAction implements LevelUpControllable {
   Timer? _countdownTimer;
 
   // 階段二
-  final List<String> _palmStateBuffer = [];
+  String _pendingState = '';
+  int _pendingStateCount = 0;
+  static const int _requiredConsecutiveFrames = 4; // 🆕 取代原本的 8 幀取 5 多數決
   String _lastConfirmedState = '';
   int _repCount = 0;
   DateTime _lastRepTime = DateTime.now();
   double _currentRepMaxWobble = 0.0;
+
+  // 🆕 階段二翻轉幅度正規化用的比例（以手掌寬度為基準）
+  // ⚠️ 這兩個值是估計值，請依實際測試結果調整
+  static const double _targetRatioLevel1 = 0.30;
+  static const double _targetRatioLevel2 = 0.55;
 
   // 完成紀錄
   final List<String> _mistakeLogs = [];
@@ -58,7 +82,7 @@ class TurnPalmAction extends BaseRehabAction implements LevelUpControllable {
     required RehabActionCallback callback,
     this.overlayMirrored = false,
     this.startingLevel = 1,
-    this.targetReps = 10,   // ← 新增
+    this.targetReps = 10,
   }) : super(callback) {
     _startLevel(startingLevel);
   }
@@ -89,7 +113,7 @@ class TurnPalmAction extends BaseRehabAction implements LevelUpControllable {
 
   @override
   void processLandmarks(List<Landmark> landmarks) {
-    if (_pendingLevelUp) return; // 🆕
+    if (_pendingLevelUp) return;
     if (landmarks.length < 18) return;
 
     switch (_currentStage) {
@@ -127,61 +151,82 @@ class TurnPalmAction extends BaseRehabAction implements LevelUpControllable {
     callback.onStatsChanged(accuracy: displayAngle.toDouble());
 
     final wobbleTolerance = _currentLevel == 1 ? 25 : 15;
+    final now = DateTime.now();
 
     if (displayAngle < wobbleTolerance) {
+      // 角度合格：清掉「壞幀」計時，代表本次穩定沒有中斷
+      _badStartTime = null;
+
       if (!_isCurrentlyStable) {
         _isCurrentlyStable = true;
-        _holdStartTime = DateTime.now();
+        _holdStartTime = now;
         callback.onFeedbackChanged('✅ 很好！穩住棍子', '請出點力，保持直立不要晃動');
+        callback.onStatsChanged(repCount: 0, accuracy: displayAngle.toDouble());
         _startCountdown();
-      } else {
-        final duration = DateTime.now().difference(_holdStartTime).inMilliseconds;
-        callback.onStatsChanged(
-            repCount: 0,
-            accuracy: displayAngle.toDouble());
-
-        if (duration >= 5000) {
-          _isCurrentlyStable = false;
-          _currentStage = _Stage.transitioning;
-          _isTransitioning = true;
-          _transitionStartTime = DateTime.now();
-          _lastCountdownSec = -1;
-          callback.onFeedbackChanged('🎉 穩定度測試通過！', '準備進入翻轉訓練');
-          _countdownTimer?.cancel();
-          _startTransitionCountdown();
-        }
       }
+      // 完成判定（duration >= 5000ms）現在完全交給 _startCountdown 裡的 Timer
+      // 處理，避免這裡跟 Timer 顯示邏輯各算各的、互相對不上。
     } else {
       if (_isCurrentlyStable) {
-        _isCurrentlyStable = false;
-        _resetCountdown();
+        // 🆕 給一個容錯緩衝，不要單幀抖動就整個重來
+        _badStartTime ??= now;
+        final badDuration = now.difference(_badStartTime!).inMilliseconds;
+
+        if (badDuration > _stage1GraceMs) {
+          _isCurrentlyStable = false;
+          _badStartTime = null;
+          _resetCountdown();
+        }
+        // 還在容錯範圍內：不重置，讓 holdStartTime 繼續累積，
+        // 只是這一瞬間角度不合格，不特別提示「歪了」避免畫面閃爍太頻繁。
+      } else {
+        callback.onFeedbackChanged('⚠️ 棍子歪了！', '請拉正短棍，對齊虛線');
+        HandVoiceService.speak('歪了');
       }
-      callback.onFeedbackChanged('⚠️ 棍子歪了！', '請拉正短棍，對齊虛線');
-      HandVoiceService.speak('歪了');
     }
   }
 
-  // ── 倒數（階段一等待） ────────────────────────────────────────────
+  // ── 倒數（階段一等待，統一由這裡判斷是否完成）──────────────────────
 
   void _startCountdown() {
-    if (_isCountingDown) return;
+    _countdownTimer?.cancel();
     _isCountingDown = true;
     _countdownSeconds = 5;
 
     callback.onCountdownChanged(
         isCountingDown: true, seconds: _countdownSeconds, isDone: false);
 
-    _countdownTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
-      _countdownSeconds--;
-      if (_countdownSeconds <= 0) {
+    // 用較短的 tick（100ms）讓畫面更即時，但完成判定一律用真實經過時間，
+    // 不再依賴額外一份「duration >= 5000」的判斷邏輯。
+    _countdownTimer = Timer.periodic(const Duration(milliseconds: 100), (timer) {
+      if (!_isCurrentlyStable) {
+        // 已經在別處被判定失敗並 reset 了，這個 timer 沒事做了
         timer.cancel();
-        _isCountingDown = false;
-        // 倒數完成由 _detectStage1 的 5000ms 判斷觸發
-        callback.onCountdownChanged(
-            isCountingDown: false, seconds: 0, isDone: false);
-      } else {
+        return;
+      }
+
+      final elapsedMs = DateTime.now().difference(_holdStartTime).inMilliseconds;
+      final secondsLeft = ((5000 - elapsedMs) / 1000).ceil();
+      final displaySeconds = secondsLeft > 0 ? secondsLeft : 0;
+
+      if (displaySeconds != _countdownSeconds) {
+        _countdownSeconds = displaySeconds;
         callback.onCountdownChanged(
             isCountingDown: true, seconds: _countdownSeconds, isDone: false);
+      }
+
+      if (elapsedMs >= 5000) {
+        timer.cancel();
+        _isCountingDown = false;
+        _isCurrentlyStable = false;
+        _badStartTime = null;
+
+        _currentStage = _Stage.transitioning;
+        _isTransitioning = true;
+        _transitionStartTime = DateTime.now();
+        _lastCountdownSec = -1;
+        callback.onFeedbackChanged('🎉 穩定度測試通過！', '準備進入翻轉訓練');
+        _startTransitionCountdown();
       }
     });
   }
@@ -190,16 +235,18 @@ class TurnPalmAction extends BaseRehabAction implements LevelUpControllable {
     _countdownTimer?.cancel();
     _isCountingDown = false;
     _countdownSeconds = 5;
+    _badStartTime = null;
     callback.onCountdownChanged(
         isCountingDown: false, seconds: 5, isDone: false);
     callback.onFeedbackChanged('棍子歪掉了，重新對齊', '將棍子保持垂直，再次倒數5秒');
+    HandVoiceService.speak('歪了');
   }
 
   // ── 轉場倒數（階段一→階段二） ────────────────────────────────────
 
   void _startTransitionCountdown() {
     _transitionTimer?.cancel();
-    _transitionTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+    _transitionTimer = Timer.periodic(const Duration(milliseconds: 100), (_) {
       final elapsed =
           DateTime.now().difference(_transitionStartTime).inMilliseconds;
 
@@ -209,6 +256,8 @@ class TurnPalmAction extends BaseRehabAction implements LevelUpControllable {
         _currentStage = _Stage.stage2;
         _lastRepTime = DateTime.now();
         _countdownDone = true;
+        _pendingState = '';
+        _pendingStateCount = 0;
         callback.onCountdownChanged(
             isCountingDown: false, seconds: 0, isDone: true);
         callback.onFeedbackChanged('開始翻掌！', '請握住短棍，輕輕向內轉');
@@ -241,29 +290,39 @@ class TurnPalmAction extends BaseRehabAction implements LevelUpControllable {
     final rawWobble = wobbleAngle > 180 ? 360 - wobbleAngle : wobbleAngle;
     if (rawWobble > _currentRepMaxWobble) _currentRepMaxWobble = rawWobble;
 
-    final targetDx = _currentLevel == 1 ? 0.04 : 0.08;
+    // 🆕 用手掌尺寸（手腕到中指根部的距離）正規化，避免遠近距離影響判定
+    final handScale = _distance(wrist, middleMcp);
     final dx = pinkyMcp.x - indexMcp.x;
+    final normalizedDx = handScale > 1e-6 ? dx / handScale : 0.0;
+    final targetRatio =
+        _currentLevel == 1 ? _targetRatioLevel1 : _targetRatioLevel2;
 
-    final rawProgress = dx.abs() / targetDx;
+    final rawProgress = normalizedDx.abs() / targetRatio;
     final progress = rawProgress < 1.0 ? rawProgress : 1.0;
     final now = DateTime.now();
     final durationMs = now.difference(_lastRepTime).inMilliseconds;
     final speedState = progress > 0.5 && durationMs < 600 ? 1 : 0;
     callback.onStatsChanged(progress: progress, speedState: speedState);
 
-    final state = dx > targetDx
+    final state = normalizedDx > targetRatio
         ? 'OUTWARD'
-        : dx < -targetDx
+        : normalizedDx < -targetRatio
             ? 'INWARD'
             : 'NEUTRAL';
 
-    _palmStateBuffer.add(state);
-    if (_palmStateBuffer.length > 8) _palmStateBuffer.removeAt(0);
+    // 🆕 連續同狀態計數，取代原本「8 幀取 5」的多數決，
+    // 反應更即時，也不會因為偶爾幾幀被 NEUTRAL 打斷就一直湊不滿。
+    if (state == _pendingState) {
+      _pendingStateCount++;
+    } else {
+      _pendingState = state;
+      _pendingStateCount = 1;
+    }
 
     final isStableInward =
-        _palmStateBuffer.where((s) => s == 'INWARD').length >= 5;
+        state == 'INWARD' && _pendingStateCount >= _requiredConsecutiveFrames;
     final isStableOutward =
-        _palmStateBuffer.where((s) => s == 'OUTWARD').length >= 5;
+        state == 'OUTWARD' && _pendingStateCount >= _requiredConsecutiveFrames;
 
     if (isStableInward && _lastConfirmedState != 'INWARD') {
       if (_lastConfirmedState == 'OUTWARD') {
@@ -293,8 +352,8 @@ class TurnPalmAction extends BaseRehabAction implements LevelUpControllable {
 
           if (_repCount >= targetReps) {
             if (_currentLevel == 1 && score >= 80) {
-              _pendingLevelUp = true; // 🆕 先不升級,等使用者確認
-              callback.onLevelUpReady(nextLevel: 2, nextLevelLabel: '中階 (幅度加大)'); // 🆕
+              _pendingLevelUp = true;
+              callback.onLevelUpReady(nextLevel: 2, nextLevelLabel: '中階 (幅度加大)');
             } else {
               final durationSeconds =
                   DateTime.now().difference(_sessionStartTime).inSeconds;
@@ -332,13 +391,15 @@ class TurnPalmAction extends BaseRehabAction implements LevelUpControllable {
   void _startLevel(int level) {
     _currentLevel = level;
     _repCount = 0;
-    _palmStateBuffer.clear();
+    _pendingState = '';
+    _pendingStateCount = 0;
     _lastConfirmedState = '';
     _currentStage = _Stage.stage1;
     _mistakeLogs.clear();
     _sessionStartTime = DateTime.now();
     _countdownDone = false;
     _isCurrentlyStable = false;
+    _badStartTime = null;
     _smoothedAngleStage1 = 0.0;
 
     final diffText = level == 1 ? '初階' : '中階 (幅度加大)';
@@ -349,10 +410,10 @@ class TurnPalmAction extends BaseRehabAction implements LevelUpControllable {
   }
 
   @override
-  bool get isPendingLevelUp => _pendingLevelUp; // 🆕
+  bool get isPendingLevelUp => _pendingLevelUp;
 
   @override
-  void confirmLevelUp({int? customTargetReps}) { // 🆕
+  void confirmLevelUp({int? customTargetReps}) {
     _pendingLevelUp = false;
     if (customTargetReps != null && customTargetReps > 0) {
       targetReps = customTargetReps;
@@ -361,7 +422,7 @@ class TurnPalmAction extends BaseRehabAction implements LevelUpControllable {
   }
 
   @override
-  void declineLevelUp() { // 🆕 選不要升級 → 直接結束訓練
+  void declineLevelUp() {
     _pendingLevelUp = false;
     final durationSeconds =
         DateTime.now().difference(_sessionStartTime).inSeconds;
@@ -375,6 +436,21 @@ class TurnPalmAction extends BaseRehabAction implements LevelUpControllable {
   }
 
   // ── 數學工具 ─────────────────────────────────────────────────────
+
+  double _distance(Landmark a, Landmark b) {
+    final ddx = a.x - b.x;
+    final ddy = a.y - b.y;
+    return _sqrt(ddx * ddx + ddy * ddy);
+  }
+
+  double _sqrt(double x) {
+    if (x <= 0) return 0;
+    double guess = x;
+    for (int i = 0; i < 20; i++) {
+      guess = 0.5 * (guess + x / guess);
+    }
+    return guess;
+  }
 
   double _atan2(double y, double x) {
     if (x > 0) return _atan(y / x);

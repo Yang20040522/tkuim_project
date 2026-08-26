@@ -4,10 +4,20 @@
 // 樣式比照 home_screen.dart 的色票與元件寫法
 // 目前不含綁定治療師流程，之後要接時在「帳號尚未綁定」卡片的 onTap 接
 // features/account/bind_therapist_screen.dart 即可
+//
+// 更新內容:
+// 1. 右上角鉛筆按鈕可編輯姓名 / 帳號(電話),用 showDialog 跳出輸入框
+// 2. 「登出」項目改為導向 login_screen.dart,輸入電子郵件與密碼登入
+//    登入成功後會把 email 帶回來更新畫面顯示
+//
+// 注意:目前姓名/帳號/登入狀態都只存在記憶體中，app 關掉重開就會消失。
+// 之後要做到「重開 app 仍記得帳號」，需要搭配本地儲存(例如 shared_preferences)
+// 或串接後端 API 來持久化這些資料。
 
 import 'package:flutter/material.dart';
 
 import '../../services/history_service.dart';
+import 'login_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -20,8 +30,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
   // 樣式跟首頁共用同一份 HistoryService,資料才會跟首頁「今日準確度」連動
   final HistoryService _historyService = HistoryService();
 
-  final String _userName = '使用者';
-  final String _userPhone = '尚未設定';
+  String _userName = '使用者';
+  String _userPhone = '尚未設定';
+  String? _userEmail; // 登入後才會有值
   int _totalDays = 0;
   String _avgAccuracy = '-- %';
 
@@ -62,6 +73,139 @@ class _ProfileScreenState extends State<ProfileScreen> {
         behavior: SnackBarBehavior.floating,
         backgroundColor: const Color(0xFF1A1D2E),
       ),
+    );
+  }
+
+  // 跳出對話框讓使用者輸入姓名 / 帳號(電話)
+  void _editProfile() {
+    final nameController = TextEditingController(text: _userName);
+    final phoneController = TextEditingController(
+      text: _userPhone == '尚未設定' ? '' : _userPhone,
+    );
+
+    showDialog(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          title: const Text(
+            '編輯個人資料',
+            style: TextStyle(fontWeight: FontWeight.w800),
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: nameController,
+                decoration: const InputDecoration(
+                  labelText: '姓名',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 14),
+              TextField(
+                controller: phoneController,
+                decoration: const InputDecoration(
+                  labelText: '帳號 / 電話',
+                  border: OutlineInputBorder(),
+                ),
+                keyboardType: TextInputType.phone,
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('取消'),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF4A65FF),
+                foregroundColor: Colors.white,
+              ),
+              onPressed: () {
+                setState(() {
+                  _userName = nameController.text.trim().isEmpty
+                      ? '使用者'
+                      : nameController.text.trim();
+                  _userPhone = phoneController.text.trim().isEmpty
+                      ? '尚未設定'
+                      : phoneController.text.trim();
+                });
+                Navigator.pop(dialogContext);
+              },
+              child: const Text('儲存'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  // 導向登入畫面(輸入電子郵件與密碼)
+  // 登入成功後會回傳後端給的使用者資料(name, email),更新畫面上的顯示狀態
+  Future<void> _goToLogin() async {
+    final result = await Navigator.push<Map<String, String>>(
+      context,
+      MaterialPageRoute(builder: (_) => const LoginScreen()),
+    );
+
+    if (result != null && result['email'] != null) {
+      if (!mounted) return;
+      setState(() {
+        _userEmail = result['email'];
+        // 後端有回傳姓名的話就順便更新姓名顯示
+        if (result['name'] != null && result['name']!.isNotEmpty) {
+          _userName = result['name']!;
+        }
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('已登入:${_userEmail!}'),
+          duration: const Duration(seconds: 2),
+          behavior: SnackBarBehavior.floating,
+          backgroundColor: const Color(0xFF1A1D2E),
+        ),
+      );
+    }
+  }
+
+  void _handleLogout() {
+    if (_userEmail == null) {
+      // 尚未登入,直接導向登入畫面
+      _goToLogin();
+      return;
+    }
+    // 已登入的情況,詢問是否登出
+    showDialog(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          title: const Text('登出'),
+          content: const Text('確定要登出目前帳號嗎？'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('取消'),
+            ),
+            TextButton(
+              style: TextButton.styleFrom(
+                foregroundColor: const Color(0xFFE24B4A),
+              ),
+              onPressed: () {
+                setState(() => _userEmail = null);
+                Navigator.pop(dialogContext);
+              },
+              child: const Text('登出'),
+            ),
+          ],
+        );
+      },
     );
   }
 
@@ -159,7 +303,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 ),
                 const SizedBox(height: 2),
                 Text(
-                  _userPhone,
+                  _userEmail ?? _userPhone,
                   style: const TextStyle(
                     color: Color(0xFF9CA3AF),
                     fontSize: 12,
@@ -169,7 +313,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
             ),
           ),
           GestureDetector(
-            onTap: () => _comingSoon('編輯個人資料'),
+            onTap: _editProfile,
             child: Container(
               width: 36,
               height: 36,
@@ -290,10 +434,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
           _buildDivider(),
           _buildSettingsItem(
             icon: Icons.logout,
-            label: '登出',
+            label: _userEmail == null ? '登入' : '登出',
             labelColor: const Color(0xFFE24B4A),
             iconColor: const Color(0xFFE24B4A),
-            onTap: () => _comingSoon('登出'),
+            onTap: _handleLogout,
           ),
         ],
       ),
