@@ -1,25 +1,19 @@
-import 'dart:convert';
-import 'package:shared_preferences/shared_preferences.dart';
 import '../models/training_action.dart';
 import '../features/notification/notification_service.dart';
 import 'package:flutter/foundation.dart';
+import 'history_repository.dart';
 
+/// 對畫面來說,HistoryService 的用法完全沒變(一樣是 ChangeNotifier,
+/// 一樣用 HistoryService() 建立,一樣呼叫 getHistory()/saveRecord() 等)。
+///
+/// 差別只在於:實際資料存在哪裡、怎麼存,現在都交給 historyRepository
+/// (定義在 history_repository.dart)決定。本地儲存 / 之後接後端 API,
+/// 只需要在 history_repository.dart 最下面切換一行,這裡完全不用改。
 class HistoryService extends ChangeNotifier {
-  // 其他不動
-  static const String _key = 'rehab_history';
-
-  Future<List<TrainingRecord>> getHistory() async {
-    final prefs = await SharedPreferences.getInstance();
-    final jsonStr = prefs.getString(_key) ?? '[]';
-    final List<dynamic> list = jsonDecode(jsonStr);
-    return list.map((e) => TrainingRecord.fromJson(e)).toList();
-  }
+  Future<List<TrainingRecord>> getHistory() => historyRepository.getHistory();
 
   Future<void> saveRecord(TrainingRecord record) async {
-    final prefs = await SharedPreferences.getInstance();
-    final history = await getHistory();
-    history.add(record);
-    await prefs.setString(_key, jsonEncode(history.map((e) => e.toJson()).toList()));
+    await historyRepository.saveRecord(record);
 
     final mistakes = record.mistakeLogs.length;
     final acc = ((10 - mistakes) / 10 * 100).clamp(0, 100).round();
@@ -28,7 +22,7 @@ class HistoryService extends ChangeNotifier {
       body: '「${record.actionName}」${record.targetReps} 下 · 準確度 $acc%',
     ).catchError((_) {});
 
-    notifyListeners();  // ← 新增
+    notifyListeners();
   }
 
   /// 把「最後 count 筆」紀錄的 videoPath 更新成同一個值。
@@ -37,41 +31,18 @@ class HistoryService extends ChangeNotifier {
   /// TrainingRecord(此時還不知道使用者要不要保留錄影),
   /// 等到 session 真正結束、使用者做出保留/不保留的決定後,
   /// 才回頭把這幾筆紀錄的 videoPath 補齊,讓它們共用同一段影片。
-  ///
-  /// 因為紀錄是依 saveRecord() 呼叫順序附加在陣列尾端,
-  /// 「最後 count 筆」就對應「這個 session 存的所有紀錄」。
   Future<void> updateLastRecordsVideoPath(int count, String? videoPath) async {
-    if (count <= 0) return;
-    final prefs = await SharedPreferences.getInstance();
-    final history = await getHistory();
-    if (history.isEmpty) return;
-
-    final updateCount = count > history.length ? history.length : count;
-    final startIndex = history.length - updateCount;
-
-    for (int i = startIndex; i < history.length; i++) {
-      history[i] = history[i].copyWithVideoPath(videoPath);
-    }
-
-    await prefs.setString(_key, jsonEncode(history.map((e) => e.toJson()).toList()));
-
-    notifyListeners();  // ← 新增
+    await historyRepository.updateLastRecordsVideoPath(count, videoPath);
+    notifyListeners();
   }
 
   Future<void> removeByTimestamp(String timestamp) async {
-    final prefs = await SharedPreferences.getInstance();
-    final history = await getHistory();
-    history.removeWhere((r) => r.timestamp == timestamp);
-    await prefs.setString(
-        _key, jsonEncode(history.map((e) => e.toJson()).toList()));
-
-    notifyListeners();  // ← 新增
+    await historyRepository.removeByTimestamp(timestamp);
+    notifyListeners();
   }
 
   Future<void> clearHistory() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.remove(_key);
-
-    notifyListeners();  // ← 新增
+    await historyRepository.clearHistory();
+    notifyListeners();
   }
 }
