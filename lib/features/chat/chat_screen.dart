@@ -300,6 +300,14 @@ class _ChatScreenState extends State<ChatScreen> {
       padding: const EdgeInsets.fromLTRB(8, 8, 8, 8),
       child: Row(
         children: [
+          // ✅ 返回鍵：回到原本的聊天區（進來前的上一個畫面）
+          if (Navigator.of(context).canPop())
+            IconButton(
+              icon: const Icon(Icons.arrow_back_ios_new,
+                  color: Color(0xFF374151), size: 20),
+              onPressed: () => Navigator.of(context).pop(),
+              tooltip: '返回',
+            ),
           Builder(
             builder: (ctx) => IconButton(
               icon: const Icon(Icons.menu, color: Color(0xFF374151)),

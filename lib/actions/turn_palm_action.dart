@@ -18,6 +18,13 @@
 // 4. 階段二：targetDx 改用手掌尺寸正規化，避免使用者距離鏡頭
 //    遠近不同時，翻轉判定忽鬆忽緊。⚠️ _targetRatioLevel1/2
 //    這兩個常數需要你實測調整，目前只是估計值。
+// 5. 🆕【修卡頓】階段一「棍子歪了」原本只要角度不合格就「每一幀」
+//    呼叫一次 HandVoiceService.speak('歪了')。MediaPipe 通常
+//    15~30fps 進 processLandmarks，等於每秒狂呼叫 TTS 15~30 次，
+//    塞爆 platform channel，拖累畫面渲染造成明顯卡頓。
+//    現在改成「只在剛進入歪斜狀態的那一刻播一次」，角度重新合格後
+//    才會重置旗標、允許下次再播放。onFeedbackChanged 這種純文字
+//    更新维持不變（不呼叫原生 API，成本低很多）。
 
 import 'dart:async';
 import '../services/mediapipe_service.dart';
@@ -44,6 +51,9 @@ class TurnPalmAction extends BaseRehabAction implements LevelUpControllable {
   // 🆕 階段一容錯緩衝：短暫超標不立刻重置
   DateTime? _badStartTime;
   static const int _stage1GraceMs = 400; // 容許連續超標 400ms 內都算「還在穩定」
+
+  // 🆕 階段一「歪了」語音節流旗標：同一次歪斜期間只播一次
+  bool _hasSpokenTilted = false;
 
   // 倒數
   bool _isCountingDown = false;
@@ -156,6 +166,8 @@ class TurnPalmAction extends BaseRehabAction implements LevelUpControllable {
     if (displayAngle < wobbleTolerance) {
       // 角度合格：清掉「壞幀」計時，代表本次穩定沒有中斷
       _badStartTime = null;
+      // 🆕 角度重新合格，允許下次歪掉時可以再播放一次「歪了」
+      _hasSpokenTilted = false;
 
       if (!_isCurrentlyStable) {
         _isCurrentlyStable = true;
@@ -180,8 +192,14 @@ class TurnPalmAction extends BaseRehabAction implements LevelUpControllable {
         // 還在容錯範圍內：不重置，讓 holdStartTime 繼續累積，
         // 只是這一瞬間角度不合格，不特別提示「歪了」避免畫面閃爍太頻繁。
       } else {
+        // 🆕【關鍵修正】文字提示可以每幀更新沒關係（成本低），
+        // 但 TTS 語音只在「剛進入歪斜狀態」的那一刻播一次，
+        // 避免每幀都呼叫 speak() 塞爆 platform channel 造成畫面卡頓。
         callback.onFeedbackChanged('⚠️ 棍子歪了！', '請拉正短棍，對齊虛線');
-        HandVoiceService.speak('歪了');
+        if (!_hasSpokenTilted) {
+          _hasSpokenTilted = true;
+          HandVoiceService.speak('歪了');
+        }
       }
     }
   }
@@ -236,6 +254,8 @@ class TurnPalmAction extends BaseRehabAction implements LevelUpControllable {
     _isCountingDown = false;
     _countdownSeconds = 5;
     _badStartTime = null;
+    // 🆕 重置時也重置語音旗標，避免下一輪卡在「已播過」的狀態
+    _hasSpokenTilted = true; // 這裡直接標記為已播，因為下面馬上就會 speak 一次
     callback.onCountdownChanged(
         isCountingDown: false, seconds: 5, isDone: false);
     callback.onFeedbackChanged('棍子歪掉了，重新對齊', '將棍子保持垂直，再次倒數5秒');
@@ -401,6 +421,7 @@ class TurnPalmAction extends BaseRehabAction implements LevelUpControllable {
     _isCurrentlyStable = false;
     _badStartTime = null;
     _smoothedAngleStage1 = 0.0;
+    _hasSpokenTilted = false; // 🆕 每次重新開始關卡都重置語音旗標
 
     final diffText = level == 1 ? '初階' : '中階 (幅度加大)';
     callback.onLevelUp(newLevel: level, levelLabel: diffText, newTargetReps: targetReps);

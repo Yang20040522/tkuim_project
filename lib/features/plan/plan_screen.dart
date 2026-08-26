@@ -40,6 +40,7 @@ class _PlanScreenState extends State<PlanScreen> {
   Future<void> _loadPlan(DateTime date) async {
     setState(() => isLoading = true);
     final plan = await planRepository.getPlanByDate(date);
+    if (!mounted) return;
     setState(() {
       currentPlan = plan;
       isLoading = false;
@@ -49,6 +50,26 @@ class _PlanScreenState extends State<PlanScreen> {
   void _onSelectDay(DateTime date) {
     setState(() => selectedDate = date);
     _loadPlan(date);
+  }
+
+  // ── 日期狀態判斷 ─────────────────────────────────────────
+  // 過去 → 唯讀；今天 → 可編輯 + 可訓練；未來 → 可編輯（排計畫）但不能訓練
+  bool get _isReadOnly {
+    final now = DateTime.now();
+    final sel = DateTime(selectedDate.year, selectedDate.month, selectedDate.day);
+    final today = DateTime(now.year, now.month, now.day);
+    return sel.isBefore(today);
+  }
+
+  bool get _isToday => _isSameDay(selectedDate, DateTime.now());
+
+  String _planIdForDate(DateTime d) =>
+      'plan_${d.year}${d.month.toString().padLeft(2, '0')}${d.day.toString().padLeft(2, '0')}';
+
+  String _planSectionTitle() {
+    if (_isToday) return '今日計畫';
+    final d = '${selectedDate.month}/${selectedDate.day}';
+    return _isReadOnly ? '$d 計畫（唯讀）' : '$d 計畫';
   }
 
   // 點今日計畫項目 → 導去實際辨識頁面，做完才算完成
@@ -142,8 +163,53 @@ class _PlanScreenState extends State<PlanScreen> {
     }
   }
 
+  // 新增計畫：先選病患類型（骨折/中風），再依類型建立
+  Future<void> _createPlan() async {
+    if (_isReadOnly) return;
+
+    final condition = await showModalBottomSheet<PatientCondition>(
+      context: context,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => _buildConditionSheet(ctx),
+    );
+    if (condition == null) return;
+
+    final planId = _planIdForDate(selectedDate);
+
+    if (condition == PatientCondition.fracture) {
+      // 骨折 → 直接套系統標準範本
+      final template = planRepository.buildFractureTemplate(planId, selectedDate);
+      await planRepository.savePlan(template);
+      await _loadPlan(selectedDate);
+    } else {
+      // 中風 → 開空白計畫進手動安排頁，存檔才寫入（取消就不建立）
+      final emptyPlan = RehabPlan(
+        planId: planId,
+        createdBy: 'therapist',
+        date: selectedDate,
+        condition: PatientCondition.stroke,
+        items: const <PlanItem>[],
+      );
+      if (!mounted) return;
+      final updatedPlan = await Navigator.push<RehabPlan>(
+        context,
+        MaterialPageRoute(
+          builder: (_) => PlanBuilderScreen(existingPlan: emptyPlan),
+        ),
+      );
+      if (updatedPlan != null) {
+        await planRepository.savePlan(updatedPlan);
+      }
+      await _loadPlan(selectedDate);
+    }
+  }
+
   // 骨折：套用系統固定範本
   Future<void> _applyFractureTemplate() async {
+    if (_isReadOnly) return;
     if (currentPlan == null) return;
     final template = planRepository.buildFractureTemplate(currentPlan!.planId, selectedDate);
     await planRepository.savePlan(template);
@@ -152,6 +218,7 @@ class _PlanScreenState extends State<PlanScreen> {
 
   // 中風：導去手動勾選頁面，治療師自己排
   Future<void> _openManualBuilder() async {
+    if (_isReadOnly) return;
     if (currentPlan == null) return;
     final updatedPlan = await Navigator.push<RehabPlan>(
       context,
@@ -184,7 +251,7 @@ class _PlanScreenState extends State<PlanScreen> {
                         children: [
                           _buildWeekRow(),
                           const SizedBox(height: 24),
-                          _buildSectionTitle('今日計畫'),
+                          _buildSectionTitle(_planSectionTitle()),
                           const SizedBox(height: 12),
                           _buildTodayPlan(),
                           const SizedBox(height: 24),
@@ -204,6 +271,7 @@ class _PlanScreenState extends State<PlanScreen> {
   }
 
   Widget _buildTopBar(BuildContext context) {
+    final locked = _isReadOnly;
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
       child: Row(
@@ -219,14 +287,21 @@ class _PlanScreenState extends State<PlanScreen> {
             ),
           ),
           GestureDetector(
-            onTap: currentPlan == null ? null : _openManualBuilder,
+            // 唯讀（過去）→ 鎖住；沒計畫 → 新增；有計畫 → 修改
+            onTap: locked
+                ? null
+                : (currentPlan == null ? _createPlan : _openManualBuilder),
             child: Container(
               width: 40, height: 40,
               decoration: BoxDecoration(
-                color: const Color(0xFF4A65FF),
+                color: locked ? const Color(0xFFDDE0F0) : const Color(0xFF4A65FF),
                 borderRadius: BorderRadius.circular(12),
               ),
-              child: const Icon(Icons.add, color: Colors.white, size: 20),
+              child: Icon(
+                locked ? Icons.lock_outline : Icons.add,
+                color: locked ? const Color(0xFF9CA3AF) : Colors.white,
+                size: 20,
+              ),
             ),
           ),
         ],
@@ -253,6 +328,11 @@ class _PlanScreenState extends State<PlanScreen> {
           final isSelected = _isSameDay(thisDate, selectedDate);
           final hasPlan = [0, 2, 4].contains(i);
 
+          // 過去的日期：日期數字用淡色，讓使用者一眼看出是唯讀
+          final dayOnly = DateTime(thisDate.year, thisDate.month, thisDate.day);
+          final todayOnly = DateTime(today.year, today.month, today.day);
+          final isPast = dayOnly.isBefore(todayOnly);
+
           return GestureDetector(
             onTap: () => _onSelectDay(thisDate),
             child: Column(
@@ -277,7 +357,9 @@ class _PlanScreenState extends State<PlanScreen> {
                     child: Text(
                       '${thisDate.day}',
                       style: TextStyle(
-                        color: isSelected ? Colors.white : const Color(0xFF374151),
+                        color: isSelected
+                            ? Colors.white
+                            : (isPast ? const Color(0xFFB5BAC6) : const Color(0xFF374151)),
                         fontSize: 13,
                         fontWeight: FontWeight.w700,
                       ),
@@ -330,18 +412,24 @@ class _PlanScreenState extends State<PlanScreen> {
       );
     }
 
+    final canTrain = _isToday; // 只有今天能實際開始訓練
     final sortedItems = [...currentPlan!.items]..sort((a, b) => a.order.compareTo(b.order));
 
     return Column(
       children: sortedItems.map((item) {
         final exercise = findExerciseById(item.exerciseId);
         final realIndex = currentPlan!.items.indexOf(item);
-        return _planItem(exercise, item, () => _startExercise(exercise, item, realIndex));
+        final onTap = (canTrain && !item.done)
+            ? () => _startExercise(exercise, item, realIndex)
+            : null;
+        return _planItem(exercise, item, onTap: onTap);
       }).toList(),
     );
   }
 
-  Widget _planItem(Exercise exercise, PlanItem item, VoidCallback onTap) {
+  Widget _planItem(Exercise exercise, PlanItem item, {VoidCallback? onTap}) {
+    final tappable = onTap != null;
+
     return GestureDetector(
       onTap: onTap,
       child: Container(
@@ -365,8 +453,12 @@ class _PlanScreenState extends State<PlanScreen> {
                 shape: BoxShape.circle,
               ),
               child: Icon(
-                item.done ? Icons.check : Icons.play_arrow,
-                color: item.done ? Colors.white : const Color(0xFF4A65FF),
+                item.done
+                    ? Icons.check
+                    : (tappable ? Icons.play_arrow : Icons.remove),
+                color: item.done
+                    ? Colors.white
+                    : (tappable ? const Color(0xFF4A65FF) : const Color(0xFF9CA3AF)),
                 size: 16,
               ),
             ),
@@ -394,8 +486,15 @@ class _PlanScreenState extends State<PlanScreen> {
                 ],
               ),
             ),
-            if (!item.done)
-              const Icon(Icons.chevron_right, color: Color(0xFF9CA3AF), size: 18),
+            // 完成 → 不用額外標示；可訓練(今天,未完成) → 箭頭；
+            // 其餘(過去/未來,未完成) → 文字狀態
+            if (!item.done && tappable)
+              const Icon(Icons.chevron_right, color: Color(0xFF9CA3AF), size: 18)
+            else if (!item.done && !tappable)
+              Text(
+                _isReadOnly ? '未完成' : '尚未開始',
+                style: const TextStyle(color: Color(0xFF9CA3AF), fontSize: 12),
+              ),
           ],
         ),
       ),
@@ -461,9 +560,13 @@ class _PlanScreenState extends State<PlanScreen> {
     );
   }
 
-  // ── 依骨折/中風分流，不再是假的智慧推薦 ─────────────────────
+  // ── 依日期(唯讀/新增/編輯)決定底部區塊 ─────────────────────
   Widget _buildActionArea() {
-    if (currentPlan == null) return const SizedBox.shrink();
+    // 過去 → 只給唯讀提示
+    if (_isReadOnly) return _readOnlyNotice();
+
+    // 可編輯但今天/未來這天還沒計畫 → 新增計畫
+    if (currentPlan == null) return _createPlanArea();
 
     if (currentPlan!.condition == PatientCondition.fracture) {
       return Column(
@@ -517,5 +620,116 @@ class _PlanScreenState extends State<PlanScreen> {
         ],
       );
     }
+  }
+
+  // 過去日期的唯讀提示
+  Widget _readOnlyNotice() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF0F1F5),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFFDDE0F0)),
+      ),
+      child: const Row(
+        children: [
+          Icon(Icons.lock_outline, size: 18, color: Color(0xFF9CA3AF)),
+          SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              '這是過去的紀錄，僅供查看，無法修改。',
+              style: TextStyle(color: Color(0xFF9CA3AF), fontSize: 13),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // 空白日期(可編輯) → 新增計畫入口
+  Widget _createPlanArea() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _buildSectionTitle('新增計畫'),
+        const SizedBox(height: 8),
+        const Text(
+          '這一天還沒有計畫，選擇病患類型後即可建立。',
+          style: TextStyle(color: Color(0xFF9CA3AF), fontSize: 12),
+        ),
+        const SizedBox(height: 12),
+        SizedBox(
+          width: double.infinity,
+          child: ElevatedButton(
+            onPressed: _createPlan,
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF4A65FF),
+              padding: const EdgeInsets.symmetric(vertical: 14),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            ),
+            child: const Text('新增計畫', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
+          ),
+        ),
+      ],
+    );
+  }
+
+  // 新增計畫時選病患類型的底部彈窗
+  Widget _buildConditionSheet(BuildContext ctx) {
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('新增計畫',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: Color(0xFF1A1D2E))),
+            const SizedBox(height: 4),
+            Text('${selectedDate.month}/${selectedDate.day} · 選擇病患類型',
+                style: const TextStyle(fontSize: 12, color: Color(0xFF9CA3AF))),
+            const SizedBox(height: 16),
+            _conditionOption(ctx, PatientCondition.fracture, '🦴', '骨折', '套用系統標準範本，之後可微調'),
+            const SizedBox(height: 10),
+            _conditionOption(ctx, PatientCondition.stroke, '🧠', '中風', '無固定範本，手動安排訓練動作'),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _conditionOption(
+      BuildContext ctx, PatientCondition condition, String emoji, String title, String subtitle) {
+    return GestureDetector(
+      onTap: () => Navigator.pop(ctx, condition),
+      child: Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: const Color(0xFFDDE0F0)),
+        ),
+        child: Row(
+          children: [
+            Text(emoji, style: const TextStyle(fontSize: 24)),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(title,
+                      style: const TextStyle(
+                          fontSize: 15, fontWeight: FontWeight.w800, color: Color(0xFF1A1D2E))),
+                  const SizedBox(height: 2),
+                  Text(subtitle, style: const TextStyle(fontSize: 12, color: Color(0xFF9CA3AF))),
+                ],
+              ),
+            ),
+            const Icon(Icons.chevron_right, color: Color(0xFF9CA3AF), size: 20),
+          ],
+        ),
+      ),
+    );
   }
 }
