@@ -17,7 +17,7 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 
-import '../../core/api_config.dart';
+import 'api_config.dart';
 import 'exercise.dart';
 import 'rehab_plan.dart';
 import 'plan_repository.dart';
