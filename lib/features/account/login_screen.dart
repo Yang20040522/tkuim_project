@@ -66,7 +66,7 @@ class _LoginScreenState extends State<LoginScreen> {
       setState(() => _isLoading = false);
 
       if (result.success) {
-        AppSession.save(
+        await AppSession.save(
           role: widget.role,
           userId: result.userId ?? '',
           name: result.name ?? '',

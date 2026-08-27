@@ -150,9 +150,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
               style: TextButton.styleFrom(
                 foregroundColor: const Color(0xFFE24B4A),
               ),
-              onPressed: () {
+              onPressed: () async {
                 Navigator.pop(dialogContext);
-                AppSession.clear();
+                await AppSession.clear();    // ← 加 await
+                if (!context.mounted) return;
                 Navigator.of(context).pushAndRemoveUntil(
                   MaterialPageRoute(
                       builder: (_) => const RoleSelectScreen()),

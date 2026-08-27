@@ -1,5 +1,7 @@
 // lib/features/account/app_session.dart
-// 目前的登入狀態(只存記憶體,app 重開會消失)。登入時寫入,其他畫面直接讀。
+// 目前的登入狀態。登入時寫入記憶體 + 本機儲存(shared_preferences),
+// 這樣下次開 App 時可以讀回來,不用每次都重新選身分、重新登入。
+import 'package:shared_preferences/shared_preferences.dart';
 import 'user_role.dart';
 
 class AppSession {
@@ -10,22 +12,58 @@ class AppSession {
 
   static bool get isLoggedIn => userId != null || email != null;
 
-  static void save({
+  static const _keyRole = 'session_role';
+  static const _keyUserId = 'session_userId';
+  static const _keyName = 'session_name';
+  static const _keyEmail = 'session_email';
+
+  /// App 啟動時呼叫一次,把上次登入狀態從本機讀回記憶體。
+  /// 沒有登入過的話,所有欄位維持 null,不會有任何影響。
+  static Future<void> load() async {
+    final prefs = await SharedPreferences.getInstance();
+    final roleName = prefs.getString(_keyRole);
+
+    if (roleName != null) {
+      role = UserRole.values.firstWhere(
+        (r) => r.name == roleName,
+        orElse: () => UserRole.patient,
+      );
+    }
+    userId = prefs.getString(_keyUserId);
+    name = prefs.getString(_keyName);
+    email = prefs.getString(_keyEmail);
+  }
+
+  /// 登入成功時呼叫,同時寫進記憶體跟本機儲存。
+  static Future<void> save({
     required UserRole role,
     String? userId,
     String? name,
     String? email,
-  }) {
+  }) async {
     AppSession.role = role;
     AppSession.userId = userId;
     AppSession.name = name;
     AppSession.email = email;
+
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_keyRole, role.name);
+    if (userId != null) await prefs.setString(_keyUserId, userId);
+    if (name != null) await prefs.setString(_keyName, name);
+    if (email != null) await prefs.setString(_keyEmail, email);
   }
 
-  static void clear() {
+  /// 登出時呼叫,同時清掉記憶體跟本機儲存。
+  static Future<void> clear() async {
     role = null;
     userId = null;
     name = null;
     email = null;
+
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_keyRole);
+    await prefs.remove(_keyUserId);
+    await prefs.remove(_keyName);
+    await prefs.remove(_keyEmail);
   }
 }

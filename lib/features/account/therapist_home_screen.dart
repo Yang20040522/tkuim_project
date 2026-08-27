@@ -8,8 +8,9 @@ import 'role_select_screen.dart';
 class TherapistHomeScreen extends StatelessWidget {
   const TherapistHomeScreen({super.key});
 
-  void _logout(BuildContext context) {
-    AppSession.clear();
+  void _logout(BuildContext context) async {
+    await AppSession.clear();
+    if (!context.mounted) return;
     Navigator.of(context).pushAndRemoveUntil(
       MaterialPageRoute(builder: (_) => const RoleSelectScreen()),
       (route) => false,
