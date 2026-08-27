@@ -45,6 +45,8 @@ import '../../actions/sit_to_stand_action.dart';
 import '../../actions/lateral_step_action.dart';
 import '../../actions/body_rehab_action.dart';
 
+import '../account/app_session.dart';
+
 
 // ═══════════════════════════════════════════════════════════
 //  外殼:管理底部 tab 切換,IndexedStack 讓導航列常駐不消失
@@ -604,43 +606,47 @@ class _HomeContentState extends State<_HomeContent>
     );
   }
 
+  // 依現在時間回傳對應問候語
+  String _greetingByTime() {
+    final hour = DateTime.now().hour;
+    if (hour >= 5 && hour < 12) return '早安,保持活力';
+    if (hour >= 12 && hour < 18) return '午安,繼續加油';
+    return '晚安,別忘了訓練';
+  }
+
   // ─── 上方:歡迎詞 + 鈴鐺 ────────────────────────────────
   Widget _buildTopGreeting() {
+    final displayName = (AppSession.name != null && AppSession.name!.isNotEmpty)
+        ? AppSession.name!
+        : '使用者';
+
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Expanded(
+        Expanded(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Row(
                 children: [
                   Text(
-                    '早安,保持活力 ',
-                    style: TextStyle(
+                    '${_greetingByTime()} ',
+                    style: const TextStyle(
                       color: Color(0xFF6B7280),
                       fontSize: 13,
                     ),
                   ),
-                  Text('💪', style: TextStyle(fontSize: 14)),
+                  const Text('💪', style: TextStyle(fontSize: 14)),
                 ],
               ),
-              SizedBox(height: 4),
+              const SizedBox(height: 4),
               Text(
-                '使用者',
-                style: TextStyle(
+                displayName,
+                style: const TextStyle(
                   color: Color(0xFF1A1D2E),
                   fontSize: 26,
                   fontWeight: FontWeight.w900,
                   height: 1.1,
-                ),
-              ),
-              SizedBox(height: 2),
-              Text(
-                '帳號未來綁定',
-                style: TextStyle(
-                  color: Color(0xFF9CA3AF),
-                  fontSize: 11,
                 ),
               ),
             ],

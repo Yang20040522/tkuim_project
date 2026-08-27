@@ -86,6 +86,8 @@ import '../tv_cast/webrtc_service.dart';
 import '../tv_cast/socket_server_service.dart';
 import '../tv_cast/socket_client_service.dart';
 
+import 'package:permission_handler/permission_handler.dart';
+
 
 
 class TrainingScreen extends StatefulWidget {
@@ -123,6 +125,9 @@ class _TrainingScreenState extends State<TrainingScreen>
   // 是否正暫停中(暫停選單開啟期間為 true)
   bool _isPaused = false;
 
+  // null = 權限檢查中,true = 已授權,false = 被拒絕
+  bool? _hasCameraPermission;
+
   bool _showingLevelUpOverlay = false; // 🆕
   bool _levelUpJustHandled = false; // 🆕 使用者剛按過按鈕,忽略接下來殘留的pending訊號
   final TextEditingController _levelUpRepsController = TextEditingController(); // 🆕
@@ -150,6 +155,10 @@ class _TrainingScreenState extends State<TrainingScreen>
   @override
   void initState() {
     super.initState();
+
+    // 🆕 手部訓練用的是原生 AndroidView 開相機,不會像 Flutter camera
+    // 套件那樣自動跳權限視窗,這裡主動請求,確保跟全身端行為一致。
+    _checkCameraPermission();
 
     // 🖥️ 電視投放新增:顯示端不需要建立本機 controller / 相機資源。
     // 但為了盡量不動原本的建構流程與型別(late 欄位),仍建立一個
@@ -382,6 +391,47 @@ class _TrainingScreenState extends State<TrainingScreen>
       // 錄影是附加功能,失敗不應影響訓練本身;樹莓派模式暫不錄影
       ScreenRecorderService.startRecording();
     }
+  }
+
+  Future<void> _checkCameraPermission() async {
+    final status = await Permission.camera.request();
+    if (!mounted) return;
+
+    setState(() => _hasCameraPermission = status.isGranted);
+
+    if (status.isPermanentlyDenied) {
+      _showCameraPermissionDeniedDialog();
+    }
+  }
+
+  void _showCameraPermissionDeniedDialog() {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) {
+        return AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: const Text('需要相機權限'),
+          content: const Text('手部訓練需要使用相機才能進行動作偵測,\n請到系統設定中開啟相機權限。'),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.pop(dialogContext);
+                Navigator.of(context).pop(); // 退回上一頁,避免卡在空白畫面
+              },
+              child: const Text('返回'),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                Navigator.pop(dialogContext);
+                openAppSettings();
+              },
+              child: const Text('前往設定'),
+            ),
+          ],
+        );
+      },
+    );
   }
 
   @override
@@ -749,33 +799,42 @@ class _TrainingScreenState extends State<TrainingScreen>
                       // 🚀 樹莓派新增:外接來源時顯示 Pi 傳來的 JPEG 畫面
                       if (_isExternalCamera)
                         _PiHandVideoView(controller: _controller)
-                      else
+                      else if (_hasCameraPermission == true)
                         PlatformViewLink(
                           viewType: 'com.rehabassist/camera_preview',
                           surfaceFactory: (context, controller) {
                             return AndroidViewSurface(
                               controller: controller as AndroidViewController,
                               gestureRecognizers: const {},
-                              hitTestBehavior:
-                                  PlatformViewHitTestBehavior.opaque,
+                              hitTestBehavior: PlatformViewHitTestBehavior.opaque,
                             );
                           },
                           onCreatePlatformView: (params) {
-                            final ctrl =
-                                PlatformViewsService.initExpensiveAndroidView(
+                            final ctrl = PlatformViewsService.initExpensiveAndroidView(
                               id: params.id,
                               viewType: 'com.rehabassist/camera_preview',
                               layoutDirection: TextDirection.ltr,
                               onFocus: () => params.onFocusChanged(true),
                             );
-                            ctrl.addOnPlatformViewCreatedListener(
-                                params.onPlatformViewCreated);
-                            ctrl.addOnPlatformViewCreatedListener(
-                                (_) => _onPlatformViewCreated());
+                            ctrl.addOnPlatformViewCreatedListener(params.onPlatformViewCreated);
+                            ctrl.addOnPlatformViewCreatedListener((_) => _onPlatformViewCreated());
                             ctrl.create();
                             return ctrl;
                           },
-                        ),
+                        )
+                      else if (_hasCameraPermission == false)
+                        Container(
+                          color: Colors.black,
+                          child: const Center(
+                            child: Text(
+                              '需要相機權限才能繼續\n請點選上方對話框「前往設定」開啟',
+                              textAlign: TextAlign.center,
+                              style: TextStyle(color: Colors.white, fontSize: 14),
+                            ),
+                          ),
+                        )
+                      else
+                        const Center(child: CircularProgressIndicator()), // 權限檢查中
                       if (s.handLandmarks.isNotEmpty)
                         HandOverlayWidget(
                           landmarks: s.handLandmarks,
