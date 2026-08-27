@@ -34,6 +34,13 @@
 //       誤跑到 default 分支變成手部訓練畫面)
 //     - BodyTrainingScreen 呼叫時補上 targetCount: difficulty.targetReps,
 //       避免使用者在完成畫面選的目標次數被忽略
+//
+//  🛠️ 2026-08-27:修正 _buildLevelUpOverlay() 括號結構錯誤
+//     - 原本結尾多包了一層右括號(),導致 build 時解析錯誤,
+//       第 948 行附近一路報 Expected to find ';'。
+//       Material -> Container -> Center -> Container -> Column
+//       這 5 層,結尾應該剛好 5 個 ')' 再加上 return 的 ';',
+//       原本多了一個,拿掉即可。
 // ══════════════════════════════════════════════════════════════════
 
 import 'dart:async';
@@ -835,114 +842,115 @@ class _TrainingScreenState extends State<TrainingScreen>
     );
   }
 
+  // 🛠️ 修正:結尾原本多包了一層右括號,導致整個檔案後半段解析錯誤。
+  // 這裡是 Material -> Container -> Center -> Container -> Column
+  // 共 5 層,結尾剛好對應 5 個 ')' 再加上 return 的 ';'。
   Widget _buildLevelUpOverlay() {
     final s = _controller.currentState;
     return Material(
       color: Colors.transparent,
-      child: Positioned.fill(
-        child: Container(
-          color: Colors.black54,
-          child: Center(
-            child: Container(
-              margin: const EdgeInsets.symmetric(horizontal: 32),
-              padding: const EdgeInsets.all(24),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(24),
-              ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Text('🎉', style: TextStyle(fontSize: 48)),
-                  const SizedBox(height: 10),
-                  const Text(
-                    '動作做得很棒！',
-                    style: TextStyle(
-                      color: Color(0xFF1A1D2E),
-                      fontSize: 20,
-                      fontWeight: FontWeight.w900,
+      child: Container(
+        color: Colors.black54,
+        child: Center(
+          child: Container(
+            margin: const EdgeInsets.symmetric(horizontal: 32),
+            padding: const EdgeInsets.all(24),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(24),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text('🎉', style: TextStyle(fontSize: 48)),
+                const SizedBox(height: 10),
+                const Text(
+                  '動作做得很棒！',
+                  style: TextStyle(
+                    color: Color(0xFF1A1D2E),
+                    fontSize: 20,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  '要挑戰下一階「${s.pendingNextLevelLabel}」嗎？',
+                  style: const TextStyle(color: Color(0xFF6B7280), fontSize: 13),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 16),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Text(
+                      '下一階要做幾下',
+                      style: TextStyle(
+                          color: Color(0xFF374151),
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600),
                     ),
-                  ),
-                  const SizedBox(height: 6),
-                  Text(
-                    '要挑戰下一階「${s.pendingNextLevelLabel}」嗎？',
-                    style: const TextStyle(color: Color(0xFF6B7280), fontSize: 13),
-                    textAlign: TextAlign.center,
-                  ),
-                  const SizedBox(height: 16),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      const Text(
-                        '下一階要做幾下',
-                        style: TextStyle(
-                            color: Color(0xFF374151),
-                            fontSize: 13,
-                            fontWeight: FontWeight.w600),
-                      ),
-                      const SizedBox(width: 10),
-                      SizedBox(
-                        width: 56,
-                        child: TextField(
-                          controller: _levelUpRepsController,
-                          keyboardType: TextInputType.number,
-                          textAlign: TextAlign.center,
-                          style: const TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.w800,
-                              color: Color(0xFF1A1D2E)),
-                          decoration: InputDecoration(
-                            isDense: true,
-                            contentPadding: const EdgeInsets.symmetric(vertical: 8),
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(8),
-                              borderSide: const BorderSide(color: Color(0xFFDDE0F0)),
-                            ),
-                            focusedBorder: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(8),
-                              borderSide: const BorderSide(color: Color(0xFF4A65FF)),
-                            ),
+                    const SizedBox(width: 10),
+                    SizedBox(
+                      width: 56,
+                      child: TextField(
+                        controller: _levelUpRepsController,
+                        keyboardType: TextInputType.number,
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w800,
+                            color: Color(0xFF1A1D2E)),
+                        decoration: InputDecoration(
+                          isDense: true,
+                          contentPadding: const EdgeInsets.symmetric(vertical: 8),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(8),
+                            borderSide: const BorderSide(color: Color(0xFFDDE0F0)),
+                          ),
+                          focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(8),
+                            borderSide: const BorderSide(color: Color(0xFF4A65FF)),
                           ),
                         ),
                       ),
-                      const SizedBox(width: 4),
-                      const Text('下', style: TextStyle(color: Color(0xFF6B7280), fontSize: 13)),
-                    ],
-                  ),
-                  const SizedBox(height: 22),
-                  SizedBox(
-                    width: double.infinity,
-                    height: 52,
-                    child: ElevatedButton(
-                      onPressed: _confirmLevelUp,
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF4A65FF),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                      ),
-                      child: const Text(
-                        '💪 挑戰下一階',
-                        style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w700),
-                      ),
+                    ),
+                    const SizedBox(width: 4),
+                    const Text('下', style: TextStyle(color: Color(0xFF6B7280), fontSize: 13)),
+                  ],
+                ),
+                const SizedBox(height: 22),
+                SizedBox(
+                  width: double.infinity,
+                  height: 52,
+                  child: ElevatedButton(
+                    onPressed: _confirmLevelUp,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF4A65FF),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                    ),
+                    child: const Text(
+                      '💪 挑戰下一階',
+                      style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w700),
                     ),
                   ),
-                  const SizedBox(height: 10),
-                  SizedBox(
-                    width: double.infinity,
-                    height: 48,
-                    child: OutlinedButton(
-                      onPressed: _declineLevelUp,
-                      style: OutlinedButton.styleFrom(
-                        side: const BorderSide(color: Color(0xFFDDE0F0)),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                      ),
-                      child: const Text(
-                        '結束訓練',
-                        style: TextStyle(color: Color(0xFF374151), fontSize: 15, fontWeight: FontWeight.w600),
-                      ),
+                ),
+                const SizedBox(height: 10),
+                SizedBox(
+                  width: double.infinity,
+                  height: 48,
+                  child: OutlinedButton(
+                    onPressed: _declineLevelUp,
+                    style: OutlinedButton.styleFrom(
+                      side: const BorderSide(color: Color(0xFFDDE0F0)),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                    ),
+                    child: const Text(
+                      '結束訓練',
+                      style: TextStyle(color: Color(0xFF374151), fontSize: 15, fontWeight: FontWeight.w600),
                     ),
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
           ),
         ),

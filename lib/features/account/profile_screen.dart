@@ -1,23 +1,9 @@
 // lib/features/account/profile_screen.dart
-//
-// 個人資料頁 — 底部導覽「個人」tab 對應頁面
-// 樣式比照 home_screen.dart 的色票與元件寫法
-// 目前不含綁定治療師流程，之後要接時在「帳號尚未綁定」卡片的 onTap 接
-// features/account/bind_therapist_screen.dart 即可
-//
-// 更新內容:
-// 1. 右上角鉛筆按鈕可編輯姓名 / 帳號(電話),用 showDialog 跳出輸入框
-// 2. 「登出」項目改為導向 login_screen.dart,輸入電子郵件與密碼登入
-//    登入成功後會把 email 帶回來更新畫面顯示
-//
-// 注意:目前姓名/帳號/登入狀態都只存在記憶體中，app 關掉重開就會消失。
-// 之後要做到「重開 app 仍記得帳號」，需要搭配本地儲存(例如 shared_preferences)
-// 或串接後端 API 來持久化這些資料。
-
 import 'package:flutter/material.dart';
 
 import '../../services/history_service.dart';
-import 'login_screen.dart';
+import 'app_session.dart';
+import 'role_select_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -27,23 +13,24 @@ class ProfileScreen extends StatefulWidget {
 }
 
 class _ProfileScreenState extends State<ProfileScreen> {
-  // 樣式跟首頁共用同一份 HistoryService,資料才會跟首頁「今日準確度」連動
   final HistoryService _historyService = HistoryService();
 
   String _userName = '使用者';
   String _userPhone = '尚未設定';
-  String? _userEmail; // 登入後才會有值
+  String? _userEmail;
   int _totalDays = 0;
   String _avgAccuracy = '-- %';
 
   @override
   void initState() {
     super.initState();
+    if (AppSession.name != null && AppSession.name!.isNotEmpty) {
+      _userName = AppSession.name!;
+    }
+    _userEmail = AppSession.email;
     _loadStats();
   }
 
-  // 累積訓練天數:歷史紀錄裡出現過的不重複日期數
-  // 平均準確度:所有紀錄的平均(不只今天),公式跟首頁「今日準確度」同一套換算
   Future<void> _loadStats() async {
     final records = await _historyService.getHistory();
     if (!mounted) return;
@@ -76,7 +63,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  // 跳出對話框讓使用者輸入姓名 / 帳號(電話)
   void _editProfile() {
     final nameController = TextEditingController(text: _userName);
     final phoneController = TextEditingController(
@@ -134,6 +120,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       ? '尚未設定'
                       : phoneController.text.trim();
                 });
+                AppSession.name = _userName;
                 Navigator.pop(dialogContext);
               },
               child: const Text('儲存'),
@@ -144,41 +131,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  // 導向登入畫面(輸入電子郵件與密碼)
-  // 登入成功後會回傳後端給的使用者資料(name, email),更新畫面上的顯示狀態
-  Future<void> _goToLogin() async {
-    final result = await Navigator.push<Map<String, String>>(
-      context,
-      MaterialPageRoute(builder: (_) => const LoginScreen()),
-    );
-
-    if (result != null && result['email'] != null) {
-      if (!mounted) return;
-      setState(() {
-        _userEmail = result['email'];
-        // 後端有回傳姓名的話就順便更新姓名顯示
-        if (result['name'] != null && result['name']!.isNotEmpty) {
-          _userName = result['name']!;
-        }
-      });
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('已登入:${_userEmail!}'),
-          duration: const Duration(seconds: 2),
-          behavior: SnackBarBehavior.floating,
-          backgroundColor: const Color(0xFF1A1D2E),
-        ),
-      );
-    }
-  }
-
   void _handleLogout() {
-    if (_userEmail == null) {
-      // 尚未登入,直接導向登入畫面
-      _goToLogin();
-      return;
-    }
-    // 已登入的情況,詢問是否登出
     showDialog(
       context: context,
       builder: (dialogContext) {
@@ -198,8 +151,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 foregroundColor: const Color(0xFFE24B4A),
               ),
               onPressed: () {
-                setState(() => _userEmail = null);
                 Navigator.pop(dialogContext);
+                AppSession.clear();
+                Navigator.of(context).pushAndRemoveUntil(
+                  MaterialPageRoute(
+                      builder: (_) => const RoleSelectScreen()),
+                  (route) => false,
+                );
               },
               child: const Text('登出'),
             ),
@@ -389,8 +347,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
         ],
       ),
     );
-    // TODO: 之後要接綁定流程時，外面包一層 GestureDetector，
-    // onTap 導到 features/account/bind_therapist_screen.dart
   }
 
   Widget _buildSettingsList() {
@@ -434,7 +390,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
           _buildDivider(),
           _buildSettingsItem(
             icon: Icons.logout,
-            label: _userEmail == null ? '登入' : '登出',
+            label: '登出',
             labelColor: const Color(0xFFE24B4A),
             iconColor: const Color(0xFFE24B4A),
             onTap: _handleLogout,

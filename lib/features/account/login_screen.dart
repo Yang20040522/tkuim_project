@@ -1,16 +1,15 @@
 // lib/features/account/login_screen.dart
-//
-// 登入畫面 — 輸入電子郵件與密碼
-// 已串接後端登入 API(見 auth_service.dart)
-// 後端網址目前是佔位狀態,尚未部署到雲端前無法連線,
-// 請見 auth_service.dart 最上方註解說明如何設定網址
-
 import 'package:flutter/material.dart';
 
+import 'app_session.dart';
 import 'auth_service.dart';
+import 'home_router.dart';
+import 'user_role.dart';
 
 class LoginScreen extends StatefulWidget {
-  const LoginScreen({super.key});
+  final UserRole role;
+
+  const LoginScreen({super.key, required this.role});
 
   @override
   State<LoginScreen> createState() => _LoginScreenState();
@@ -67,18 +66,24 @@ class _LoginScreenState extends State<LoginScreen> {
       setState(() => _isLoading = false);
 
       if (result.success) {
-        // 登入成功後回傳使用者資料給呼叫端(profile_screen 用來更新畫面顯示)
-        Navigator.pop(context, {
-          'userId': result.userId ?? '',
-          'name': result.name ?? '',
-          'email': result.email ?? _emailController.text.trim(),
-        });
+        AppSession.save(
+          role: widget.role,
+          userId: result.userId ?? '',
+          name: result.name ?? '',
+          email: result.email ?? _emailController.text.trim(),
+        );
+
+        // 後端加了 role 之後,可在這裡核對「選的身分 = 帳號實際身分」
+
+        Navigator.pushAndRemoveUntil(
+          context,
+          MaterialPageRoute(builder: (_) => homeForRole(widget.role)),
+          (route) => false,
+        );
       } else {
-        // 帳密錯誤等後端回傳的訊息(例如「帳號不存在」、「密碼錯誤」)
         _showError(result.message ?? '登入失敗,請再試一次');
       }
     } catch (e) {
-      // 連不到伺服器、逾時、網址設定錯誤等連線層級的問題
       if (!mounted) return;
       setState(() => _isLoading = false);
       _showError('無法連線到伺服器,請確認網路狀態或稍後再試');
@@ -125,9 +130,12 @@ class _LoginScreenState extends State<LoginScreen> {
                   ),
                 ),
                 const SizedBox(height: 8),
-                const Text(
-                  '輸入電子郵件與密碼以登入你的帳號',
-                  style: TextStyle(color: Color(0xFF9CA3AF), fontSize: 13),
+                Text(
+                  '以${widget.role.label}身分登入',
+                  style: const TextStyle(
+                    color: Color(0xFF9CA3AF),
+                    fontSize: 13,
+                  ),
                 ),
                 const SizedBox(height: 32),
                 _buildLabel('電子郵件'),
