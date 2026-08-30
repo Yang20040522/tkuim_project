@@ -7,7 +7,7 @@
 // ✅ 修改:選擇難度等級 / 目標次數 / 開始訓練 / 查看訓練紀錄 改為固定在畫面底部(已縮小留白)
 
 import 'package:flutter/material.dart';
-
+import 'dart:async'; // 🖥️ 電視投放新增
 import '../../models/training_action.dart';
 import '../rehab/training_screen.dart';
 import '../body_test/body_test_screen.dart';
@@ -24,6 +24,11 @@ import '../../actions/lateral_step_action.dart';
 import '../../actions/body_rehab_action.dart';
 
 import 'training_preview_screen.dart';
+
+// 🖥️ 電視投放新增
+import '../tv_cast/socket_client_service.dart';
+import '../tv_cast/socket_server_service.dart';
+import '../tv_cast/remote_controller_screen.dart';
 
 // 手部動作清單
 final _handActions = [
@@ -45,25 +50,33 @@ final _bodyActions = [
 ];
 
 class ActionListScreen extends StatefulWidget {
-  const ActionListScreen({super.key});
+  final bool isDisplay; // 🖥️ 電視投放新增
+  const ActionListScreen({super.key, this.isDisplay = false});
 
   @override
   State<ActionListScreen> createState() => _ActionListScreenState();
 }
 
-class _ActionListScreenState extends State<ActionListScreen> with TickerProviderStateMixin {
+class _ActionListScreenState extends State<ActionListScreen>
+    with TickerProviderStateMixin {
   TrainingAction? _selectedAction;
   DifficultyOption? _selectedDifficulty;
 
   bool _handExpanded = false;
   bool _bodyExpanded = false;
 
+  // 🖥️ 電視投放新增
+  final _clientService = SocketClientService();
+
   // ── 新增:目標次數輸入框控制器 ──
-  final TextEditingController _repsController = TextEditingController(text: '10');
-  bool _autoLevelUp = true;   // 🆕 true=自動升級難度, false=達標後跳出詢問
+  final TextEditingController _repsController =
+      TextEditingController(text: '10');
+  bool _autoLevelUp = true; // 🆕 true=自動升級難度, false=達標後跳出詢問
 
   late AnimationController _fadeCtrl;
   late Animation<double> _fadeAnim;
+
+  StreamSubscription? _socketSub; // 🖥️ 電視投放新增
 
   @override
   void initState() {
@@ -73,17 +86,98 @@ class _ActionListScreenState extends State<ActionListScreen> with TickerProvider
       duration: const Duration(milliseconds: 600),
     )..forward();
     _fadeAnim = CurvedAnimation(parent: _fadeCtrl, curve: Curves.easeOut);
+
+    // 🖥️ 電視投放新增:監聽同步指令
+    final clientService = SocketClientService();
+    final serverService = SocketServerService();
+    if (clientService.isConnected) {
+      _socketSub = clientService.messages.listen(_handleSyncMessage);
+    } else if (serverService.isClientConnected) {
+      _socketSub = serverService.messages.listen(_handleSyncMessage);
+    }
+
+    _repsController.addListener(_onRepsChanged);
+  }
+
+  void _onRepsChanged() {
+    _broadcastSync();
+  }
+
+  void _handleSyncMessage(Map<String, dynamic> msg) {
+    if (!widget.isDisplay || !mounted) return;
+    if (msg['type'] != 'ACTION_LIST_SYNC') return;
+
+    setState(() {
+      final actionType = msg['selectedActionType'];
+      if (actionType != null) {
+        _selectedAction = kTrainingActions.firstWhere(
+          (a) => a.type.name == actionType,
+          orElse: () => kTrainingActions.first,
+        );
+      } else {
+        _selectedAction = null;
+      }
+
+      final levelName = msg['selectedDifficultyLevel'];
+      if (_selectedAction != null && levelName != null) {
+        _selectedDifficulty = _selectedAction!.difficulties.firstWhere(
+          (d) => d.level.name == levelName,
+          orElse: () => _selectedAction!.difficulties.first,
+        );
+      } else {
+        _selectedDifficulty = null;
+      }
+
+      _handExpanded = msg['handExpanded'] ?? _handExpanded;
+      _bodyExpanded = msg['bodyExpanded'] ?? _bodyExpanded;
+      _autoLevelUp = msg['autoLevelUp'] ?? _autoLevelUp;
+
+      final reps = msg['reps'];
+      if (reps != null && reps != _repsController.text) {
+        _repsController.text = reps;
+      }
+    });
+  }
+
+  void _broadcastSync() {
+    if (widget.isDisplay) return;
+
+    final msg = {
+      'type': 'ACTION_LIST_SYNC',
+      'selectedActionType': _selectedAction?.type.name,
+      'selectedDifficultyLevel': _selectedDifficulty?.level.name,
+      'handExpanded': _handExpanded,
+      'bodyExpanded': _bodyExpanded,
+      'autoLevelUp': _autoLevelUp,
+      'reps': _repsController.text,
+    };
+
+    if (_clientService.isConnected) {
+      _clientService.sendCommand(msg);
+    } else {
+      final serverService = SocketServerService();
+      if (serverService.isClientConnected) {
+        serverService.sendMessage(msg);
+      }
+    }
   }
 
   @override
   void dispose() {
     _fadeCtrl.dispose();
-    _repsController.dispose();   // ← 新增
+    _repsController.removeListener(_onRepsChanged);
+    _repsController.dispose(); // ← 新增
+    _socketSub?.cancel();
     super.dispose();
   }
 
   void _selectAction(TrainingAction action) {
     if (action.type == ActionType.bodyTest) {
+      // 🖥️ 電視投放新增:同步跳轉指令
+      if (_clientService.isConnected) {
+        _clientService
+            .sendCommand({'type': 'OPEN_SCREEN', 'screen': 'BODY_TEST'});
+      }
       Navigator.of(context).push(PageRouteBuilder(
         pageBuilder: (_, anim, __) => const BodyTestScreen(),
         transitionsBuilder: (_, anim, __, child) =>
@@ -100,9 +194,10 @@ class _ActionListScreenState extends State<ActionListScreen> with TickerProvider
       } else {
         _selectedAction = action;
         _selectedDifficulty = action.difficulties.first;
-        _repsController.text = '${_selectedDifficulty!.targetReps}';   // ← 新增
+        _repsController.text = '${_selectedDifficulty!.targetReps}'; // ← 新增
       }
     });
+    _broadcastSync();
   }
 
   void _startTraining({TrainingAction? action, DifficultyOption? difficulty}) {
@@ -113,6 +208,18 @@ class _ActionListScreenState extends State<ActionListScreen> with TickerProvider
     final customReps = int.tryParse(_repsController.text);
     if (customReps != null && customReps > 0) {
       diff = diff.copyWithReps(customReps);
+    }
+
+    // 🖥️ 電視投放新增:偵測是否連線中
+    if (_clientService.isConnected && _isBodyAction(act.type)) {
+      Navigator.of(context).push(MaterialPageRoute(
+        builder: (_) => RemoteControllerScreen(
+          action: act,
+          difficulty: diff!,
+          rehabAction: _createBodyRehabAction(act, diff),
+        ),
+      ));
+      return;
     }
 
     Widget screen;
@@ -200,9 +307,9 @@ class _ActionListScreenState extends State<ActionListScreen> with TickerProvider
             actionType: act.type,
             actionName: act.name,
             targetScreen: screen,
-            difficultyLabel: diff.label,     // ← 新增
-            targetReps: diff.targetReps,     // ← 新增
-            description: act.description,     // ← 新增
+            difficultyLabel: diff.label, // ← 新增
+            targetReps: diff.targetReps, // ← 新增
+            description: act.description, // ← 新增
           )
         : screen;
 
@@ -216,86 +323,99 @@ class _ActionListScreenState extends State<ActionListScreen> with TickerProvider
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: const Color(0xFFFFFFFF),
-      body: FadeTransition(
-        opacity: _fadeAnim,
-        child: SafeArea(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              _buildHeader(),
+    return PopScope(
+        canPop: true,
+        onPopInvokedWithResult: (didPop, result) {
+          if (didPop && _clientService.isConnected) {
+            _clientService.sendCommand({'type': 'POP_SCREEN'});
+          }
+        },
+        child: Scaffold(
+          backgroundColor: const Color(0xFFFFFFFF),
+          body: FadeTransition(
+            opacity: _fadeAnim,
+            child: SafeArea(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _buildHeader(),
 
-              // ── 可捲動區:動作選單 ─────────────────────────
-              Expanded(
-                child: SingleChildScrollView(
-                  padding: const EdgeInsets.symmetric(horizontal: 20),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const SizedBox(height: 8),
+                  // ── 可捲動區:動作選單 ─────────────────────────
+                  Expanded(
+                    child: SingleChildScrollView(
+                      padding: const EdgeInsets.symmetric(horizontal: 20),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const SizedBox(height: 8),
 
-                      // ── 手部復健選單 ────────────────────────────────
-                      _buildAccordion(
-                        title: '手部復健',
-                        icon: '🖐️',
-                        subtitle: '翻掌 · 側捏 · 翹手腕 · 左右彎手腕',
-                        isExpanded: _handExpanded,
-                        onToggle: () => setState(() {
-                          _handExpanded = !_handExpanded;
-                          if (_handExpanded && _selectedAction != null &&
-                              _bodyActions.contains(_selectedAction!.type)) {
-                            _selectedAction = null;
-                            _selectedDifficulty = null;
-                          }
-                        }),
-                        child: Column(
-                          children: kTrainingActions
-                              .where((a) => _handActions.contains(a.type))
-                              .map(_buildActionCard)
-                              .toList(),
-                        ),
+                          // ── 手部復健選單 ────────────────────────────────
+                          _buildAccordion(
+                            title: '手部復健',
+                            icon: '🖐️',
+                            subtitle: '翻掌 · 側捏 · 翹手腕 · 左右彎手腕',
+                            isExpanded: _handExpanded,
+                            onToggle: () => setState(() {
+                              _handExpanded = !_handExpanded;
+                              if (_handExpanded &&
+                                  _selectedAction != null &&
+                                  _bodyActions
+                                      .contains(_selectedAction!.type)) {
+                                _selectedAction = null;
+                                _selectedDifficulty = null;
+                              }
+                              _broadcastSync();
+                            }),
+                            child: Column(
+                              children: kTrainingActions
+                                  .where((a) => _handActions.contains(a.type))
+                                  .map(_buildActionCard)
+                                  .toList(),
+                            ),
+                          ),
+                          const SizedBox(height: 10),
+
+                          // ── 全身復健選單 ────────────────────────────────
+                          _buildAccordion(
+                            title: '全身復健',
+                            icon: '🦴',
+                            subtitle: '抬腳 · 畫圓 · 舉高 · 雙手抬舉 · 手肘前伸 · 坐站 · 骨架偵測',
+                            isExpanded: _bodyExpanded,
+                            onToggle: () => setState(() {
+                              _bodyExpanded = !_bodyExpanded;
+                              if (_bodyExpanded &&
+                                  _selectedAction != null &&
+                                  _handActions
+                                      .contains(_selectedAction!.type)) {
+                                _selectedAction = null;
+                                _selectedDifficulty = null;
+                              }
+                              _broadcastSync();
+                            }),
+                            child: Column(
+                              children: [
+                                ...kTrainingActions
+                                    .where((a) =>
+                                        _bodyActions.contains(a.type) &&
+                                        a.type != ActionType.bodyTest)
+                                    .map(_buildActionCard),
+                                _buildBodyTestCard(),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(height: 20),
+                        ],
                       ),
-                      const SizedBox(height: 10),
-
-                      // ── 全身復健選單 ────────────────────────────────
-                      _buildAccordion(
-                        title: '全身復健',
-                        icon: '🦴',
-                        subtitle: '抬腳 · 畫圓 · 舉高 · 雙手抬舉 · 手肘前伸 · 坐站 · 骨架偵測',
-                        isExpanded: _bodyExpanded,
-                        onToggle: () => setState(() {
-                          _bodyExpanded = !_bodyExpanded;
-                          if (_bodyExpanded && _selectedAction != null &&
-                              _handActions.contains(_selectedAction!.type)) {
-                            _selectedAction = null;
-                            _selectedDifficulty = null;
-                          }
-                        }),
-                        child: Column(
-                          children: [
-                            ...kTrainingActions
-                                .where((a) =>
-                                    _bodyActions.contains(a.type) &&
-                                    a.type != ActionType.bodyTest)
-                                .map(_buildActionCard),
-                            _buildBodyTestCard(),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(height: 20),
-                    ],
+                    ),
                   ),
-                ),
-              ),
 
-              // ── 固定在底部的操作區 ─────────────────────────
-              _buildBottomBar(),
-            ],
+                  // ── 固定在底部的操作區 ─────────────────────────
+                  _buildBottomBar(),
+                ],
+              ),
+            ),
           ),
-        ),
-      ),
-    );
+        ));
   }
 
   // ── 固定底部操作區(難度 / 次數 / 開始訓練 / 查看紀錄) ──
@@ -377,8 +497,7 @@ class _ActionListScreenState extends State<ActionListScreen> with TickerProvider
                       borderRadius: BorderRadius.circular(12),
                     ),
                     child: Center(
-                      child: Text(icon,
-                          style: const TextStyle(fontSize: 20)),
+                      child: Text(icon, style: const TextStyle(fontSize: 20)),
                     ),
                   ),
                   const SizedBox(width: 12),
@@ -436,7 +555,14 @@ class _ActionListScreenState extends State<ActionListScreen> with TickerProvider
       child: Row(
         children: [
           GestureDetector(
-            onTap: () => Navigator.of(context).pop(),
+            onTap: () {
+              // 🖥️ 電視投放新增:同步返回指令
+              final msg = {'type': 'POP_SCREEN'};
+              if (_clientService.isConnected) {
+                _clientService.sendCommand(msg);
+              }
+              Navigator.of(context).pop();
+            },
             child: Container(
               width: 40,
               height: 40,
@@ -496,14 +622,11 @@ class _ActionListScreenState extends State<ActionListScreen> with TickerProvider
         margin: const EdgeInsets.only(bottom: 8),
         padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
-          color: isSelected
-              ? const Color(0xFFEAEEFF)
-              : const Color(0xFFF5F6FA),
+          color: isSelected ? const Color(0xFFEAEEFF) : const Color(0xFFF5F6FA),
           borderRadius: BorderRadius.circular(14),
           border: Border.all(
-            color: isSelected
-                ? const Color(0xFF4A65FF)
-                : const Color(0xFFDDE0F0),
+            color:
+                isSelected ? const Color(0xFF4A65FF) : const Color(0xFFDDE0F0),
             width: isSelected ? 2 : 1,
           ),
           boxShadow: isSelected
@@ -528,8 +651,7 @@ class _ActionListScreenState extends State<ActionListScreen> with TickerProvider
                 borderRadius: BorderRadius.circular(12),
               ),
               child: Center(
-                child: Text(action.emoji,
-                    style: const TextStyle(fontSize: 22)),
+                child: Text(action.emoji, style: const TextStyle(fontSize: 22)),
               ),
             ),
             const SizedBox(width: 12),
@@ -550,8 +672,8 @@ class _ActionListScreenState extends State<ActionListScreen> with TickerProvider
                   const SizedBox(height: 2),
                   Text(
                     action.description,
-                    style: const TextStyle(
-                        color: Color(0xFF6B7280), fontSize: 11),
+                    style:
+                        const TextStyle(color: Color(0xFF6B7280), fontSize: 11),
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                   ),
@@ -649,13 +771,13 @@ class _ActionListScreenState extends State<ActionListScreen> with TickerProvider
           child: GestureDetector(
             onTap: () => setState(() {
               _selectedDifficulty = diff;
-              _repsController.text = '${diff.targetReps}';   // ← 新增
+              _repsController.text = '${diff.targetReps}'; // ← 新增
+              _broadcastSync();
             }),
             child: AnimatedContainer(
               duration: const Duration(milliseconds: 150),
               margin: const EdgeInsets.only(right: 8),
-              padding:
-                  const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
+              padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
               decoration: BoxDecoration(
                 color: isSelected
                     ? const Color(0xFF4A65FF)
@@ -672,9 +794,8 @@ class _ActionListScreenState extends State<ActionListScreen> with TickerProvider
                   Text(
                     diff.label,
                     style: TextStyle(
-                      color: isSelected
-                          ? Colors.white
-                          : const Color(0xFF374151),
+                      color:
+                          isSelected ? Colors.white : const Color(0xFF374151),
                       fontWeight: FontWeight.w700,
                       fontSize: 13,
                     ),
@@ -746,13 +867,17 @@ class _ActionListScreenState extends State<ActionListScreen> with TickerProvider
             ),
           ),
           const SizedBox(width: 4),
-          const Text('下', style: TextStyle(color: Color(0xFF6B7280), fontSize: 13)),
+          const Text('下',
+              style: TextStyle(color: Color(0xFF6B7280), fontSize: 13)),
 
           const Spacer(), // 🆕 把開關推到最右邊
 
           // 🆕 升級模式開關
           GestureDetector(
-            onTap: () => setState(() => _autoLevelUp = !_autoLevelUp),
+            onTap: () => setState(() {
+              _autoLevelUp = !_autoLevelUp;
+              _broadcastSync();
+            }),
             child: AnimatedContainer(
               duration: const Duration(milliseconds: 150),
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
@@ -853,9 +978,16 @@ class _ActionListScreenState extends State<ActionListScreen> with TickerProvider
 
   Widget _buildHistoryButton() {
     return GestureDetector(
-      onTap: () => Navigator.of(context).push(
-        MaterialPageRoute(builder: (_) => const HistoryScreen()),
-      ),
+      onTap: () {
+        // 🖥️ 電視投放新增:同步跳轉指令
+        if (_clientService.isConnected) {
+          _clientService
+              .sendCommand({'type': 'OPEN_SCREEN', 'screen': 'HISTORY'});
+        }
+        Navigator.of(context).push(
+          MaterialPageRoute(builder: (_) => const HistoryScreen()),
+        );
+      },
       child: Container(
         width: double.infinity,
         height: 54,
@@ -895,6 +1027,42 @@ class _ActionListScreenState extends State<ActionListScreen> with TickerProvider
         return RehabDifficulty.hard;
     }
   }
+
+  // 🖥️ 下列為電視投放所需的輔助方法
+  bool _isBodyAction(ActionType type) {
+    return type == ActionType.wipeBody ||
+        type == ActionType.drawCircle ||
+        type == ActionType.reach ||
+        type == ActionType.raiseBothArms ||
+        type == ActionType.elbowForward ||
+        type == ActionType.sitToStand ||
+        type == ActionType.lateralStep;
+  }
+
+  BodyRehabAction _createBodyRehabAction(
+      TrainingAction act, DifficultyOption diff) {
+    final d = _mapDifficulty(diff.level);
+    switch (act.type) {
+      case ActionType.wipeBody:
+        return StandingKneeRaiseAction(
+            difficulty: d, targetCount: diff.targetReps);
+      case ActionType.drawCircle:
+        return DrawCircleAction(difficulty: d, targetCount: diff.targetReps);
+      case ActionType.reach:
+        return ReachAction(difficulty: d, targetCount: diff.targetReps);
+      case ActionType.raiseBothArms:
+        return RaiseBothArmsAction(difficulty: d, targetCount: diff.targetReps);
+      case ActionType.elbowForward:
+        return ElbowForwardAction(difficulty: d, targetCount: diff.targetReps);
+      case ActionType.sitToStand:
+        return SitToStandAction(difficulty: d, targetCount: diff.targetReps);
+      case ActionType.lateralStep:
+        return LateralStepAction(difficulty: d, targetCount: diff.targetReps);
+      default:
+        return StandingKneeRaiseAction(
+            difficulty: d, targetCount: diff.targetReps);
+    }
+  }
 }
 
 class _BetaBadge extends StatelessWidget {
@@ -907,8 +1075,8 @@ class _BetaBadge extends StatelessWidget {
       decoration: BoxDecoration(
         color: const Color(0xFF00BCD4).withValues(alpha: 0.15),
         borderRadius: BorderRadius.circular(6),
-        border:
-            Border.all(color: const Color(0xFF00BCD4).withValues(alpha: 0.4), width: 1),
+        border: Border.all(
+            color: const Color(0xFF00BCD4).withValues(alpha: 0.4), width: 1),
       ),
       child: const Text(
         'Beta',

@@ -7,6 +7,8 @@ import '../analysis/video_analysis_service.dart';
 
 import '../analysis/hand_analysis_service.dart';
 import '../analysis/hand_comparison_report_screen.dart';
+// 🖥️ 電視投放新增
+import '../tv_cast/socket_client_service.dart';
 
 // ── 分類定義（與 action_list_screen.dart 保持一致）──
 //
@@ -43,8 +45,8 @@ enum _DateFilter { all, today, week, month }
 //
 // 如果未來又有動作改名，把「舊名稱: ActionType」加進這裡就好。
 const Map<String, ActionType> _legacyActionNameAliases = {
-  '交扣手肘前伸式': ActionType.elbowForward,   // 手肘屈伸訓練 改名前
-  '功能性擦拭訓練': ActionType.wipeBody,        // 站姿抬腳式訓練 改名前
+  '交扣手肘前伸式': ActionType.elbowForward, // 手肘屈伸訓練 改名前
+  '功能性擦拭訓練': ActionType.wipeBody, // 站姿抬腳式訓練 改名前
 };
 
 class HistoryScreen extends StatefulWidget {
@@ -56,6 +58,7 @@ class HistoryScreen extends StatefulWidget {
 
 class _HistoryScreenState extends State<HistoryScreen> {
   final HistoryService _historyService = HistoryService();
+  final _clientService = SocketClientService(); // 🖥️ 電視投放新增
   List<TrainingRecord> _allRecords = [];
   bool _isLoading = true;
 
@@ -121,7 +124,9 @@ class _HistoryScreenState extends State<HistoryScreen> {
     final now = DateTime.now();
     switch (_dateFilter) {
       case _DateFilter.today:
-        return dt.year == now.year && dt.month == now.month && dt.day == now.day;
+        return dt.year == now.year &&
+            dt.month == now.month &&
+            dt.day == now.day;
       case _DateFilter.week:
         final startOfWeek = now.subtract(Duration(days: now.weekday - 1));
         final startOfWeekDay =
@@ -154,8 +159,8 @@ class _HistoryScreenState extends State<HistoryScreen> {
       return typesForCategory.contains(type);
     }).map((r) => r.actionName);
 
-    final names = <String>{...allPossibleNames, ...legacyNamesInCategory}
-        .toList();
+    final names =
+        <String>{...allPossibleNames, ...legacyNamesInCategory}.toList();
     names.sort();
     return ['全部', ...names];
   }
@@ -185,29 +190,36 @@ class _HistoryScreenState extends State<HistoryScreen> {
   Widget build(BuildContext context) {
     final filtered = _filteredRecords;
 
-
-    return Scaffold(
-      backgroundColor: const Color(0xFFFFFFFF),
-      body: SafeArea(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _buildHeader(),
-            if (!_isLoading && _allRecords.isNotEmpty) ...[
-              _buildFilterDropdownRow(),
-              const SizedBox(height: 10),
-              _buildDateFilterRow(),
-              const SizedBox(height: 8),
+    return PopScope(
+      canPop: true,
+      onPopInvokedWithResult: (didPop, result) {
+        if (didPop && _clientService.isConnected) {
+          _clientService.sendCommand({'type': 'POP_SCREEN'});
+        }
+      },
+      child: Scaffold(
+        backgroundColor: const Color(0xFFFFFFFF),
+        body: SafeArea(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _buildHeader(),
+              if (!_isLoading && _allRecords.isNotEmpty) ...[
+                _buildFilterDropdownRow(),
+                const SizedBox(height: 10),
+                _buildDateFilterRow(),
+                const SizedBox(height: 8),
+              ],
+              if (!_isLoading && filtered.isNotEmpty) ...[
+                _buildChart(filtered),
+                const SizedBox(height: 8),
+              ],
+              _buildListHeader(filtered.length),
+              Expanded(
+                child: _isLoading ? _buildLoading() : _buildList(filtered),
+              ),
             ],
-            if (!_isLoading && filtered.isNotEmpty) ...[
-              _buildChart(filtered),
-              const SizedBox(height: 8),
-            ],
-            _buildListHeader(filtered.length),
-            Expanded(
-              child: _isLoading ? _buildLoading() : _buildList(filtered),
-            ),
-          ],
+          ),
         ),
       ),
     );
@@ -219,7 +231,13 @@ class _HistoryScreenState extends State<HistoryScreen> {
       child: Row(
         children: [
           GestureDetector(
-            onTap: () => Navigator.of(context).pop(),
+            onTap: () {
+              // 🖥️ 電視投放新增:同步返回指令
+              if (_clientService.isConnected) {
+                _clientService.sendCommand({'type': 'POP_SCREEN'});
+              }
+              Navigator.of(context).pop();
+            },
             child: Container(
               width: 40,
               height: 40,
@@ -441,9 +459,8 @@ class _HistoryScreenState extends State<HistoryScreen> {
           //final perfect = (10 - e.value.mistakeLogs.length).clamp(0, 10);
           final total = e.value.targetReps;
           final perfect = (total - e.value.mistakeLogs.length).clamp(0, total);
-          final x = records.length == 1
-              ? w / 2
-              : e.key / (records.length - 1) * w;
+          final x =
+              records.length == 1 ? w / 2 : e.key / (records.length - 1) * w;
           //final y = h - (perfect / 10) * h;
           final y = h - (perfect / total) * h;
           return Offset(x, y);
@@ -472,8 +489,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
           ),
           const SizedBox(width: 8),
           Container(
-            padding:
-                const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
             decoration: BoxDecoration(
               color: const Color(0xFF4A65FF).withOpacity(0.2),
               borderRadius: BorderRadius.circular(8),
@@ -494,8 +510,8 @@ class _HistoryScreenState extends State<HistoryScreen> {
 
   Widget _buildLoading() {
     return const Center(
-      child: CircularProgressIndicator(
-          color: Color(0xFF4A65FF), strokeWidth: 2),
+      child:
+          CircularProgressIndicator(color: Color(0xFF4A65FF), strokeWidth: 2),
     );
   }
 
@@ -581,8 +597,8 @@ class _HistoryScreenState extends State<HistoryScreen> {
               color: const Color(0xFFFF4B4B),
               borderRadius: BorderRadius.circular(16),
             ),
-            child: const Icon(Icons.delete_outline,
-                color: Colors.white, size: 22),
+            child:
+                const Icon(Icons.delete_outline, color: Colors.white, size: 22),
           ),
           onDismissed: (_) async {
             await _historyService.removeByTimestamp(record.timestamp);
@@ -605,7 +621,8 @@ class _HistoryScreenState extends State<HistoryScreen> {
 
   Widget _buildRecordCard(TrainingRecord record) {
     //final perfect = 10 - record.mistakeLogs.length;
-    final perfect = (record.targetReps - record.mistakeLogs.length).clamp(0, record.targetReps);
+    final perfect = (record.targetReps - record.mistakeLogs.length)
+        .clamp(0, record.targetReps);
     final minutes = record.durationSeconds ~/ 60;
     final seconds = record.durationSeconds % 60;
     final hasMistakes = record.mistakeLogs.isNotEmpty;
@@ -686,7 +703,8 @@ class _HistoryScreenState extends State<HistoryScreen> {
                   Text(
                     //'$perfect / 10',
                     '$perfect / ${record.targetReps}',
-                    style: const TextStyle(color: Color(0xFF9CA3AF), fontSize: 11),
+                    style:
+                        const TextStyle(color: Color(0xFF9CA3AF), fontSize: 11),
                   ),
                 ],
               ),
@@ -707,7 +725,8 @@ class _HistoryScreenState extends State<HistoryScreen> {
                       ),
                     )),
                     child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 8),
                       decoration: BoxDecoration(
                         color: const Color(0xFF4A65FF).withOpacity(0.1),
                         borderRadius: BorderRadius.circular(10),
@@ -740,7 +759,8 @@ class _HistoryScreenState extends State<HistoryScreen> {
                     onTap: () => _analyzeRecording(
                         context, record.videoPath!, record.actionName),
                     child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 8),
                       decoration: BoxDecoration(
                         color: const Color(0xFF4CAF50).withOpacity(0.1),
                         borderRadius: BorderRadius.circular(10),
@@ -780,7 +800,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
   // ═══════════════════════════════════════════════════════════════
 
   Future<void> _analyzeRecording(
-    BuildContext context, String videoPath, String actionName) async {
+      BuildContext context, String videoPath, String actionName) async {
     // 1. 讀取所有模板
     final templates = await VideoAnalysisService.loadAllTemplates();
 
@@ -846,8 +866,8 @@ class _HistoryScreenState extends State<HistoryScreen> {
                   style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800)),
               const SizedBox(height: 12),
               ...templates.take(10).map((t) => ListTile(
-                    leading: const Icon(Icons.folder_open,
-                        color: Color(0xFF4A65FF)),
+                    leading:
+                        const Icon(Icons.folder_open, color: Color(0xFF4A65FF)),
                     title: Text(t['templateName'] ?? '未命名'),
                     subtitle: Text('動作類型:${t['actionType'] ?? '未知'}'),
                     onTap: () => Navigator.pop(ctx, t),
@@ -869,22 +889,22 @@ class _HistoryScreenState extends State<HistoryScreen> {
       barrierDismissible: false,
       builder: (dialogCtx) {
         return WillPopScope(
-          onWillPop: () async => false,   // 禁用返回鍵
+          onWillPop: () async => false, // 禁用返回鍵
           child: Dialog(
-            shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(16)),
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
             child: Padding(
               padding: const EdgeInsets.all(24),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   const Text('分析中...',
-                      style: TextStyle(
-                          fontSize: 16, fontWeight: FontWeight.w800)),
+                      style:
+                          TextStyle(fontSize: 16, fontWeight: FontWeight.w800)),
                   const SizedBox(height: 8),
                   Text('請稍候,可隨時取消',
-                      style: TextStyle(
-                          color: Colors.grey.shade600, fontSize: 12)),
+                      style:
+                          TextStyle(color: Colors.grey.shade600, fontSize: 12)),
                   const SizedBox(height: 20),
                   // 進度條 + 百分比
                   ValueListenableBuilder<double>(
@@ -961,7 +981,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
           return;
         }
 
-        Navigator.of(context).pop();   // 關閉 loading dialog
+        Navigator.of(context).pop(); // 關閉 loading dialog
         progressNotifier.dispose();
 
         if (handResult == null) {
@@ -1031,25 +1051,21 @@ class _HistoryScreenState extends State<HistoryScreen> {
       context: context,
       builder: (_) => AlertDialog(
         backgroundColor: const Color(0xFFF5F6FA),
-        shape:
-            RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Text('清除所有紀錄',
-            style: TextStyle(color: Color(0xFF1A1D2E))),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Text('清除所有紀錄', style: TextStyle(color: Color(0xFF1A1D2E))),
         content: const Text('這個操作無法復原，確定要清除嗎？',
             style: TextStyle(color: Color(0xFF6B7280))),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(),
-            child: const Text('取消',
-                style: TextStyle(color: Color(0xFF6B7280))),
+            child: const Text('取消', style: TextStyle(color: Color(0xFF6B7280))),
           ),
           TextButton(
             onPressed: () {
               Navigator.of(context).pop();
               _clearHistory();
             },
-            child: const Text('清除',
-                style: TextStyle(color: Color(0xFFFF4B4B))),
+            child: const Text('清除', style: TextStyle(color: Color(0xFFFF4B4B))),
           ),
         ],
       ),
@@ -1080,10 +1096,9 @@ class _ChartPainter extends CustomPainter {
     if (points.length > 1) {
       final fillPath = Path()..moveTo(points.first.dx, points.first.dy);
       for (int i = 1; i < points.length; i++) {
-        final cp1 = Offset(
-            (points[i - 1].dx + points[i].dx) / 2, points[i - 1].dy);
-        final cp2 = Offset(
-            (points[i - 1].dx + points[i].dx) / 2, points[i].dy);
+        final cp1 =
+            Offset((points[i - 1].dx + points[i].dx) / 2, points[i - 1].dy);
+        final cp2 = Offset((points[i - 1].dx + points[i].dx) / 2, points[i].dy);
         fillPath.cubicTo(
             cp1.dx, cp1.dy, cp2.dx, cp2.dy, points[i].dx, points[i].dy);
       }
@@ -1105,10 +1120,9 @@ class _ChartPainter extends CustomPainter {
 
       final linePath = Path()..moveTo(points.first.dx, points.first.dy);
       for (int i = 1; i < points.length; i++) {
-        final cp1 = Offset(
-            (points[i - 1].dx + points[i].dx) / 2, points[i - 1].dy);
-        final cp2 = Offset(
-            (points[i - 1].dx + points[i].dx) / 2, points[i].dy);
+        final cp1 =
+            Offset((points[i - 1].dx + points[i].dx) / 2, points[i - 1].dy);
+        final cp2 = Offset((points[i - 1].dx + points[i].dx) / 2, points[i].dy);
         linePath.cubicTo(
             cp1.dx, cp1.dy, cp2.dx, cp2.dy, points[i].dx, points[i].dy);
       }
@@ -1123,7 +1137,11 @@ class _ChartPainter extends CustomPainter {
 
     for (final p in points) {
       canvas.drawCircle(
-          p, 6, Paint()..color = const Color(0xFFFF4B4B)..style = PaintingStyle.fill);
+          p,
+          6,
+          Paint()
+            ..color = const Color(0xFFFF4B4B)
+            ..style = PaintingStyle.fill);
       canvas.drawCircle(
           p,
           6,

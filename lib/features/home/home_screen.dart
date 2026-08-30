@@ -47,6 +47,12 @@ import '../../actions/body_rehab_action.dart';
 
 import '../account/app_session.dart';
 
+import '../chat/chat_screen.dart';
+import '../notification/notification_settings_screen.dart';   // ← 加這行
+
+import '../demo/bone_viewer_screen.dart';    // ← 加這行
+import '../body_test/body_test_screen.dart'; // ← 加這行
+
 
 // ═══════════════════════════════════════════════════════════
 //  外殼:管理底部 tab 切換,IndexedStack 讓導航列常駐不消失
@@ -85,6 +91,70 @@ class _HomeScreenState extends State<HomeScreen> {
     _clientSub = _clientService.messages.listen(_handleRemoteCommand);
   }
 
+  void _onTabTapped(int index) {
+    setState(() => _currentIndex = index);
+    final msg = {'type': 'NAVIGATE_TO_TAB', 'index': index};
+    if (_clientService.isConnected) {
+      _clientService.sendCommand(msg);
+    } else if (_serverService.isClientConnected) {
+      _serverService.sendMessage(msg);
+    }
+  }
+
+  void _openActionListSync() {
+    Navigator.of(context).push(MaterialPageRoute(
+      builder: (_) => const ActionListScreen(isDisplay: true),
+    ));
+  }
+
+  void _openHistorySync() {
+    Navigator.of(context).push(MaterialPageRoute(
+      builder: (_) => const HistoryScreen(),
+    ));
+  }
+
+  void _openDemoLibrarySync() {
+    Navigator.of(context).push(MaterialPageRoute(
+      builder: (_) => const DemoLibraryScreen(),
+    ));
+  }
+
+  void _openStandardAnalysisSync() {
+    Navigator.of(context).push(MaterialPageRoute(
+      builder: (_) => const StandardAnalysisScreen(),
+    ));
+  }
+
+  void _openNotificationSync() {
+    Navigator.of(context).push(MaterialPageRoute(
+      builder: (_) => const NotificationScreen(),
+    ));
+  }
+
+  void _openNotificationSettingsSync() {
+    Navigator.of(context).push(MaterialPageRoute(
+      builder: (_) => const NotificationSettingsScreen(),
+    ));
+  }
+
+  void _openChatAiSync() {
+    Navigator.of(context).push(MaterialPageRoute(
+      builder: (_) => const ChatScreen(isDisplay: true),
+    ));
+  }
+
+  void _openBoneViewerSync() {
+    Navigator.of(context).push(MaterialPageRoute(
+      builder: (_) => const BoneViewerScreen(),
+    ));
+  }
+
+  void _openBodyTestSync() {
+    Navigator.of(context).push(MaterialPageRoute(
+      builder: (_) => const BodyTestScreen(),
+    ));
+  }
+
   @override
   void dispose() {
     _serverSub?.cancel();
@@ -95,7 +165,47 @@ class _HomeScreenState extends State<HomeScreen> {
   // 🖥️ 電視端:收到 START_TRAINING → 開對應的顯示端訓練畫面
   void _handleRemoteCommand(Map<String, dynamic> msg) {
     if (!mounted) return;
-    if (msg['type'] != 'START_TRAINING') return;
+
+    final type = msg['type'];
+
+    if (type == 'NAVIGATE_TO_TAB') {
+      final index = msg['index'] as int?;
+      if (index != null && index >= 0 && index < _pages.length) {
+        setState(() => _currentIndex = index);
+      }
+      return;
+    }
+
+    if (type == 'OPEN_SCREEN') {
+      final screen = msg['screen'] as String?;
+      if (screen == 'ACTION_LIST') {
+        _openActionListSync();
+      } else if (screen == 'HISTORY') {
+        _openHistorySync();
+      } else if (screen == 'DEMO_LIBRARY') {
+        _openDemoLibrarySync();
+      } else if (screen == 'STANDARD_ANALYSIS') {
+        _openStandardAnalysisSync();
+      } else if (screen == 'NOTIFICATION') {
+        _openNotificationSync();
+      } else if (screen == 'NOTIFICATION_SETTINGS') {
+        _openNotificationSettingsSync();
+      } else if (screen == 'CHAT_AI') {
+        _openChatAiSync();
+      } else if (screen == 'BONE_VIEWER') {
+        _openBoneViewerSync();
+      } else if (screen == 'BODY_TEST') {
+        _openBodyTestSync();
+      }
+      return;
+    }
+
+    if (type == 'POP_SCREEN') {
+      Navigator.of(context).pop();
+      return;
+    }
+
+    if (type != 'START_TRAINING') return;
 
     final actionName = msg['actionName'] as String?;
     final levelName = msg['difficultyLevel'] as String?;
@@ -393,6 +503,7 @@ class _HomeContentState extends State<_HomeContent>
 
   // ─── 操作:跳「選動作清單」頁,回來後重整統計 ─────────
   void _openActionList() async {
+    _broadcastOpenScreen('ACTION_LIST');
     await Navigator.of(context).push(PageRouteBuilder(
       pageBuilder: (_, anim, __) => const ActionListScreen(),
       transitionsBuilder: (_, anim, __, child) =>
@@ -404,6 +515,7 @@ class _HomeContentState extends State<_HomeContent>
 
   // ─── 操作:跳歷史紀錄頁,回來後重整統計(可能清過紀錄)
   void _openHistory() async {
+    _broadcastOpenScreen('HISTORY');
     await Navigator.of(context).push(
       MaterialPageRoute(builder: (_) => const HistoryScreen()),
     );
@@ -412,6 +524,7 @@ class _HomeContentState extends State<_HomeContent>
 
   // ← 新增：跳動作示範庫
   void _openDemoLibrary() {
+    _broadcastOpenScreen('DEMO_LIBRARY'); 
     Navigator.of(context).push(
       MaterialPageRoute(builder: (_) => const DemoLibraryScreen()),
     );
@@ -419,9 +532,21 @@ class _HomeContentState extends State<_HomeContent>
 
   // ← 新增：跳動作標準分析
   void _openStandardAnalysis() {
+    _broadcastOpenScreen('STANDARD_ANALYSIS');
     Navigator.of(context).push(
       MaterialPageRoute(builder: (_) => const StandardAnalysisScreen()),
     );
+  }
+
+  void _broadcastOpenScreen(String screenName) {
+    final clientService = SocketClientService();
+    final serverService = SocketServerService();
+    final msg = {'type': 'OPEN_SCREEN', 'screen': screenName};
+    if (clientService.isConnected) {
+      clientService.sendCommand(msg);
+    } else if (serverService.isClientConnected) {
+      serverService.sendMessage(msg);
+    }
   }
 
   // 📺 投放到電視:底部彈窗,選這台當電視(顯示端)還是當手機(遙控端)

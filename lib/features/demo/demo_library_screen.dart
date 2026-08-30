@@ -1,8 +1,13 @@
 // lib/features/demo/demo_library_screen.dart
 
 import 'package:flutter/material.dart';
+import 'dart:async'; // 🖥️ 電視投放新增
 import 'package:model_viewer_plus/model_viewer_plus.dart';
 import 'bone_viewer_screen.dart';
+
+// 🖥️ 電視投放新增
+import '../tv_cast/socket_client_service.dart';
+import '../tv_cast/socket_server_service.dart';
 
 // ── 動作分類 ──────────────────────────────────────────────
 enum DemoCategory { all, arm, fullBody }
@@ -16,9 +21,9 @@ class _DemoItem {
   final List<String> modelSrcs;
   final List<String> modelAlts;
   final DemoCategory category;
-  final String? cameraOrbit;   // ← 新增(選填)
-  final String? fieldOfView;   // ← 新增(選填)
-  final String? cameraTarget;  // ← 新增(選填)
+  final String? cameraOrbit; // ← 新增(選填)
+  final String? fieldOfView; // ← 新增(選填)
+  final String? cameraTarget; // ← 新增(選填)
 
   const _DemoItem({
     required this.emoji,
@@ -28,14 +33,15 @@ class _DemoItem {
     required this.modelSrcs,
     required this.modelAlts,
     required this.category,
-    this.cameraOrbit,          // ← 新增
-    this.fieldOfView,          // ← 新增
-    this.cameraTarget,         // ← 新增
+    this.cameraOrbit, // ← 新增
+    this.fieldOfView, // ← 新增
+    this.cameraTarget, // ← 新增
   });
 }
 
 class DemoLibraryScreen extends StatefulWidget {
-  const DemoLibraryScreen({super.key});
+  final bool isDisplay; // 🖥️ 電視投放新增
+  const DemoLibraryScreen({super.key, this.isDisplay = false});
 
   @override
   State<DemoLibraryScreen> createState() => _DemoLibraryScreenState();
@@ -43,6 +49,7 @@ class DemoLibraryScreen extends StatefulWidget {
 
 class _DemoLibraryScreenState extends State<DemoLibraryScreen>
     with TickerProviderStateMixin {
+  final _clientService = SocketClientService(); // 🖥️ 電視投放新增
 
   DemoCategory _selectedCategory = DemoCategory.all;
 
@@ -56,9 +63,9 @@ class _DemoLibraryScreenState extends State<DemoLibraryScreen>
       modelSrcs: ['assets/models/forearm_supination.glb'],
       modelAlts: ['翻掌示範'],
       category: DemoCategory.arm,
-      cameraOrbit: '0deg 75deg 5%',    // ← 你調好的
-      fieldOfView: '5deg',             // ← 你調好的
-      cameraTarget: '0m 5m 0m',        // ← 你調好的
+      cameraOrbit: '0deg 75deg 5%', // ← 你調好的
+      fieldOfView: '5deg', // ← 你調好的
+      cameraTarget: '0m 5m 0m', // ← 你調好的
     ),
     _DemoItem(
       emoji: '🤏',
@@ -151,6 +158,8 @@ class _DemoLibraryScreenState extends State<DemoLibraryScreen>
   late final List<AnimationController> _controllers;
   late final List<Animation<double>> _anims;
 
+  StreamSubscription? _socketSub; // 🖥️ 電視投放新增
+
   @override
   void initState() {
     super.initState();
@@ -166,6 +175,88 @@ class _DemoLibraryScreenState extends State<DemoLibraryScreen>
     _anims = _controllers
         .map((c) => CurvedAnimation(parent: c, curve: Curves.easeInOut))
         .toList();
+
+    // 🖥️ 電視投放新增:監聽同步指令
+    final clientService = SocketClientService();
+    final serverService = SocketServerService();
+    if (clientService.isConnected) {
+      _socketSub = clientService.messages.listen(_handleSyncMessage);
+    } else if (serverService.isClientConnected) {
+      _socketSub = serverService.messages.listen(_handleSyncMessage);
+    }
+  }
+
+  void _handleSyncMessage(Map<String, dynamic> msg) {
+    if (!widget.isDisplay || !mounted) return;
+    if (msg['type'] != 'DEMO_LIBRARY_SYNC') return;
+
+    setState(() {
+      final catName = msg['selectedCategory'];
+      if (catName != null) {
+        _selectedCategory =
+            DemoCategory.values.firstWhere((e) => e.name == catName);
+      }
+
+      final expandedIdx = msg['expandedIndex'] as int?;
+      for (int i = 0; i < _expanded.length; i++) {
+        if (i == expandedIdx) {
+          if (!_expanded[i]) {
+            _expanded[i] = true;
+            _controllers[i].forward();
+          }
+        } else {
+          if (_expanded[i]) {
+            _expanded[i] = false;
+            _controllers[i].reverse();
+          }
+        }
+      }
+
+      final tabIndices = msg['tabIndices'] as Map<String, dynamic>?;
+      if (tabIndices != null) {
+        tabIndices.forEach((key, value) {
+          final idx = int.tryParse(key);
+          if (idx != null && idx >= 0 && idx < _tabIndex.length) {
+            _tabIndex[idx] = value as int;
+          }
+        });
+      }
+    });
+  }
+
+  void _broadcastSync() {
+    if (widget.isDisplay) return;
+
+    final Map<String, int> tabIndices = {};
+    for (int i = 0; i < _tabIndex.length; i++) {
+      if (_tabIndex[i] != 0) {
+        tabIndices[i.toString()] = _tabIndex[i];
+      }
+    }
+
+    int? expandedIdx;
+    for (int i = 0; i < _expanded.length; i++) {
+      if (_expanded[i]) {
+        expandedIdx = i;
+        break;
+      }
+    }
+
+    final msg = {
+      'type': 'DEMO_LIBRARY_SYNC',
+      'selectedCategory': _selectedCategory.name,
+      'expandedIndex': expandedIdx,
+      'tabIndices': tabIndices,
+    };
+
+    if (_clientService.isConnected) {
+      _clientService.sendCommand(msg);
+    } else {
+      final serverService = SocketServerService();
+      if (serverService.isClientConnected) {
+        serverService.sendMessage(msg);
+      }
+    }
   }
 
   @override
@@ -173,6 +264,7 @@ class _DemoLibraryScreenState extends State<DemoLibraryScreen>
     for (final c in _controllers) {
       c.dispose();
     }
+    _socketSub?.cancel();
     super.dispose();
   }
 
@@ -192,6 +284,7 @@ class _DemoLibraryScreenState extends State<DemoLibraryScreen>
         _controllers[idx].forward();
       }
     });
+    _broadcastSync();
   }
 
   List<_DemoItem> get _filteredItems => _selectedCategory == DemoCategory.all
@@ -200,15 +293,23 @@ class _DemoLibraryScreenState extends State<DemoLibraryScreen>
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: const Color(0xFFF5F6FA),
-      body: SafeArea(
-        child: Column(
-          children: [
-            _buildTopBar(context),
-            _buildCategoryTabs(),
-            Expanded(child: _buildBody()),
-          ],
+    return PopScope(
+      canPop: true,
+      onPopInvokedWithResult: (didPop, result) {
+        if (didPop && _clientService.isConnected) {
+          _clientService.sendCommand({'type': 'POP_SCREEN'});
+        }
+      },
+      child: Scaffold(
+        backgroundColor: const Color(0xFFF5F6FA),
+        body: SafeArea(
+          child: Column(
+            children: [
+              _buildTopBar(context),
+              _buildCategoryTabs(),
+              Expanded(child: _buildBody()),
+            ],
+          ),
         ),
       ),
     );
@@ -220,9 +321,16 @@ class _DemoLibraryScreenState extends State<DemoLibraryScreen>
       child: Row(
         children: [
           GestureDetector(
-            onTap: () => Navigator.of(context).pop(),
+            onTap: () {
+              // 🖥️ 電視投放新增:同步返回指令
+              if (_clientService.isConnected) {
+                _clientService.sendCommand({'type': 'POP_SCREEN'});
+              }
+              Navigator.of(context).pop();
+            },
             child: Container(
-              width: 40, height: 40,
+              width: 40,
+              height: 40,
               decoration: BoxDecoration(
                 color: Colors.white,
                 borderRadius: BorderRadius.circular(12),
@@ -251,7 +359,11 @@ class _DemoLibraryScreenState extends State<DemoLibraryScreen>
     final tabs = [
       (category: DemoCategory.all, label: '全部', icon: Icons.grid_view_rounded),
       (category: DemoCategory.arm, label: '手部', icon: Icons.back_hand_outlined),
-      (category: DemoCategory.fullBody, label: '全身', icon: Icons.accessibility_new),
+      (
+        category: DemoCategory.fullBody,
+        label: '全身',
+        icon: Icons.accessibility_new
+      ),
     ];
 
     return Padding(
@@ -261,15 +373,16 @@ class _DemoLibraryScreenState extends State<DemoLibraryScreen>
           final isActive = _selectedCategory == tab.category;
           return Expanded(
             child: GestureDetector(
-              onTap: () => setState(() => _selectedCategory = tab.category),
+              onTap: () {
+                setState(() => _selectedCategory = tab.category);
+                _broadcastSync();
+              },
               child: AnimatedContainer(
                 duration: const Duration(milliseconds: 200),
                 margin: const EdgeInsets.symmetric(horizontal: 4),
                 padding: const EdgeInsets.symmetric(vertical: 10),
                 decoration: BoxDecoration(
-                  color: isActive
-                      ? const Color(0xFF4A65FF)
-                      : Colors.white,
+                  color: isActive ? const Color(0xFF4A65FF) : Colors.white,
                   borderRadius: BorderRadius.circular(12),
                   border: Border.all(
                     color: isActive
@@ -279,7 +392,8 @@ class _DemoLibraryScreenState extends State<DemoLibraryScreen>
                   boxShadow: isActive
                       ? [
                           BoxShadow(
-                            color: const Color(0xFF4A65FF).withValues(alpha: 0.25),
+                            color:
+                                const Color(0xFF4A65FF).withValues(alpha: 0.25),
                             blurRadius: 8,
                             offset: const Offset(0, 3),
                           ),
@@ -298,7 +412,8 @@ class _DemoLibraryScreenState extends State<DemoLibraryScreen>
                     Text(
                       tab.label,
                       style: TextStyle(
-                        color: isActive ? Colors.white : const Color(0xFF6B7280),
+                        color:
+                            isActive ? Colors.white : const Color(0xFF6B7280),
                         fontSize: 12,
                         fontWeight: FontWeight.w700,
                       ),
@@ -334,9 +449,16 @@ class _DemoLibraryScreenState extends State<DemoLibraryScreen>
 
           // 即時骨架連動入口
           GestureDetector(
-            onTap: () => Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const BoneViewerScreen()),
-            ),
+            onTap: () {
+              // 🖥️ 電視投放新增:同步跳轉指令
+              if (_clientService.isConnected) {
+                _clientService.sendCommand(
+                    {'type': 'OPEN_SCREEN', 'screen': 'BONE_VIEWER'});
+              }
+              Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const BoneViewerScreen()),
+              );
+            },
             child: Container(
               width: double.infinity,
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
@@ -371,7 +493,8 @@ class _DemoLibraryScreenState extends State<DemoLibraryScreen>
                   ),
                   const SizedBox(width: 6),
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                     decoration: const BoxDecoration(
                       color: Color(0xFF00E5FF),
                       borderRadius: BorderRadius.all(Radius.circular(6)),
@@ -400,8 +523,10 @@ class _DemoLibraryScreenState extends State<DemoLibraryScreen>
   }) {
     final expanded = _expanded[idx];
     final currentTab = _tabIndex[idx];
-    final modelSrc = item.modelSrcs[currentTab.clamp(0, item.modelSrcs.length - 1)];
-    final modelAlt = item.modelAlts[currentTab.clamp(0, item.modelAlts.length - 1)];
+    final modelSrc =
+        item.modelSrcs[currentTab.clamp(0, item.modelSrcs.length - 1)];
+    final modelAlt =
+        item.modelAlts[currentTab.clamp(0, item.modelAlts.length - 1)];
 
     return Column(
       children: [
@@ -418,14 +543,15 @@ class _DemoLibraryScreenState extends State<DemoLibraryScreen>
             child: Row(
               children: [
                 Container(
-                  width: 44, height: 44,
+                  width: 44,
+                  height: 44,
                   decoration: BoxDecoration(
                     color: const Color(0xFFF0F2FF),
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: Center(
-                    child: Text(item.emoji,
-                        style: const TextStyle(fontSize: 22)),
+                    child:
+                        Text(item.emoji, style: const TextStyle(fontSize: 22)),
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -447,7 +573,8 @@ class _DemoLibraryScreenState extends State<DemoLibraryScreen>
                   ),
                 ),
                 Container(
-                  width: 32, height: 32,
+                  width: 32,
+                  height: 32,
                   decoration: BoxDecoration(
                     color: expanded
                         ? const Color(0xFF4A65FF)
@@ -459,7 +586,8 @@ class _DemoLibraryScreenState extends State<DemoLibraryScreen>
                     duration: const Duration(milliseconds: 320),
                     curve: Curves.easeInOut,
                     child: Icon(Icons.keyboard_arrow_down,
-                        color: expanded ? Colors.white : const Color(0xFF6B7280),
+                        color:
+                            expanded ? Colors.white : const Color(0xFF6B7280),
                         size: 20),
                   ),
                 ),
@@ -489,13 +617,14 @@ class _DemoLibraryScreenState extends State<DemoLibraryScreen>
                         final isActive = currentTab == i;
                         return Expanded(
                           child: GestureDetector(
-                            onTap: () =>
-                                setState(() => _tabIndex[idx] = i),
+                            onTap: () {
+                              setState(() => _tabIndex[idx] = i);
+                              _broadcastSync();
+                            },
                             behavior: HitTestBehavior.opaque,
                             child: AnimatedContainer(
                               duration: const Duration(milliseconds: 200),
-                              padding:
-                                  const EdgeInsets.symmetric(vertical: 10),
+                              padding: const EdgeInsets.symmetric(vertical: 10),
                               decoration: BoxDecoration(
                                 color: isActive
                                     ? const Color(0xFF4A65FF)
@@ -539,7 +668,7 @@ class _DemoLibraryScreenState extends State<DemoLibraryScreen>
                             cameraTarget: item.cameraTarget,
                             backgroundColor: const Color(0xFF1A1D2E),
                           )
-                        : const SizedBox.shrink(),   // 摺疊時完全不建 WebView
+                        : const SizedBox.shrink(), // 摺疊時完全不建 WebView
                   ),
                 ),
               ],

@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:convert';
 import 'dart:typed_data';
 import 'package:camera/camera.dart'; // ← 新增:控制端要用 CameraPreview
 import 'package:flutter/material.dart';
@@ -44,8 +43,6 @@ class _RemoteControllerScreenState extends State<RemoteControllerScreen> {
   String _instruction = '';
   StreamSubscription? _socketSub;
 
-  String? _lastJpegBase64;
-
   @override
   void initState() {
     super.initState();
@@ -64,6 +61,20 @@ class _RemoteControllerScreenState extends State<RemoteControllerScreen> {
 
   Future<void> _start() async {
     await _localRenderer.initialize();
+
+    // 🖥️ 電視投放新增:控制端進訓練時,通知電視開對應的顯示端畫面
+    if (!widget.isDisplay) {
+      final startMsg = {
+        'type': 'START_TRAINING',
+        'actionName': widget.action.name,
+        'difficultyLevel': widget.difficulty.level.name,
+      };
+      if (_clientService.isConnected) {
+        _clientService.sendCommand(startMsg);
+      } else if (_serverService.isClientConnected) {
+        _serverService.sendMessage(startMsg);
+      }
+    }
 
     // Singleton handles onSignalingMessage in HomeScreen
 
@@ -434,9 +445,7 @@ class _RemoteControllerScreenState extends State<RemoteControllerScreen> {
                       valueListenable: _engine.cameraReady,
                       builder: (_, ready, __) {
                         final cam = _engine.cameraController;
-                        if (ready &&
-                            cam != null &&
-                            cam.value.isInitialized) {
+                        if (ready && cam != null && cam.value.isInitialized) {
                           return CameraPreview(cam);
                         }
                         return const Center(

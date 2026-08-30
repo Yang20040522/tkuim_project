@@ -12,6 +12,9 @@ import '../../models/pose_data.dart';
 import '../../services/body_pose_engine.dart';
 import '../../services/pose_to_bone_mapper.dart';
 
+// 🖥️ 電視投放新增
+import '../tv_cast/socket_client_service.dart';
+
 class BoneViewerScreen extends StatefulWidget {
   const BoneViewerScreen({super.key});
 
@@ -22,6 +25,7 @@ class BoneViewerScreen extends StatefulWidget {
 class _BoneViewerScreenState extends State<BoneViewerScreen> {
   final BodyPoseEngine _engine = BodyPoseEngine();
   final PoseToBoneMapper _mapper = PoseToBoneMapper();
+  final _clientService = SocketClientService(); // 🖥️ 電視投放新增
   static const double _scoreThreshold = BodyPoseEngine.scoreThreshold;
 
   InAppWebViewController? _webController;
@@ -48,7 +52,8 @@ class _BoneViewerScreenState extends State<BoneViewerScreen> {
   void _onPoseUpdate() {
     final data = _engine.poseNotifier.value;
     //final angles = _mapper.computeAngles(data);
-    final angles = _mapper.computeAngles(data, isFrontCamera: _engine.isFrontCamera);
+    final angles =
+        _mapper.computeAngles(data, isFrontCamera: _engine.isFrontCamera);
 
     if (mounted) {
       setState(() => _currentAngles = angles);
@@ -77,36 +82,44 @@ class _BoneViewerScreenState extends State<BoneViewerScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: const Color(0xFFF5F6FA),
-      body: SafeArea(
-        child: Column(
-          children: [
-            _buildTopBar(),
-            Expanded(
-              child: Column(
-                children: [
-                  // ── 相機預覽區（彈性佔剩餘空間）──
-                  Expanded(child: _buildCamera()),
+    return PopScope(
+      canPop: true,
+      onPopInvokedWithResult: (didPop, result) {
+        if (didPop && _clientService.isConnected) {
+          _clientService.sendCommand({'type': 'POP_SCREEN'});
+        }
+      },
+      child: Scaffold(
+        backgroundColor: const Color(0xFFF5F6FA),
+        body: SafeArea(
+          child: Column(
+            children: [
+              _buildTopBar(),
+              Expanded(
+                child: Column(
+                  children: [
+                    // ── 相機預覽區（彈性佔剩餘空間）──
+                    Expanded(child: _buildCamera()),
 
-                  // ── 測試用角度面板 ──
-                  _buildAngleDebugPanel(),
+                    // ── 測試用角度面板 ──
+                    _buildAngleDebugPanel(),
 
-                  // ── 3D 模型區（可收放）──
-                  AnimatedSize(
-                    duration: const Duration(milliseconds: 300),
-                    curve: Curves.easeInOut,
-                    child: _modelExpanded
-                        ? SizedBox(height: 280, child: _buildWebView())
-                        : const SizedBox.shrink(),
-                  ),
+                    // ── 3D 模型區（可收放）──
+                    AnimatedSize(
+                      duration: const Duration(milliseconds: 300),
+                      curve: Curves.easeInOut,
+                      child: _modelExpanded
+                          ? SizedBox(height: 280, child: _buildWebView())
+                          : const SizedBox.shrink(),
+                    ),
 
-                  // ── 收放按鈕 ──
-                  _buildToggleBar(),
-                ],
+                    // ── 收放按鈕 ──
+                    _buildToggleBar(),
+                  ],
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -118,9 +131,16 @@ class _BoneViewerScreenState extends State<BoneViewerScreen> {
       child: Row(
         children: [
           GestureDetector(
-            onTap: () => Navigator.of(context).pop(),
+            onTap: () {
+              // 🖥️ 電視投放新增:同步返回指令
+              if (_clientService.isConnected) {
+                _clientService.sendCommand({'type': 'POP_SCREEN'});
+              }
+              Navigator.of(context).pop();
+            },
             child: Container(
-              width: 40, height: 40,
+              width: 40,
+              height: 40,
               decoration: BoxDecoration(
                 color: Colors.white,
                 borderRadius: BorderRadius.circular(12),
@@ -144,7 +164,8 @@ class _BoneViewerScreenState extends State<BoneViewerScreen> {
           GestureDetector(
             onTap: _switchCamera,
             child: Container(
-              width: 40, height: 40,
+              width: 40,
+              height: 40,
               decoration: BoxDecoration(
                 color: Colors.white,
                 borderRadius: BorderRadius.circular(12),
@@ -163,8 +184,8 @@ class _BoneViewerScreenState extends State<BoneViewerScreen> {
     final cam = _engine.cameraController;
     if (!_engine.cameraReady.value || cam == null) {
       return const Center(
-        child: CircularProgressIndicator(
-            color: Color(0xFF00BCD4), strokeWidth: 3),
+        child:
+            CircularProgressIndicator(color: Color(0xFF00BCD4), strokeWidth: 3),
       );
     }
 
@@ -216,8 +237,7 @@ class _BoneViewerScreenState extends State<BoneViewerScreen> {
       mainAxisSize: MainAxisSize.min,
       children: [
         Text(label,
-            style: const TextStyle(
-                color: Color(0xFF6B7280), fontSize: 10)),
+            style: const TextStyle(color: Color(0xFF6B7280), fontSize: 10)),
         Text('${angle.toStringAsFixed(0)}°',
             style: const TextStyle(
                 color: Color(0xFF00E5FF),
@@ -302,8 +322,14 @@ class _SkeletonPainter extends CustomPainter {
   final double threshold;
 
   static const _connections = [
-    [5, 6], [5, 7], [7, 9], [6, 8], [8, 10],
-    [5, 11], [6, 12], [11, 12],
+    [5, 6],
+    [5, 7],
+    [7, 9],
+    [6, 8],
+    [8, 10],
+    [5, 11],
+    [6, 12],
+    [11, 12],
   ];
 
   _SkeletonPainter(this.data, this.threshold);

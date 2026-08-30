@@ -4,6 +4,9 @@ import 'package:flutter/material.dart';
 import 'notification_service.dart';
 import 'native_notification_service.dart';
 
+// 🖥️ 電視投放新增
+import '../tv_cast/socket_client_service.dart';
+
 class NotificationSettingsScreen extends StatefulWidget {
   const NotificationSettingsScreen({super.key});
 
@@ -15,6 +18,7 @@ class NotificationSettingsScreen extends StatefulWidget {
 class _NotificationSettingsScreenState
     extends State<NotificationSettingsScreen> {
   final _service = NotificationService();
+  final _clientService = SocketClientService(); // 🖥️ 電視投放新增
   bool _enabled = false;
   int _hour = 20;
   int _minute = 0;
@@ -67,6 +71,16 @@ class _NotificationSettingsScreenState
       appBar: AppBar(
         backgroundColor: Colors.white,
         elevation: 0,
+        leading: GestureDetector(
+          onTap: () {
+            // 🖥️ 電視投放新增:同步返回指令
+            if (_clientService.isConnected) {
+              _clientService.sendCommand({'type': 'POP_SCREEN'});
+            }
+            Navigator.of(context).pop();
+          },
+          child: const Icon(Icons.arrow_back_ios_new, size: 20),
+        ),
         title: const Text('通知設定',
             style: TextStyle(
                 color: Color(0xFF1A1D2E),
@@ -125,7 +139,8 @@ class _NotificationSettingsScreenState
                           id: 9999,
                           title: '測試通知 🔔(原生)',
                           body: '如果你看到這個 = MIUI 沒殺我 🎉',
-                          triggerAt: DateTime.now().add(const Duration(seconds: 5)),
+                          triggerAt:
+                              DateTime.now().add(const Duration(seconds: 5)),
                         );
                         if (!mounted) return;
                         ScaffoldMessenger.of(context).showSnackBar(

@@ -1,4 +1,4 @@
-// lib/features/account/login_screen.dart
+// lib/features/account/register_screen.dart
 import 'package:flutter/material.dart';
 
 import 'app_session.dart';
@@ -6,30 +6,40 @@ import 'auth_service.dart';
 import 'home_router.dart';
 import 'user_role.dart';
 
-import 'register_screen.dart';
-
-class LoginScreen extends StatefulWidget {
+class RegisterScreen extends StatefulWidget {
   final UserRole role;
 
-  const LoginScreen({super.key, required this.role});
+  const RegisterScreen({super.key, required this.role});
 
   @override
-  State<LoginScreen> createState() => _LoginScreenState();
+  State<RegisterScreen> createState() => _RegisterScreenState();
 }
 
-class _LoginScreenState extends State<LoginScreen> {
+class _RegisterScreenState extends State<RegisterScreen> {
   final _formKey = GlobalKey<FormState>();
+  final _nameController = TextEditingController();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
+  final _confirmPasswordController = TextEditingController();
 
   bool _obscurePassword = true;
+  bool _obscureConfirmPassword = true;
   bool _isLoading = false;
 
   @override
   void dispose() {
+    _nameController.dispose();
     _emailController.dispose();
     _passwordController.dispose();
+    _confirmPasswordController.dispose();
     super.dispose();
+  }
+
+  String? _validateName(String? value) {
+    if (value == null || value.trim().isEmpty) {
+      return '請輸入姓名';
+    }
+    return null;
   }
 
   String? _validateEmail(String? value) {
@@ -53,13 +63,24 @@ class _LoginScreenState extends State<LoginScreen> {
     return null;
   }
 
-  Future<void> _handleLogin() async {
+  String? _validateConfirmPassword(String? value) {
+    if (value == null || value.isEmpty) {
+      return '請再次輸入密碼';
+    }
+    if (value != _passwordController.text) {
+      return '兩次輸入的密碼不一致';
+    }
+    return null;
+  }
+
+  Future<void> _handleRegister() async {
     if (!_formKey.currentState!.validate()) return;
 
     setState(() => _isLoading = true);
 
     try {
-      final result = await AuthService.login(
+      final result = await AuthService.register(
+        name: _nameController.text.trim(),
         email: _emailController.text.trim(),
         password: _passwordController.text,
       );
@@ -71,11 +92,9 @@ class _LoginScreenState extends State<LoginScreen> {
         await AppSession.save(
           role: widget.role,
           userId: result.userId ?? '',
-          name: result.name ?? '',
+          name: result.name ?? _nameController.text.trim(),
           email: result.email ?? _emailController.text.trim(),
         );
-
-        // 後端加了 role 之後,可在這裡核對「選的身分 = 帳號實際身分」
 
         Navigator.pushAndRemoveUntil(
           context,
@@ -83,7 +102,7 @@ class _LoginScreenState extends State<LoginScreen> {
           (route) => false,
         );
       } else {
-        _showError(result.message ?? '登入失敗,請再試一次');
+        _showError(result.message ?? '註冊失敗,請再試一次');
       }
     } catch (e) {
       if (!mounted) return;
@@ -124,7 +143,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 ),
                 const SizedBox(height: 12),
                 const Text(
-                  '登入帳號',
+                  '註冊帳號',
                   style: TextStyle(
                     color: Color(0xFF1A1D2E),
                     fontSize: 26,
@@ -133,13 +152,17 @@ class _LoginScreenState extends State<LoginScreen> {
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  '以${widget.role.label}身分登入',
+                  '以${widget.role.label}身分註冊',
                   style: const TextStyle(
                     color: Color(0xFF9CA3AF),
                     fontSize: 13,
                   ),
                 ),
                 const SizedBox(height: 32),
+                _buildLabel('姓名'),
+                const SizedBox(height: 8),
+                _buildNameField(),
+                const SizedBox(height: 20),
                 _buildLabel('電子郵件'),
                 const SizedBox(height: 8),
                 _buildEmailField(),
@@ -147,52 +170,12 @@ class _LoginScreenState extends State<LoginScreen> {
                 _buildLabel('密碼'),
                 const SizedBox(height: 8),
                 _buildPasswordField(),
+                const SizedBox(height: 20),
+                _buildLabel('確認密碼'),
                 const SizedBox(height: 8),
-                Align(
-                  alignment: Alignment.centerRight,
-                  child: TextButton(
-                    onPressed: () {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text('忘記密碼功能即將開放'),
-                          behavior: SnackBarBehavior.floating,
-                          backgroundColor: Color(0xFF1A1D2E),
-                        ),
-                      );
-                    },
-                    child: const Text(
-                      '忘記密碼？',
-                      style: TextStyle(
-                        color: Color(0xFF4A65FF),
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ),
-                ),
+                _buildConfirmPasswordField(),
                 const SizedBox(height: 24),
-                _buildLoginButton(),
-                const SizedBox(height: 16),
-                Center(
-                  child: TextButton(
-                    onPressed: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => RegisterScreen(role: widget.role),
-                        ),
-                      );
-                    },
-                    child: const Text(
-                      '還沒有帳號？前往註冊',
-                      style: TextStyle(
-                        color: Color(0xFF4A65FF),
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ),
-                ),
+                _buildRegisterButton(),
               ],
             ),
           ),
@@ -245,6 +228,20 @@ class _LoginScreenState extends State<LoginScreen> {
     );
   }
 
+  Widget _buildNameField() {
+    return TextFormField(
+      controller: _nameController,
+      keyboardType: TextInputType.name,
+      autofillHints: const [AutofillHints.name],
+      style: const TextStyle(fontSize: 14, color: Color(0xFF1A1D2E)),
+      decoration: _fieldDecoration(
+        hint: '你的姓名',
+        icon: Icons.person_outline,
+      ),
+      validator: _validateName,
+    );
+  }
+
   Widget _buildEmailField() {
     return TextFormField(
       controller: _emailController,
@@ -263,10 +260,10 @@ class _LoginScreenState extends State<LoginScreen> {
     return TextFormField(
       controller: _passwordController,
       obscureText: _obscurePassword,
-      autofillHints: const [AutofillHints.password],
+      autofillHints: const [AutofillHints.newPassword],
       style: const TextStyle(fontSize: 14, color: Color(0xFF1A1D2E)),
       decoration: _fieldDecoration(
-        hint: '請輸入密碼',
+        hint: '至少 6 個字元',
         icon: Icons.lock_outline,
         suffixIcon: IconButton(
           icon: Icon(
@@ -282,16 +279,42 @@ class _LoginScreenState extends State<LoginScreen> {
         ),
       ),
       validator: _validatePassword,
-      onFieldSubmitted: (_) => _handleLogin(),
     );
   }
 
-  Widget _buildLoginButton() {
+  Widget _buildConfirmPasswordField() {
+    return TextFormField(
+      controller: _confirmPasswordController,
+      obscureText: _obscureConfirmPassword,
+      style: const TextStyle(fontSize: 14, color: Color(0xFF1A1D2E)),
+      decoration: _fieldDecoration(
+        hint: '再次輸入密碼',
+        icon: Icons.lock_outline,
+        suffixIcon: IconButton(
+          icon: Icon(
+            _obscureConfirmPassword
+                ? Icons.visibility_outlined
+                : Icons.visibility_off_outlined,
+            color: const Color(0xFF9CA3AF),
+            size: 20,
+          ),
+          onPressed: () {
+            setState(
+                () => _obscureConfirmPassword = !_obscureConfirmPassword);
+          },
+        ),
+      ),
+      validator: _validateConfirmPassword,
+      onFieldSubmitted: (_) => _handleRegister(),
+    );
+  }
+
+  Widget _buildRegisterButton() {
     return SizedBox(
       width: double.infinity,
       height: 52,
       child: ElevatedButton(
-        onPressed: _isLoading ? null : _handleLogin,
+        onPressed: _isLoading ? null : _handleRegister,
         style: ElevatedButton.styleFrom(
           backgroundColor: const Color(0xFF4A65FF),
           foregroundColor: Colors.white,
@@ -310,7 +333,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 ),
               )
             : const Text(
-                '登入',
+                '註冊',
                 style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800),
               ),
       ),

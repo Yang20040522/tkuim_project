@@ -1,8 +1,13 @@
 import 'package:flutter/material.dart';
+import 'dart:async'; // 🖥️ 電視投放新增
 import 'chat_repository.dart';
 import 'chat_conversation.dart';
 import 'chat_storage.dart';
 import 'user_context_builder.dart';
+
+// 🖥️ 電視投放新增
+import '../tv_cast/socket_client_service.dart';
+import '../tv_cast/socket_server_service.dart';
 
 enum ChatSender { me, therapist }
 
@@ -27,13 +32,15 @@ class ChatMessage {
 }
 
 class ChatScreen extends StatefulWidget {
-  const ChatScreen({super.key});
+  final bool isDisplay; // 🖥️ 電視投放新增
+  const ChatScreen({super.key, this.isDisplay = false});
 
   @override
   State<ChatScreen> createState() => _ChatScreenState();
 }
 
 class _ChatScreenState extends State<ChatScreen> {
+  final _clientService = SocketClientService(); // 🖥️ 電視投放新增
   final TextEditingController _inputController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
   final ChatRepository _chatRepository = ChatRepository();
@@ -44,7 +51,9 @@ class _ChatScreenState extends State<ChatScreen> {
   ChatConversation? _current;
   final Set<String> _typingConversationIds = {};
   bool _loaded = false;
-  
+
+  StreamSubscription? _socketSub; // 🖥️ 電視投放新增
+
   ChatMessage get _welcomeMessage => ChatMessage(
         text: '您好,我是您的 AI 復健治療師,有任何訓練上的問題都可以在這裡問我。',
         sender: ChatSender.therapist,
@@ -55,12 +64,74 @@ class _ChatScreenState extends State<ChatScreen> {
   void initState() {
     super.initState();
     _loadConversations();
+
+    // 🖥️ 電視投放新增:監聽同步指令
+    final clientService = SocketClientService();
+    final serverService = SocketServerService();
+    if (clientService.isConnected) {
+      _socketSub = clientService.messages.listen(_handleSyncMessage);
+    } else if (serverService.isClientConnected) {
+      _socketSub = serverService.messages.listen(_handleSyncMessage);
+    }
+
+    _inputController.addListener(_onInputChanged);
+  }
+
+  void _onInputChanged() {
+    if (widget.isDisplay) return;
+    _broadcastSync('INPUT', data: {'text': _inputController.text});
+  }
+
+  void _handleSyncMessage(Map<String, dynamic> msg) {
+    if (!widget.isDisplay || !mounted) return;
+    if (msg['type'] != 'CHAT_SYNC') return;
+
+    final action = msg['action'];
+    if (action == 'INPUT') {
+      final text = msg['data']['text'];
+      if (text != null && text != _inputController.text) {
+        _inputController.text = text;
+      }
+    } else if (action == 'MESSAGE') {
+      final messageJson = msg['data']['message'];
+      if (messageJson != null && _current != null) {
+        final message = ChatMessage.fromJson(messageJson);
+        setState(() {
+          _current = _current!.copyWith(
+            messages: [..._current!.messages, message],
+            updatedAt: DateTime.now(),
+          );
+        });
+        _scrollToBottom();
+      }
+    }
+  }
+
+  void _broadcastSync(String action, {Map<String, dynamic>? data}) {
+    if (widget.isDisplay) return;
+
+    final msg = {
+      'type': 'CHAT_SYNC',
+      'action': action,
+      'data': data ?? {},
+    };
+
+    if (_clientService.isConnected) {
+      _clientService.sendCommand(msg);
+    } else {
+      final serverService = SocketServerService();
+      if (serverService.isClientConnected) {
+        serverService.sendMessage(msg);
+      }
+    }
   }
 
   @override
   void dispose() {
+    _inputController.removeListener(_onInputChanged);
     _inputController.dispose();
     _scrollController.dispose();
+    _socketSub?.cancel();
     super.dispose();
   }
 
@@ -110,8 +181,7 @@ class _ChatScreenState extends State<ChatScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: Colors.white,
-        shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: const Text('開始新對話',
             style: TextStyle(
                 color: Color(0xFF1A1D2E),
@@ -124,13 +194,12 @@ class _ChatScreenState extends State<ChatScreen> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('取消',
-                style: TextStyle(color: Color(0xFF6B7280))),
+            child: const Text('取消', style: TextStyle(color: Color(0xFF6B7280))),
           ),
           TextButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('開始新對話',
-                style: TextStyle(color: Color(0xFF4A65FF))),
+            child:
+                const Text('開始新對話', style: TextStyle(color: Color(0xFF4A65FF))),
           ),
         ],
       ),
@@ -216,6 +285,8 @@ class _ChatScreenState extends State<ChatScreen> {
     final userMsg =
         ChatMessage(text: text, sender: ChatSender.me, time: DateTime.now());
 
+    _broadcastSync('MESSAGE', data: {'message': userMsg.toJson()});
+
     setState(() {
       _current = _current!.copyWith(
         messages: [..._current!.messages, userMsg],
@@ -238,9 +309,10 @@ class _ChatScreenState extends State<ChatScreen> {
     final replyMsg = ChatMessage(
         text: reply, sender: ChatSender.therapist, time: DateTime.now());
 
+    _broadcastSync('MESSAGE', data: {'message': replyMsg.toJson()});
+
     // ✅ 把回覆寫回「當初送訊息的那個對話」,不是現在的 _current
-    final targetIdx =
-        _conversations.indexWhere((c) => c.id == targetId);
+    final targetIdx = _conversations.indexWhere((c) => c.id == targetId);
     if (targetIdx < 0) {
       setState(() => _typingConversationIds.remove(targetId));
       return;
@@ -278,19 +350,27 @@ class _ChatScreenState extends State<ChatScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: const Color(0xFFF5F6FA),
-      drawer: _buildDrawer(),
-      body: SafeArea(
-        child: !_loaded || _current == null
-            ? const Center(child: CircularProgressIndicator())
-            : Column(
-                children: [
-                  _buildTopBar(),
-                  Expanded(child: _buildMessageList()),
-                  _buildInputBar(),
-                ],
-              ),
+    return PopScope(
+      canPop: true,
+      onPopInvokedWithResult: (didPop, result) {
+        if (didPop && _clientService.isConnected) {
+          _clientService.sendCommand({'type': 'POP_SCREEN'});
+        }
+      },
+      child: Scaffold(
+        backgroundColor: const Color(0xFFF5F6FA),
+        drawer: _buildDrawer(),
+        body: SafeArea(
+          child: !_loaded || _current == null
+              ? const Center(child: CircularProgressIndicator())
+              : Column(
+                  children: [
+                    _buildTopBar(),
+                    Expanded(child: _buildMessageList()),
+                    _buildInputBar(),
+                  ],
+                ),
+        ),
       ),
     );
   }
@@ -300,14 +380,6 @@ class _ChatScreenState extends State<ChatScreen> {
       padding: const EdgeInsets.fromLTRB(8, 8, 8, 8),
       child: Row(
         children: [
-          // ✅ 返回鍵：回到原本的聊天區（進來前的上一個畫面）
-          if (Navigator.of(context).canPop())
-            IconButton(
-              icon: const Icon(Icons.arrow_back_ios_new,
-                  color: Color(0xFF374151), size: 20),
-              onPressed: () => Navigator.of(context).pop(),
-              tooltip: '返回',
-            ),
           Builder(
             builder: (ctx) => IconButton(
               icon: const Icon(Icons.menu, color: Color(0xFF374151)),
@@ -386,8 +458,7 @@ class _ChatScreenState extends State<ChatScreen> {
                           direction: DismissDirection.endToStart,
                           background: Container(
                             alignment: Alignment.centerRight,
-                            padding:
-                                const EdgeInsets.symmetric(horizontal: 20),
+                            padding: const EdgeInsets.symmetric(horizontal: 20),
                             color: const Color(0xFFEF4444),
                             child: const Icon(Icons.delete_outline,
                                 color: Colors.white, size: 22),
@@ -395,7 +466,8 @@ class _ChatScreenState extends State<ChatScreen> {
                           onDismissed: (_) => _deleteConversation(c.id),
                           child: Container(
                             color: isActive
-                                ? const Color(0xFF4A65FF).withValues(alpha: 0.08)
+                                ? const Color(0xFF4A65FF)
+                                    .withValues(alpha: 0.08)
                                 : Colors.transparent,
                             child: ListTile(
                               title: Text(
@@ -427,8 +499,7 @@ class _ChatScreenState extends State<ChatScreen> {
                     ),
             ),
             const Padding(
-              padding:
-                  EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+              padding: EdgeInsets.symmetric(horizontal: 20, vertical: 10),
               child: Text(
                 '往左滑刪除對話',
                 style: TextStyle(color: Color(0xFF9CA3AF), fontSize: 11),
@@ -462,8 +533,7 @@ class _ChatScreenState extends State<ChatScreen> {
       alignment: Alignment.centerLeft,
       child: Container(
         margin: const EdgeInsets.symmetric(vertical: 4),
-        padding:
-            const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: const BorderRadius.only(
@@ -499,8 +569,7 @@ class _ChatScreenState extends State<ChatScreen> {
               isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
           children: [
             Container(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
               decoration: BoxDecoration(
                 color: isMe ? const Color(0xFF4A65FF) : Colors.white,
                 borderRadius: BorderRadius.only(
@@ -523,8 +592,7 @@ class _ChatScreenState extends State<ChatScreen> {
             const SizedBox(height: 3),
             Text(
               timeText,
-              style:
-                  const TextStyle(color: Color(0xFF9CA3AF), fontSize: 10),
+              style: const TextStyle(color: Color(0xFF9CA3AF), fontSize: 10),
             ),
           ],
         ),
@@ -569,8 +637,8 @@ class _ChatScreenState extends State<ChatScreen> {
                     isDense: true,
                     contentPadding: EdgeInsets.symmetric(vertical: 10),
                   ),
-                  style: const TextStyle(
-                      fontSize: 14, color: Color(0xFF1A1D2E)),
+                  style:
+                      const TextStyle(fontSize: 14, color: Color(0xFF1A1D2E)),
                   onSubmitted: (_) => _sendMessage(),
                 ),
               ),
