@@ -81,6 +81,18 @@ class _DemoLibraryScreenState extends State<DemoLibraryScreen>
       cameraTarget: '0m 5m 0m',
     ),
     _DemoItem(
+      emoji: '🤚',
+      title: '翹手腕式訓練',
+      subtitle: '拖曳旋轉・雙指縮放',
+      tabLabels: ['示範'],
+      modelSrcs: ['assets/models/wrist_extension.glb'],
+      modelAlts: ['翹手腕示範'],
+      category: DemoCategory.arm,
+      cameraOrbit: '0deg 75deg 5%',    // 跟上面同樣的參數
+      fieldOfView: '5deg',
+      cameraTarget: '0m 5m 0m',
+    ),
+    _DemoItem(
       emoji: '🙋',
       title: '伸手舉高訓練',
       subtitle: '左右手可切換・拖曳旋轉・雙指縮放',

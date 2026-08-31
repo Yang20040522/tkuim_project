@@ -45,6 +45,13 @@ const Map<ActionType, ActionDemo3D> kActionDemo3DMap = {
     fieldOfView: '5deg',             // 太小就加
     cameraTarget: '0m 5m 0m',        // 不置中就加,X Y Z 自己調
   ),
+  ActionType.wristExtension: ActionDemo3D(
+    modelSrcs: ['assets/models/wrist_extension.glb'],
+    tabLabels: ['示範'],
+    cameraOrbit: '0deg 75deg 5%',    // 太小就加,數字自己調
+    fieldOfView: '5deg',
+    cameraTarget: '0m 5m 0m',        // 不置中就調 X Y Z
+  ),
   ActionType.reach: ActionDemo3D(
     modelSrcs: [
       'assets/models/turn_Right_hand.glb',
