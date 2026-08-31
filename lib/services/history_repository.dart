@@ -6,6 +6,12 @@
 // 實際「資料存在哪裡、怎麼存」交給這裡的 HistoryRepository 決定。
 // 之後接後端 API 時,只要換掉最下面 historyRepository 指到哪個實作,
 // HistoryService 完全不用改,所有畫面(stats、history、training 等)也不用改。
+//
+// 🆕 2026-08-31:新增 getUnsyncedRecords() / markAsSynced()。
+//    配合方案A(訓練結束後才上傳):訓練時手機連樹莓派熱點沒有對外網路,
+//    資料先存本機並標記 isSynced=false,使用者在歷史紀錄畫面手動按
+//    「上傳到雲端」時,才呼叫 getUnsyncedRecords() 抓出所有還沒上傳的
+//    紀錄,一筆一筆送到後端,成功後呼叫 markAsSynced() 標記完成。
 
 import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -21,6 +27,12 @@ abstract class HistoryRepository {
 
   Future<void> removeByTimestamp(String timestamp);
   Future<void> clearHistory();
+
+  /// 🆕 取得所有尚未上傳到後端(isSynced == false)的紀錄。
+  Future<List<TrainingRecord>> getUnsyncedRecords();
+
+  /// 🆕 把指定 timestamp 的那一筆紀錄標記為「已上傳」(isSynced = true)。
+  Future<void> markAsSynced(String timestamp);
 }
 
 /// ============ 現在先用的版本:本地 SharedPreferences 儲存 ============
@@ -76,6 +88,26 @@ class LocalHistoryRepository implements HistoryRepository {
   Future<void> clearHistory() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_key);
+  }
+
+  // 🆕 ─────────────────────────────────────────────────────────
+
+  @override
+  Future<List<TrainingRecord>> getUnsyncedRecords() async {
+    final history = await getHistory();
+    return history.where((r) => !r.isSynced).toList();
+  }
+
+  @override
+  Future<void> markAsSynced(String timestamp) async {
+    final prefs = await SharedPreferences.getInstance();
+    final history = await getHistory();
+    final index = history.indexWhere((r) => r.timestamp == timestamp);
+    if (index == -1) return; // 找不到這筆,可能已經被刪除了,直接跳過
+
+    history[index] = history[index].copyWithSynced(true);
+    await prefs.setString(
+        _key, jsonEncode(history.map((e) => e.toJson()).toList()));
   }
 }
 

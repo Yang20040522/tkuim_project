@@ -4,6 +4,10 @@
 // ✅ TrainingRecord 新增 videoPath 欄位(訓練錄影)
 // ✅ DifficultyOption 新增 targetReps 欄位,每難度各自預設次數(初階多、進階少)
 // 🩺 2026-08-20:側蹲、坐站標記為「建議恢復狀況較佳者練習」
+// 🆕 2026-08-31:TrainingRecord 新增 isSynced 欄位,標記這筆紀錄是否已經
+//    上傳到後端資料庫(治療師端)。方案A:訓練時手機連樹莓派熱點沒有對外
+//    網路,資料先存本機,結束後由使用者在歷史紀錄畫面手動按「上傳到雲端」,
+//    才把尚未上傳的紀錄(isSynced == false)送到後端,成功後標記為 true。
 
 enum ActionType {
   turnPalm,
@@ -305,6 +309,7 @@ class TrainingRecord {
   final List<String> mistakeLogs;
   final String? videoPath; // 訓練錄影檔案路徑,null 代表沒錄或使用者選擇不保留
   final int targetReps; // ✅ 新增
+  final bool isSynced; // 🆕 是否已上傳到後端資料庫(治療師端可見)
 
   TrainingRecord({
     required this.timestamp,
@@ -314,6 +319,7 @@ class TrainingRecord {
     required this.mistakeLogs,
     this.videoPath,
     this.targetReps = 10, // 沒帶值時的預設，避免其他呼叫處漏改就炸掉
+    this.isSynced = false, // 🆕 預設尚未上傳,存進本機時一律從這個狀態開始
   });
 
   Map<String, dynamic> toJson() => {
@@ -324,6 +330,7 @@ class TrainingRecord {
         'mistakeLogs': mistakeLogs,
         'videoPath': videoPath,
         'targetReps': targetReps, // ✅
+        'isSynced': isSynced, // 🆕
       };
 
   factory TrainingRecord.fromJson(Map<String, dynamic> json) => TrainingRecord(
@@ -334,6 +341,7 @@ class TrainingRecord {
         mistakeLogs: List<String>.from(json['mistakeLogs'] ?? []),
         videoPath: json['videoPath'] as String?,
         targetReps: json['targetReps'] ?? 10, // ✅ 舊資料 fallback
+        isSynced: json['isSynced'] ?? false, // 🆕 舊資料(升級前存的)一律視為尚未上傳
       );
 
   /// 複製一份紀錄,只替換 videoPath(用於「先存紀錄、後補影片路徑」的情境)
@@ -345,5 +353,18 @@ class TrainingRecord {
         mistakeLogs: mistakeLogs,
         videoPath: path,
         targetReps: targetReps, // ✅
+        isSynced: isSynced, // 🆕 換影片路徑不影響上傳狀態
+      );
+
+  /// 複製一份紀錄,只替換 isSynced(上傳成功後呼叫,標記這筆已經同步過)
+  TrainingRecord copyWithSynced(bool synced) => TrainingRecord(
+        timestamp: timestamp,
+        actionName: actionName,
+        difficulty: difficulty,
+        durationSeconds: durationSeconds,
+        mistakeLogs: mistakeLogs,
+        videoPath: videoPath,
+        targetReps: targetReps,
+        isSynced: synced, // 🆕
       );
 }

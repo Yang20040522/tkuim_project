@@ -24,6 +24,17 @@
 //       Positioned 只能直接放在 Stack 裡,造成 build 錯誤。
 //       這個 overlay 本來就已經被包在最外層 build() 的 Stack 裡了,
 //       所以這層 Positioned.fill 是多餘的,直接拿掉,讓 Material 直接包 Container。
+//
+//  🩹 2026-08-31:修正兩個歷史紀錄相關 bug
+//     ① timestamp 精度從「分鐘」(substring 0,16)拉到「秒」(substring 0,19):
+//        自動升級難度時,初級→中級→高級常在同一分鐘內連續完成,
+//        造成三筆紀錄 timestamp 完全相同,history_screen.dart 的
+//        Dismissible key: ValueKey(record.timestamp) 會把它們當成同一個
+//        widget,只顯示其中一筆,其餘被吃掉不會顯示。
+//     ② 升級難度時 _repCount 沒有跟著歸零,只重置了 _currentLevelReps,
+//        導致畫面上「完成次數」會把前面難度的次數一起累加顯示
+//        (例如初級 1 下 + 中級 1 下 → 顯示 2)。已在自動升級與手動確認
+//        升級兩個路徑都補上 _repCount = 0。
 // ══════════════════════════════════════════════════════════════════
 
 import 'dart:io';
@@ -280,6 +291,7 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
               _previousLevel = _nextLevel(_previousLevel);
               _currentLevelStart = DateTime.now();
               _currentLevelReps = 0;
+              _repCount = 0; // 🩹 修正:畫面顯示的次數也要跟著歸零,不然會累加顯示
               _instruction = '難度提升,請繼續保持';
             });
           } else {
@@ -431,6 +443,7 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
       _previousLevel = _nextLevel(_previousLevel);
       _currentLevelStart = DateTime.now();
       _currentLevelReps = 0;
+      _repCount = 0; // 🩹 修正:畫面顯示的次數也要跟著歸零,不然會累加顯示
       _instruction = '難度提升,請繼續保持';
       _isPaused = false;
     });
@@ -450,7 +463,7 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
         DateTime.now().difference(_currentLevelStart).inSeconds;
 
     HistoryService().saveRecord(TrainingRecord(
-      timestamp: DateTime.now().toString().substring(0, 16),
+      timestamp: DateTime.now().toString().substring(0, 19),
       actionName: widget.trainingActionMeta!.name,
       difficulty: _levelToInt(_previousLevel),
       durationSeconds: durationSec,

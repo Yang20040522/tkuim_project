@@ -66,6 +66,14 @@ class _HistoryScreenState extends State<HistoryScreen> {
   String _selectedAction = '全部'; // 細項動作名稱，'全部' 代表不篩細項
   _DateFilter _dateFilter = _DateFilter.all;
 
+  // 🆕 目前還有幾筆紀錄尚未上傳到雲端(內部統計用,已不再顯示整批上傳按鈕)
+  int _pendingUploadCount = 0;
+
+  // 🆕 目前正在上傳中的紀錄(用 timestamp 標記),用來讓對應卡片顯示 loading。
+  // 用 Set 而不是單一 bool,是因為理論上使用者可能連續點好幾張卡片的
+  // 上傳按鈕,每一筆要各自獨立顯示自己的上傳中狀態,不會互相影響。
+  final Set<String> _uploadingTimestamps = {};
+
   @override
   void initState() {
     super.initState();
@@ -74,9 +82,11 @@ class _HistoryScreenState extends State<HistoryScreen> {
 
   Future<void> _loadHistory() async {
     final records = await _historyService.getHistory();
+    final pendingCount = await _historyService.getPendingUploadCount(); // 🆕
     setState(() {
       _allRecords = records;
       _isLoading = false;
+      _pendingUploadCount = pendingCount; // 🆕
     });
   }
 
@@ -87,7 +97,49 @@ class _HistoryScreenState extends State<HistoryScreen> {
       _category = _Category.all;
       _selectedAction = '全部';
       _dateFilter = _DateFilter.all;
+      _pendingUploadCount = 0; // 🆕
     });
+  }
+
+  // 🆕 ─────────────────────────────────────────────────────────
+  //  上傳到雲端(方案A:單筆手動觸發,整批上傳按鈕已移除)
+  // ─────────────────────────────────────────────────────────
+
+  // 🆕 單筆上傳:點卡片上的上傳按鈕時呼叫。
+  // 只讓那一張卡片自己顯示轉圈圈,使用者仍可以繼續操作畫面其他部分。
+  Future<void> _handleSingleUpload(TrainingRecord record) async {
+    if (_uploadingTimestamps.contains(record.timestamp)) return;
+
+    setState(() => _uploadingTimestamps.add(record.timestamp));
+
+    // TODO: userId 目前用 0 佔位,請換成目前登入使用者的真正 ID
+    final ok = await _historyService.uploadSingleRecord(record, userId: 0);
+
+    if (!mounted) return;
+
+    setState(() {
+      _uploadingTimestamps.remove(record.timestamp);
+      if (ok) {
+        // 直接把記憶體裡這筆紀錄標成已同步,畫面上的上傳按鈕才會立刻消失,
+        // 不用整個重新從 repository 撈一次列表。
+        final idx =
+            _allRecords.indexWhere((r) => r.timestamp == record.timestamp);
+        if (idx != -1) {
+          _allRecords[idx] = _allRecords[idx].copyWithSynced(true);
+        }
+      }
+    });
+
+    // 上傳成功/失敗後,待上傳總數也要跟著更新(供內部統計用)
+    final newPendingCount = await _historyService.getPendingUploadCount();
+    if (!mounted) return;
+    setState(() => _pendingUploadCount = newPendingCount);
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(ok ? '這筆紀錄已上傳成功' : '這筆上傳失敗,請確認網路連線'),
+      ),
+    );
   }
 
   // ── 動作名稱 <-> ActionType 對照 ──
@@ -606,6 +658,10 @@ class _HistoryScreenState extends State<HistoryScreen> {
             setState(() {
               _allRecords.removeWhere((r) => r.timestamp == record.timestamp);
             });
+            // 🆕 刪除後,待上傳筆數也要跟著重新整理
+            final newPendingCount = await _historyService.getPendingUploadCount();
+            if (!mounted) return;
+            setState(() => _pendingUploadCount = newPendingCount);
             ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(
                 content: Text('已刪除紀錄'),
@@ -627,6 +683,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
     final seconds = record.durationSeconds % 60;
     final hasMistakes = record.mistakeLogs.isNotEmpty;
     final hasVideo = record.videoPath != null;
+    final isUploadingThis = _uploadingTimestamps.contains(record.timestamp); // 🆕
 
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
@@ -675,6 +732,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
                         fontSize: 14,
                         fontWeight: FontWeight.w700,
                       ),
+                      overflow: TextOverflow.ellipsis,
                     ),
                     const SizedBox(height: 3),
                     Text(
@@ -686,6 +744,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
                   ],
                 ),
               ),
+              const SizedBox(width: 8),
               Column(
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
@@ -710,6 +769,55 @@ class _HistoryScreenState extends State<HistoryScreen> {
               ),
             ],
           ),
+
+          // 🆕 尚未上傳的紀錄底下,獨立一整列顯示大的上傳按鈕。
+          // 拿掉原本擠在標題文字旁邊的小圖示,改成佔滿寬度的按鈕列,
+          // 點擊範圍明顯變大,也更容易一眼看出哪些紀錄還沒上傳。
+          if (!record.isSynced) ...[
+            const SizedBox(height: 10),
+            GestureDetector(
+              onTap: isUploadingThis ? null : () => _handleSingleUpload(record),
+              child: Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(vertical: 10),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF4A65FF).withOpacity(0.12),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(
+                    color: const Color(0xFF4A65FF).withOpacity(0.35),
+                  ),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    isUploadingThis
+                        ? const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Color(0xFF4A65FF),
+                            ),
+                          )
+                        : const Icon(
+                            Icons.cloud_upload_outlined,
+                            size: 18,
+                            color: Color(0xFF4A65FF),
+                          ),
+                    const SizedBox(width: 6),
+                    Text(
+                      isUploadingThis ? '上傳中...' : '上傳這筆紀錄',
+                      style: const TextStyle(
+                        color: Color(0xFF4A65FF),
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
 
           // ── 播放錄影按鈕(只有存在 videoPath 才顯示)───────────────
           if (hasVideo) ...[

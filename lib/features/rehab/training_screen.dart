@@ -41,6 +41,12 @@
 //       Material -> Container -> Center -> Container -> Column
 //       這 5 層,結尾應該剛好 5 個 ')' 再加上 return 的 ';',
 //       原本多了一個,拿掉即可。
+//
+//  🩹 2026-08-31:timestamp 精度從「分鐘」(substring 0,16)拉到「秒」
+//     (substring 0,19),避免同一分鐘內存多筆紀錄時 timestamp 撞在一起,
+//     導致 history_screen.dart 的 Dismissible key: ValueKey(record.timestamp)
+//     把它們當成同一個 widget、只顯示其中一筆。_handleCompletion() 和
+//     _handleRealEnd() 兩處都要改(跟 body_training_screen.dart 同步修正)。
 // ══════════════════════════════════════════════════════════════════
 
 import 'dart:async';
@@ -500,7 +506,7 @@ class _TrainingScreenState extends State<TrainingScreen>
 
     // 儲存紀錄(此時 _pendingVideoPath 已經依照使用者的保留/不保留決定更新過)
     HistoryService().saveRecord(TrainingRecord(
-      timestamp: DateTime.now().toString().substring(0, 16),
+      timestamp: DateTime.now().toString().substring(0, 19),
       actionName: widget.action.name,
       //difficulty: widget.action.difficulties.indexOf(widget.difficulty) + 1,
       difficulty: widget.action.difficulties.indexWhere((d) => d.level == widget.difficulty.level) + 1,
@@ -622,7 +628,7 @@ class _TrainingScreenState extends State<TrainingScreen>
     );
 
     HistoryService().saveRecord(TrainingRecord(
-      timestamp: DateTime.now().toString().substring(0, 16),
+      timestamp: DateTime.now().toString().substring(0, 19),
       actionName: widget.action.name,
       //difficulty: widget.action.difficulties.indexOf(widget.difficulty) + 1,
       difficulty: widget.action.difficulties.indexWhere((d) => d.level == widget.difficulty.level) + 1,
