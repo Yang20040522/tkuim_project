@@ -4,8 +4,10 @@
 //
 // HistoryService(ChangeNotifier)負責「通知畫面更新」,
 // 實際「資料存在哪裡、怎麼存」交給這裡的 HistoryRepository 決定。
-// 之後接後端 API 時,只要換掉最下面 historyRepository 指到哪個實作,
-// HistoryService 完全不用改,所有畫面(stats、history、training 等)也不用改。
+//
+// 目前上傳到雲端的邏輯是走 exercise_api_service.dart(ExerciseApiService),
+// 跟這裡的 HistoryRepository 抽象介面無關;這裡負責的是「紀錄本身」
+// 存在本機的存取方式(新增/刪除/更新/查詢待同步紀錄)。
 //
 // 🆕 2026-08-31:新增 getUnsyncedRecords() / markAsSynced()。
 //    配合方案A(訓練結束後才上傳):訓練時手機連樹莓派熱點沒有對外網路,
@@ -16,7 +18,6 @@
 import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/training_action.dart';
-import 'history_api_repository.dart'; // 之後接後端 API 時要用到,見檔案最下方說明
 
 abstract class HistoryRepository {
   Future<List<TrainingRecord>> getHistory();
@@ -35,7 +36,7 @@ abstract class HistoryRepository {
   Future<void> markAsSynced(String timestamp);
 }
 
-/// ============ 現在先用的版本:本地 SharedPreferences 儲存 ============
+/// ============ 本地 SharedPreferences 儲存 ============
 class LocalHistoryRepository implements HistoryRepository {
   static const String _key = 'rehab_history';
 
@@ -111,22 +112,4 @@ class LocalHistoryRepository implements HistoryRepository {
   }
 }
 
-/// ============ 之後接後端資料庫時,換這個版本 ============
-/// HistoryApiRepository 已經寫好在 history_api_repository.dart,
-/// 會真正呼叫後端 API(見 history_api_spec.md 給後端的規格文件)。
-///
-/// 【目前狀態】後端還沒有對應的 /api/records API,所以現在還是用
-/// LocalHistoryRepository。等後端做好之後,只要把下面這行:
-///
-///   final HistoryRepository historyRepository = LocalHistoryRepository();
-///
-/// 換成:
-///
-///   final HistoryRepository historyRepository = HistoryApiRepository();
-///
-/// history_service.dart、stats_calculator.dart 完全不用改一行,
-/// 因為都是透過 HistoryRepository 這個抽象介面在操作,不管背後是
-/// 本地儲存還是真的資料庫都一樣用。
 final HistoryRepository historyRepository = LocalHistoryRepository();
-// 之後要切換時,把上面這行註解掉,改用下面這行:
-// final HistoryRepository historyRepository = HistoryApiRepository();

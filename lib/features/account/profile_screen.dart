@@ -2,8 +2,10 @@
 import 'package:flutter/material.dart';
 
 import '../../services/history_service.dart';
+import '../notification/notification_settings_screen.dart';
 import 'app_session.dart';
 import 'role_select_screen.dart';
+import 'account_info_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -368,13 +370,22 @@ class _ProfileScreenState extends State<ProfileScreen> {
           _buildSettingsItem(
             icon: Icons.person_outline,
             label: '帳號資訊',
-            onTap: () => _comingSoon('帳號資訊'),
+            onTap: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const AccountInfoScreen()),
+              );
+            },
           ),
           _buildDivider(),
           _buildSettingsItem(
             icon: Icons.notifications_outlined,
             label: '通知設定',
-            onTap: () => _comingSoon('通知設定'),
+            onTap: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                    builder: (_) => const NotificationSettingsScreen()),
+              );
+            },
           ),
           _buildDivider(),
           _buildSettingsItem(
