@@ -47,6 +47,29 @@
 //     導致 history_screen.dart 的 Dismissible key: ValueKey(record.timestamp)
 //     把它們當成同一個 widget、只顯示其中一筆。_handleCompletion() 和
 //     _handleRealEnd() 兩處都要改(跟 body_training_screen.dart 同步修正)。
+//
+//  🩹 2026-09-01:修正自動升級時歷史紀錄只存到「最低難度」的 bug
+//     - 問題①:_handleCompletion() / _handleRealEnd() 存紀錄時原本用
+//       widget.difficulty(一開始選的難度),而不是這次訓練「真正」練到的
+//       displayDifficulty(依 state.currentLevel 換算),導致不管升到第幾階,
+//       最後存進去的難度跟目標次數永遠是一開始選的那個。已改用 displayDifficulty。
+//     - 問題②:_listenController() 裡自動升級只呼叫了 confirmLevelUp(),
+//       沒有像 body_training_screen.dart 一樣在「升級前」先把這一階的紀錄存起來,
+//       導致中間升級的每一階都沒有留下紀錄,只有最後一次呼叫 _handleCompletion /
+//       _handleRealEnd 時才存一筆(而且還是錯的難度)。新增 _saveCurrentLevelRecord(),
+//       在自動升級呼叫 confirmLevelUp() 之前先存下當下這一階的紀錄。
+//
+//  🩹 2026-09-01(第二次修正):修正歷史紀錄裡 targetReps 數字亂寫的 bug
+//     - 問題:_saveCurrentLevelRecord() / _handleCompletion() / _handleRealEnd()
+//       存紀錄時,targetReps 原本讀的是 levelDifficulty.targetReps /
+//       displayDifficulty.targetReps —— 這是 widget.action.difficulties
+//       這份「難度設定檔」裡寫死的預設值,跟訓練畫面上、TrainingStatsPanel
+//       實際顯示、用來判斷達標的 state.targetReps 是兩個不同的來源。
+//       如果使用者透過升級彈窗自訂了次數(customTargetReps),或設定檔跟
+//       實際訓練邏輯本來就對不上,存進歷史紀錄的 targetReps 就會跟畫面上
+//       看到的、實際練的次數不一致(例如畫面顯示練 1 下就過關,存檔卻變成
+//       設定檔裡的 8、10、6)。三處全部改成讀 state.targetReps,確保
+//       「畫面上看到的次數」跟「存進歷史紀錄的次數」一致。
 // ══════════════════════════════════════════════════════════════════
 
 import 'dart:async';
@@ -272,6 +295,7 @@ class _TrainingScreenState extends State<TrainingScreen>
       if (state.pendingLevelUp && !_showingLevelUpOverlay && !_levelUpJustHandled) {
         if (widget.autoLevelUp) {
           _levelUpJustHandled = true; // 🆕 鎖住,避免同一次達標連續觸發好幾次confirmLevelUp
+          _saveCurrentLevelRecord(state); // 🆕 升級前,先把這一階累積到的次數存成一筆獨立紀錄
           _controller.confirmLevelUp();
           Future.delayed(const Duration(milliseconds: 500), () {
             _levelUpJustHandled = false; // 🆕 解鎖,讓下一次真正達標時能正常運作
@@ -289,6 +313,33 @@ class _TrainingScreenState extends State<TrainingScreen>
         _handleCompletion(state);
       }
     });
+  }
+
+  // 🆕 自動升級時,升級「前」呼叫,把剛完成的這一階存成一筆獨立紀錄。
+  // 這裡讀到的 state 是升級發生「當下」的快照,repCount 就是這一階累積到的次數,
+  // 不受後面 confirmLevelUp() 之後 action 內部是否歸零影響。
+  //
+  // 🩹 2026-09-01(第二次修正):targetReps 改用 state.targetReps(這次訓練
+  // 實際在用、畫面上也是顯示這個值),不再讀 widget.action.difficulties 這份
+  // 難度設定檔裡的 levelDifficulty.targetReps —— 那是預設值,跟訓練當下
+  // 實際使用的目標次數是兩回事,兩者不同步就會導致存進歷史紀錄的次數
+  // 跟訓練時畫面顯示的次數對不上。
+  void _saveCurrentLevelRecord(RehabSessionState state) {
+    final levelIdx = state.currentLevel - 1;
+    final levelDifficulty = (levelIdx >= 0 && levelIdx < widget.action.difficulties.length)
+        ? widget.action.difficulties[levelIdx]
+        : widget.difficulty;
+
+    HistoryService().saveRecord(TrainingRecord(
+      timestamp: DateTime.now().toString().substring(0, 19),
+      actionName: widget.action.name,
+      difficulty: widget.action.difficulties
+              .indexWhere((d) => d.level == levelDifficulty.level) +
+          1,
+      durationSeconds: state.durationSeconds,
+      mistakeLogs: state.mistakeLogs,
+      targetReps: state.targetReps, // ✅ 改用 state.targetReps(這次訓練實際用的目標次數)
+    ));
   }
 
   // 🖥️ 電視投放新增:WebRTC 初始化(目前主要用於 signaling 通道,
@@ -477,7 +528,7 @@ class _TrainingScreenState extends State<TrainingScreen>
   Future<void> _handleCompletion(RehabSessionState state) async {
     _pendingVideoPath = await ScreenRecorderService.stopRecording();
 
-    // ✅ 新增:用 currentLevel 去查出真正對應的 DifficultyOption
+    // ✅ 用 currentLevel 去查出真正對應的 DifficultyOption
     final levelIdx = state.currentLevel - 1;
     final displayDifficulty = (levelIdx >= 0 && levelIdx < widget.action.difficulties.length)
         ? widget.action.difficulties[levelIdx]
@@ -504,16 +555,22 @@ class _TrainingScreenState extends State<TrainingScreen>
       ),
     );
 
-    // 儲存紀錄(此時 _pendingVideoPath 已經依照使用者的保留/不保留決定更新過)
+    // 🩹 修正:改用 displayDifficulty(這一階真正的難度),不再用 widget.difficulty,
+    // 不然不管升到第幾階,存進去的難度永遠是一開始選的那個。
+    // 🩹 2026-09-01(第二次修正):targetReps 改用 state.targetReps(這次訓練
+    // 實際在用、畫面上也是顯示這個值),不再用 displayDifficulty.targetReps
+    // (難度設定檔裡的預設值),避免存進歷史紀錄的次數跟訓練畫面顯示的對不上。
     HistoryService().saveRecord(TrainingRecord(
       timestamp: DateTime.now().toString().substring(0, 19),
       actionName: widget.action.name,
       //difficulty: widget.action.difficulties.indexOf(widget.difficulty) + 1,
-      difficulty: widget.action.difficulties.indexWhere((d) => d.level == widget.difficulty.level) + 1,
+      difficulty: widget.action.difficulties
+              .indexWhere((d) => d.level == displayDifficulty.level) +
+          1,
       durationSeconds: state.durationSeconds,
       mistakeLogs: state.mistakeLogs,
       videoPath: _pendingVideoPath,
-      targetReps: widget.difficulty.targetReps, // ✅ 新增這行，兩處都加
+      targetReps: state.targetReps, // ✅ 改用 state.targetReps
     ));
 
     // ✅ 新增:順便檢查今天計畫裡有沒有這個動作,有就標記完成
@@ -627,15 +684,20 @@ class _TrainingScreenState extends State<TrainingScreen>
       ),
     );
 
+    // 🩹 修正:改用 displayDifficulty(這一階真正的難度),不再用 widget.difficulty
+    // 🩹 2026-09-01(第二次修正):targetReps 改用 state.targetReps,理由同上
+    // (_handleCompletion 那一處的說明)。
     HistoryService().saveRecord(TrainingRecord(
       timestamp: DateTime.now().toString().substring(0, 19),
       actionName: widget.action.name,
       //difficulty: widget.action.difficulties.indexOf(widget.difficulty) + 1,
-      difficulty: widget.action.difficulties.indexWhere((d) => d.level == widget.difficulty.level) + 1,
+      difficulty: widget.action.difficulties
+              .indexWhere((d) => d.level == displayDifficulty.level) +
+          1,
       durationSeconds: state.durationSeconds,
       mistakeLogs: state.mistakeLogs,
       videoPath: _pendingVideoPath,
-      targetReps: widget.difficulty.targetReps, // ✅ 新增這行，兩處都加
+      targetReps: state.targetReps, // ✅ 改用 state.targetReps
     ));
 
     // ✅ 新增:順便檢查今天計畫裡有沒有這個動作,有就標記完成
