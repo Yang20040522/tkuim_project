@@ -74,6 +74,7 @@ import '../../features/tv_cast/webrtc_service.dart';
 import '../../features/tv_cast/socket_server_service.dart';
 import '../../features/tv_cast/socket_client_service.dart';
 import '../../controllers/rehab_session_controller.dart';
+import '../training/training_preview_screen.dart';
 
 // 達標下限:當前難度做 ≥ 3 下,按結束才會存紀錄
 const int _kMinRepsToSave = 3;
@@ -169,6 +170,7 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
 
   DateTime _currentLevelStart = DateTime.now();
   int _currentLevelReps = 0;
+  int _currentLevelTargetReps = 0; // 🆕 追蹤「目前這一階」實際的目標次數(含自訂值)
   RehabDifficulty _previousLevel = RehabDifficulty.easy;
 
   bool get _waitingHandSelect =>
@@ -178,6 +180,7 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
   @override
   void initState() {
     super.initState();
+    _currentLevelTargetReps = widget.difficultyMeta?.targetReps ?? 10; // 🆕
     _instruction = widget.action.initialHint;
     _previousLevel = _mapDifficulty(
       widget.difficultyMeta?.level ?? DifficultyLevel.level1,
@@ -284,14 +287,16 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
               currentLevelIdx + 1 < currentMeta.difficulties.length;
 
           if (hasNextLevel) {
-            // 還有下一階 → 自動升級(原本的行為)
-            controllable?.confirmLevelUp(); // 真正解凍並套用新難度
+            controllable?.confirmLevelUp();
+            final nextLevelIdx = currentLevelIdx + 1;
+            final nextTargetReps = currentMeta.difficulties[nextLevelIdx].targetReps; // 🆕
             setState(() {
               _saveCurrentLevelRecord();
               _previousLevel = _nextLevel(_previousLevel);
               _currentLevelStart = DateTime.now();
               _currentLevelReps = 0;
-              _repCount = 0; // 🩹 修正:畫面顯示的次數也要跟著歸零,不然會累加顯示
+              _repCount = 0;
+              _currentLevelTargetReps = nextTargetReps; // 🆕
               _instruction = '難度提升,請繼續保持';
             });
           } else {
@@ -443,7 +448,10 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
       _previousLevel = _nextLevel(_previousLevel);
       _currentLevelStart = DateTime.now();
       _currentLevelReps = 0;
-      _repCount = 0; // 🩹 修正:畫面顯示的次數也要跟著歸零,不然會累加顯示
+      _repCount = 0;
+      _currentLevelTargetReps = (customReps != null && customReps > 0)
+          ? customReps
+          : (int.tryParse(_levelUpRepsController.text) ?? _currentLevelTargetReps); // 🆕 優先用自訂值
       _instruction = '難度提升,請繼續保持';
       _isPaused = false;
     });
@@ -468,7 +476,8 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
       difficulty: _levelToInt(_previousLevel),
       durationSeconds: durationSec,
       mistakeLogs: const [],
-      targetReps: widget.difficultyMeta?.targetReps ?? 10,
+      //targetReps: widget.difficultyMeta?.targetReps ?? 10,
+      targetReps: _currentLevelTargetReps, // 🩹 修正:改讀「目前這一階」的實際次數,不是畫面一開始的舊難度
     ));
 
     _recordsSavedThisSession++;
@@ -759,7 +768,22 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
     }
 
     if (!mounted) return;
-    Navigator.of(context).pushReplacement(MaterialPageRoute(builder: (_) => screen));
+
+    // 有 3D 示範的動作 → 先進示範頁;沒有的 → 直接進訓練
+    final Widget destination = hasDemo3D(action.type)
+        ? TrainingPreviewScreen(
+            actionType: action.type,
+            actionName: action.name,
+            targetScreen: screen,
+            difficultyLabel: difficulty.label,
+            targetReps: difficulty.targetReps,
+            description: action.description,
+          )
+        : screen;
+
+    Navigator.of(context).pushReplacement(
+        MaterialPageRoute(builder: (_) => destination));
+    //Navigator.of(context).pushReplacement(MaterialPageRoute(builder: (_) => screen));
   }
 
   RehabDifficulty _mapDifficulty(DifficultyLevel level) {
