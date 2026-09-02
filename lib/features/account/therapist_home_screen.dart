@@ -1,7 +1,7 @@
 // lib/features/account/therapist_home_screen.dart
-// 治療師端佔位畫面,功能待開發。
 import 'package:flutter/material.dart';
 
+import '../custom_exercise/custom_exercise_editor_page.dart';
 import 'app_session.dart';
 import 'role_select_screen.dart';
 
@@ -14,6 +14,12 @@ class TherapistHomeScreen extends StatelessWidget {
     Navigator.of(context).pushAndRemoveUntil(
       MaterialPageRoute(builder: (_) => const RoleSelectScreen()),
       (route) => false,
+    );
+  }
+
+  void _openCustomExerciseEditor(BuildContext context) {
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const CustomExerciseEditorPage()),
     );
   }
 
@@ -48,26 +54,111 @@ class TherapistHomeScreen extends StatelessWidget {
                   ),
                 ],
               ),
-              const Spacer(),
-              const Icon(Icons.medical_services_outlined,
-                  color: Color(0xFF9CA3AF), size: 48),
-              const SizedBox(height: 16),
+              const SizedBox(height: 28),
               const Text(
-                '治療師端建置中',
-                textAlign: TextAlign.center,
+                '復健動作管理',
                 style: TextStyle(
-                  color: Color(0xFF6B7280),
-                  fontSize: 16,
-                  fontWeight: FontWeight.w700,
+                  color: Color(0xFF1A1D2E),
+                  fontSize: 18,
+                  fontWeight: FontWeight.w800,
                 ),
               ),
               const SizedBox(height: 8),
               const Text(
-                '登入流程已可運作,功能待後續開發',
-                textAlign: TextAlign.center,
+                '建立適合患者需求的自訂復健動作',
                 style: TextStyle(color: Color(0xFF9CA3AF), fontSize: 13),
               ),
+              const SizedBox(height: 18),
+              _TherapistFeatureCard(
+                key: const Key('open-custom-exercise-editor'),
+                icon: Icons.accessibility_new,
+                title: '新增自訂復健動作',
+                subtitle: '設定人體姿勢、時間軸與復健判定條件',
+                onTap: () => _openCustomExerciseEditor(context),
+              ),
               const Spacer(),
+              const Text(
+                '患者管理與動作指派功能將於後續版本提供',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: Color(0xFF9CA3AF), fontSize: 12),
+              ),
+              const SizedBox(height: 8),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _TherapistFeatureCard extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final VoidCallback onTap;
+
+  const _TherapistFeatureCard({
+    super.key,
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(18),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(18),
+        child: Container(
+          padding: const EdgeInsets.all(18),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(color: const Color(0xFFDDE0F0)),
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 52,
+                height: 52,
+                decoration: const BoxDecoration(
+                  color: Color(0xFFEFF1FF),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(icon, color: const Color(0xFF4A65FF), size: 27),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: const TextStyle(
+                        color: Color(0xFF1A1D2E),
+                        fontSize: 16,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(height: 5),
+                    Text(
+                      subtitle,
+                      style: const TextStyle(
+                        color: Color(0xFF9CA3AF),
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const Icon(
+                Icons.arrow_forward_ios,
+                color: Color(0xFF9CA3AF),
+                size: 15,
+              ),
             ],
           ),
         ),

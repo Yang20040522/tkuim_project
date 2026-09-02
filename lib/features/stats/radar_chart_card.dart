@@ -170,10 +170,10 @@ class _RadarChartCardState extends State<RadarChartCard> {
             const Icon(Icons.radar_rounded,
                 size: 40, color: Color(0xFF9CA3AF)),
             const SizedBox(height: 12),
-            Text(
+            const Text(
               '至少練 3 種不同動作\n雷達圖就會出現',
               textAlign: TextAlign.center,
-              style: const TextStyle(
+              style: TextStyle(
                 color: Color(0xFF6B7280),
                 fontSize: 13,
                 height: 1.5,

@@ -144,7 +144,7 @@ class SitToStandAction implements BodyRehabAction, LevelUpControllable {
               prompt: '腿部表現很棒!',
             );
           }
-          return RehabFeedback(
+          return const RehabFeedback(
             scored: true,
             prompt: '完成一次,稍微休息再做下一回',
           );

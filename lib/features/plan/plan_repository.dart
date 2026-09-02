@@ -1,6 +1,6 @@
 import 'exercise.dart';
 import 'rehab_plan.dart';
-import 'plan_api_repository.dart'; // 之後接後端 API 時要用到,見檔案最下方說明
+// 之後接後端 API 時要用到,見檔案最下方說明
 
 abstract class PlanRepository {
   Future<RehabPlan?> getPlanByDate(DateTime date);

@@ -420,7 +420,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
   // ── 日期篩選 ──
 
   Widget _buildDateFilterRow() {
-    final items = const [
+    const items = [
       _DateFilter.all,
       _DateFilter.today,
       _DateFilter.week,

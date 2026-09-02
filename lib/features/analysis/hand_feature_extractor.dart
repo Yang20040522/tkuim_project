@@ -108,7 +108,9 @@ class HandFeatureExtractor {
       int validPairs = 0;
       for (int f = 1; f < numFrames; f++) {
         if (j >= frameHandLandmarks[f].length ||
-            j >= frameHandLandmarks[f - 1].length) continue;
+            j >= frameHandLandmarks[f - 1].length) {
+          continue;
+        }
         final prev = frameHandLandmarks[f - 1][j];
         final curr = frameHandLandmarks[f][j];
         final dx = curr.dx - prev.dx;
@@ -130,7 +132,9 @@ class HandFeatureExtractor {
       double sum = 0;
       for (final j in mainFingers) {
         if (j >= frameHandLandmarks[f].length ||
-            j >= frameHandLandmarks[f - 1].length) continue;
+            j >= frameHandLandmarks[f - 1].length) {
+          continue;
+        }
         final prev = frameHandLandmarks[f - 1][j];
         final curr = frameHandLandmarks[f][j];
         final dx = curr.dx - prev.dx;

@@ -171,7 +171,9 @@ class VoiceService {
         // 神經網路聲(名字裡有這些字眼,通常品質最高)
         if (n.contains('neural') ||
             n.contains('wavenet') ||
-            n.contains('network')) s += 80;
+            n.contains('network')) {
+          s += 80;
+        }
 
         // 台灣腔優先(zh-TW / cmn-TW)
         if (locale.startsWith('zh-tw') || locale.contains('cmn-tw')) s += 40;

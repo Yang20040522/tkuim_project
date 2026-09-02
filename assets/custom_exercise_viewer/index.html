@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    * { box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; background: #1a1d2e; }
+    canvas { display: block; width: 100%; height: 100%; }
+    #status {
+      position: absolute; left: 12px; bottom: 10px; padding: 6px 9px;
+      border-radius: 8px; color: #dbeafe; background: rgba(17, 24, 39, 0.72);
+      font: 12px/1.3 sans-serif; pointer-events: none;
+    }
+  </style>
+</head>
+<body>
+  <div id="status">載入 3D 人體模型…</div>
+  <script type="importmap">
+  { "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+  }}
+  </script>
+  <script type="module">
+    import * as THREE from 'three';
+    import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+    const MODEL_PATH = './editor_body.glb';
+    const CONTROLLABLE_BONES = Object.freeze({
+      leftShoulder: 'DHIbody:upperarm_l',
+      rightShoulder: 'DHIbody:upperarm_r',
+      leftElbow: 'DHIbody:lowerarm_l',
+      rightElbow: 'DHIbody:lowerarm_r',
+      leftWrist: 'DHIbody:hand_l',
+      rightWrist: 'DHIbody:hand_r',
+      leftHip: 'DHIbody:thigh_l',
+      rightHip: 'DHIbody:thigh_r',
+      leftKnee: 'DHIbody:calf_l',
+      rightKnee: 'DHIbody:calf_r',
+      leftAnkle: 'DHIbody:foot_l',
+      rightAnkle: 'DHIbody:foot_r',
+    });
+    const JOINT_DISPLAY_NAMES = Object.freeze({
+      leftShoulder: '左肩',
+      rightShoulder: '右肩',
+      leftElbow: '左肘',
+      rightElbow: '右肘',
+      leftWrist: '左腕',
+      rightWrist: '右腕',
+      leftHip: '左髖',
+      rightHip: '右髖',
+      leftKnee: '左膝',
+      rightKnee: '右膝',
+      leftAnkle: '左踝',
+      rightAnkle: '右踝',
+    });
+    const statusElement = document.getElementById('status');
+
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(35, window.innerWidth / window.innerHeight, 0.1, 100);
+    camera.position.set(0, 1.25, 3.25);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+    document.body.appendChild(renderer.domElement);
+
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.target.set(0, 1.0, 0);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.08;
+    controls.enableZoom = true;
+
+    scene.add(new THREE.HemisphereLight(0xffffff, 0x3b425f, 1.4));
+    const keyLight = new THREE.DirectionalLight(0xffffff, 1.6);
+    keyLight.position.set(2, 3, 2);
+    scene.add(keyLight);
+
+    const editorBones = new Map();
+    const restQuaternions = new Map();
+    let runtimeBoneNames = [];
+    let selectedJoint = 'rightShoulder';
+    let selectedAxisHelper = null;
+    let axisHelperSize = 0.1;
+    const pendingRotations = Object.fromEntries(
+      Object.keys(CONTROLLABLE_BONES).map((joint) => [joint, { x: 0, y: 0, z: 0 }]),
+    );
+
+    function callFlutter(handler, payload) {
+      const bridge = window.flutter_inappwebview;
+      if (bridge && typeof bridge.callHandler === 'function') {
+        bridge.callHandler(handler, payload);
+      }
+    }
+
+    function finiteAngle(value) {
+      const number = Number(value);
+      return Number.isFinite(number) ? number : 0;
+    }
+
+    function normalizedRotation(rotation) {
+      return {
+        x: finiteAngle(rotation && rotation.x),
+        y: finiteAngle(rotation && rotation.y),
+        z: finiteAngle(rotation && rotation.z),
+      };
+    }
+
+    function applyJointRotation(joint, rotation) {
+      const bone = editorBones.get(joint);
+      const restQuaternion = restQuaternions.get(joint);
+      if (!bone || !restQuaternion) return false;
+
+      // 每次都從該骨骼的 GLB rest quaternion 計算，避免 slider 更新造成累積。
+      // XYZ 採骨骼 local axes，正值遵循 Three.js 右手定則。
+      const eulerDelta = new THREE.Euler(
+        THREE.MathUtils.degToRad(rotation.x),
+        THREE.MathUtils.degToRad(rotation.y),
+        THREE.MathUtils.degToRad(rotation.z),
+        'XYZ',
+      );
+      const deltaQuaternion = new THREE.Quaternion().setFromEuler(eulerDelta);
+      bone.quaternion
+        .copy(restQuaternion)
+        .multiply(deltaQuaternion)
+        .normalize();
+      bone.updateMatrixWorld(true);
+      return true;
+    }
+
+    function updateSelectedAxisHelper() {
+      const selectedBone = editorBones.get(selectedJoint);
+      if (!selectedBone) return;
+      if (selectedAxisHelper && selectedAxisHelper.parent === selectedBone) return;
+      if (selectedAxisHelper && selectedAxisHelper.parent) {
+        selectedAxisHelper.parent.remove(selectedAxisHelper);
+      }
+      selectedAxisHelper = new THREE.AxesHelper(axisHelperSize);
+      selectedBone.add(selectedAxisHelper);
+    }
+
+    function updateStatus() {
+      const rotation = pendingRotations[selectedJoint];
+      const boneSummary = runtimeBoneNames.length > 0
+        ? ` · 骨骼 ${runtimeBoneNames.length}`
+        : '';
+      statusElement.textContent =
+        `${JOINT_DISPLAY_NAMES[selectedJoint]} X ${rotation.x.toFixed(0)}° · ` +
+        `Y ${rotation.y.toFixed(0)}° · Z ${rotation.z.toFixed(0)}°${boneSummary}`;
+    }
+
+    function setEditorPose(payload) {
+      if (payload && Object.hasOwn(CONTROLLABLE_BONES, payload.selectedJoint)) {
+        selectedJoint = payload.selectedJoint;
+      }
+      if (payload && payload.rotations) {
+        for (const joint of Object.keys(CONTROLLABLE_BONES)) {
+          if (Object.hasOwn(payload.rotations, joint)) {
+            pendingRotations[joint] = normalizedRotation(payload.rotations[joint]);
+          }
+        }
+      }
+      for (const joint of Object.keys(CONTROLLABLE_BONES)) {
+        applyJointRotation(joint, pendingRotations[joint]);
+      }
+      updateSelectedAxisHelper();
+      updateStatus();
+      return editorBones.size === Object.keys(CONTROLLABLE_BONES).length;
+    }
+
+    window.setEditorPose = setEditorPose;
+
+    function fitCameraToObject(object, fitOffset = 1.2) {
+      object.updateMatrixWorld(true);
+      const box = new THREE.Box3().setFromObject(object);
+      if (box.isEmpty()) throw new Error('模型沒有可用的可視範圍');
+
+      const size = box.getSize(new THREE.Vector3());
+      const center = box.getCenter(new THREE.Vector3());
+      const verticalFov = THREE.MathUtils.degToRad(camera.fov);
+      const horizontalFov = 2 * Math.atan(Math.tan(verticalFov / 2) * camera.aspect);
+      const verticalDistance = size.y / (2 * Math.tan(verticalFov / 2));
+      const horizontalDistance = size.x / (2 * Math.tan(horizontalFov / 2));
+      const distance = fitOffset * (Math.max(verticalDistance, horizontalDistance) + size.z / 2);
+
+      camera.position.set(center.x, center.y, center.z + distance);
+      camera.near = Math.max(distance / 1000, 0.001);
+      camera.far = Math.max(distance + size.length() * 10, 10);
+      camera.updateProjectionMatrix();
+      camera.lookAt(center);
+
+      controls.target.copy(center);
+      controls.minDistance = Math.max(size.length() * 0.1, 0.05);
+      controls.maxDistance = Math.max(size.length() * 8, distance * 4);
+      controls.update();
+      return size;
+    }
+
+    const loader = new GLTFLoader();
+    const xhr = new XMLHttpRequest();
+    xhr.open('GET', MODEL_PATH, true);
+    xhr.responseType = 'arraybuffer';
+    xhr.onload = function() {
+      if (xhr.status !== 200 && xhr.status !== 0) {
+        reportError(`GLB 載入失敗：HTTP ${xhr.status}`);
+        return;
+      }
+      loader.parse(
+        xhr.response,
+        '',
+        (gltf) => {
+          const model = gltf.scene;
+          scene.add(model);
+          const modelSize = fitCameraToObject(model);
+
+          model.traverse((object) => {
+            if (object.isBone) {
+              // GLTFLoader 會清除名稱中的 Three.js PropertyBinding 保留字（例如 ':'）。
+              // 透過 parser association 還原 GLB node 的原始名稱，讓 Flutter mapping
+              // 能持續使用經 FBX 驗證過的 DHI bone names。
+              const association = gltf.parser.associations.get(object);
+              const sourceNode = association && Number.isInteger(association.nodes)
+                ? gltf.parser.json.nodes[association.nodes]
+                : null;
+              if (sourceNode && sourceNode.name) object.name = sourceNode.name;
+              runtimeBoneNames.push(object.name);
+            }
+          });
+          console.info(
+            `[CustomExerciseViewer] Runtime bones (${runtimeBoneNames.length})`,
+            runtimeBoneNames,
+          );
+          window.getEditorBoneNames = () => [...runtimeBoneNames];
+
+          const missingBones = [];
+          for (const [joint, boneName] of Object.entries(CONTROLLABLE_BONES)) {
+            const bone = model.getObjectByName(boneName);
+            if (!bone || !bone.isBone) {
+              missingBones.push(boneName);
+              continue;
+            }
+            editorBones.set(joint, bone);
+            restQuaternions.set(joint, bone.quaternion.clone());
+          }
+          if (missingBones.length > 0) {
+            reportError(`找不到骨骼：${missingBones.join(', ')}`);
+            return;
+          }
+
+          axisHelperSize = Math.max(modelSize.length() * 0.06, 0.05);
+          setEditorPose({ selectedJoint, rotations: pendingRotations });
+          callFlutter('EditorViewerReady', {
+            runtimeBoneCount: runtimeBoneNames.length,
+            controllableBoneCount: editorBones.size,
+            boneNames: CONTROLLABLE_BONES,
+            axisSpace: 'local',
+            eulerOrder: 'XYZ',
+          });
+        },
+        (error) => reportError(`GLB 解析失敗：${error.message || error}`),
+      );
+    };
+    xhr.onerror = () => reportError('無法讀取人體 GLB');
+    xhr.send();
+
+    function reportError(message) {
+      statusElement.textContent = message;
+      statusElement.style.color = '#fecaca';
+      callFlutter('EditorViewerError', { message });
+      console.error('[CustomExerciseViewer]', message);
+    }
+
+    function animate() {
+      requestAnimationFrame(animate);
+      controls.update();
+      renderer.render(scene, camera);
+    }
+    animate();
+
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+  </script>
+</body>
+</html>

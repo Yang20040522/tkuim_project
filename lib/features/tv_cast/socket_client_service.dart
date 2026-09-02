@@ -25,8 +25,9 @@ class SocketClientService extends ChangeNotifier {
   Stream<Uint8List> get binaryMessages => _binaryController.stream;
 
   Future<void> connect(String ip, int port) async {
-    if (_status == ClientStatus.connecting || _status == ClientStatus.connected)
+    if (_status == ClientStatus.connecting || _status == ClientStatus.connected) {
       return;
+    }
 
     _status = ClientStatus.connecting;
     _errorMessage = null;

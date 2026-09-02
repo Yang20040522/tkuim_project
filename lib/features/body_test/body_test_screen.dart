@@ -121,7 +121,7 @@ class _BodyTestScreenState extends State<BodyTestScreen> {
                 border: Border.all(color: const Color(0xFFDDE0F0)),
               ),
               child: const Icon(Icons.arrow_back_ios_new,
-                  color: const Color(0xFF374151), size: 16),
+                  color: Color(0xFF374151), size: 16),
             ),
           ),
           const SizedBox(width: 12),
@@ -134,7 +134,7 @@ class _BodyTestScreenState extends State<BodyTestScreen> {
                     Text(
                       '全身骨架偵測',
                       style: TextStyle(
-                        color: const Color(0xFF1A1D2E),
+                        color: Color(0xFF1A1D2E),
                         fontSize: 18,
                         fontWeight: FontWeight.w800,
                       ),
@@ -161,7 +161,7 @@ class _BodyTestScreenState extends State<BodyTestScreen> {
                 border: Border.all(color: const Color(0xFFDDE0F0)),
               ),
               child: const Icon(Icons.flip_camera_ios,
-                  color: const Color(0xFF374151), size: 20),
+                  color: Color(0xFF374151), size: 20),
             ),
           ),
         ],
@@ -220,7 +220,7 @@ class _BodyTestScreenState extends State<BodyTestScreen> {
                   child: Text(
                     '請站入鏡頭範圍內',
                     style: TextStyle(
-                      color: const Color(0xFF1A1D2E),
+                      color: Color(0xFF1A1D2E),
                       fontSize: 18,
                       fontWeight: FontWeight.w600,
                       shadows: [Shadow(blurRadius: 8, color: Colors.black)],

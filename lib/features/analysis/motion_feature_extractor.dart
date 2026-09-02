@@ -208,7 +208,9 @@ class MotionFeatureExtractor {
       int validPairs = 0;
       for (int f = 1; f < numFrames; f++) {
         if (frameScores[f][j] < scoreThreshold ||
-            frameScores[f - 1][j] < scoreThreshold) continue;
+            frameScores[f - 1][j] < scoreThreshold) {
+          continue;
+        }
         final prev = framePoses[f - 1][j];
         final curr = framePoses[f][j];
         final dx = curr.dx - prev.dx;
@@ -233,7 +235,9 @@ class MotionFeatureExtractor {
       double sum = 0;
       for (final j in mainJoints) {
         if (frameScores[f][j] < scoreThreshold ||
-            frameScores[f - 1][j] < scoreThreshold) continue;
+            frameScores[f - 1][j] < scoreThreshold) {
+          continue;
+        }
         final prev = framePoses[f - 1][j];
         final curr = framePoses[f][j];
         final dx = curr.dx - prev.dx;

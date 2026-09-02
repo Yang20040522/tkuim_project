@@ -197,9 +197,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   Widget _buildTopBar() {
-    return Row(
+    return const Row(
       children: [
-        const Text(
+        Text(
           '個人',
           style: TextStyle(
             color: Color(0xFF1A1D2E),
@@ -442,8 +442,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 ),
               ),
             ),
-            Icon(Icons.arrow_forward_ios,
-                color: const Color(0xFF9CA3AF), size: 12),
+            const Icon(Icons.arrow_forward_ios,
+                color: Color(0xFF9CA3AF), size: 12),
           ],
         ),
       ),

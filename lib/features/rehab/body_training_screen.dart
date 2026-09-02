@@ -186,9 +186,9 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
     _start();
 
     // 🖥️ 電視投放:只有真的連了電視才初始化,沒連就完全跳過(省效能)
-    final bool _tvConnected =
+    final bool tvConnected =
         _clientService.isConnected || _serverService.isClientConnected;
-    if (_tvConnected) {
+    if (tvConnected) {
       _initRtc();
       if (_clientService.isConnected) {
         _socketSub = _clientService.messages.listen(_handleRemoteCommand);

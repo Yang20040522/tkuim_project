@@ -155,7 +155,7 @@ class LateralStepAction implements BodyRehabAction, LevelUpControllable {
               prompt: '下肢控制很棒!',
             );
           }
-          return RehabFeedback(
+          return const RehabFeedback(
             scored: true,
             prompt: '完成一次,請換腳或繼續跨步',
           );
