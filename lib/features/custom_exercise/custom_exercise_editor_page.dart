@@ -4,28 +4,40 @@ import 'package:provider/provider.dart';
 import '../../models/custom_rehab_exercise.dart';
 import '../account/app_session.dart';
 import 'controllers/custom_exercise_editor_controller.dart';
+import 'custom_exercise_list_page.dart';
+import 'repositories/custom_exercise_repository.dart';
+import 'repositories/local_custom_exercise_repository.dart';
 import 'widgets/custom_exercise_3d_viewer.dart';
 import 'widgets/joint_rotation_panel.dart';
+import 'widgets/keyframe_timeline.dart';
 
 class CustomExerciseEditorPage extends StatelessWidget {
   final CustomRehabExercise? initialExercise;
+  final CustomExerciseRepository? repository;
 
-  const CustomExerciseEditorPage({super.key, this.initialExercise});
+  const CustomExerciseEditorPage({
+    super.key,
+    this.initialExercise,
+    this.repository,
+  });
 
   @override
   Widget build(BuildContext context) {
+    final resolvedRepository = repository ?? customExerciseRepository;
     return ChangeNotifierProvider(
       create: (_) => CustomExerciseEditorController(
         initialExercise: initialExercise,
         therapistId: AppSession.userId,
       ),
-      child: const _CustomExerciseEditorView(),
+      child: _CustomExerciseEditorView(repository: resolvedRepository),
     );
   }
 }
 
 class _CustomExerciseEditorView extends StatefulWidget {
-  const _CustomExerciseEditorView();
+  final CustomExerciseRepository repository;
+
+  const _CustomExerciseEditorView({required this.repository});
 
   @override
   State<_CustomExerciseEditorView> createState() =>
@@ -35,6 +47,7 @@ class _CustomExerciseEditorView extends StatefulWidget {
 class _CustomExerciseEditorViewState extends State<_CustomExerciseEditorView> {
   late final TextEditingController _nameController;
   late final TextEditingController _descriptionController;
+  bool _isSaving = false;
 
   @override
   void initState() {
@@ -58,11 +71,53 @@ class _CustomExerciseEditorViewState extends State<_CustomExerciseEditorView> {
         );
   }
 
-  void _showMilestoneMessage(String message) {
+  void _showMessage(String message) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(message),
         behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+
+  Future<void> _saveExercise() async {
+    _updateBasicInfo();
+    final controller = context.read<CustomExerciseEditorController>();
+    final validationError = controller.saveValidationError;
+    if (validationError != null) {
+      _showMessage(validationError);
+      return;
+    }
+
+    setState(() => _isSaving = true);
+    try {
+      final exercise = controller.createSaveSnapshot();
+      if (controller.isEditing) {
+        await widget.repository.updateExercise(exercise);
+      } else {
+        await widget.repository.saveExercise(exercise);
+      }
+      if (!mounted) return;
+      controller.markSaved(exercise);
+      _showMessage('自訂動作已儲存');
+    } on Object catch (error) {
+      if (!mounted) return;
+      _showMessage('儲存失敗：$error');
+    } finally {
+      if (mounted) setState(() => _isSaving = false);
+    }
+  }
+
+  Future<void> _openSavedExercises() async {
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => CustomExerciseListPage(
+          repository: widget.repository,
+          editorBuilder: (exercise, repository) => CustomExerciseEditorPage(
+            initialExercise: exercise,
+            repository: repository,
+          ),
+        ),
       ),
     );
   }
@@ -74,10 +129,11 @@ class _CustomExerciseEditorViewState extends State<_CustomExerciseEditorView> {
       body: SafeArea(
         child: Column(
           children: [
-            _EditorTopBar(onSave: () {
-              _updateBasicInfo();
-              _showMilestoneMessage('儲存功能將於 Milestone 7 完成');
-            }),
+            _EditorTopBar(
+              isSaving: _isSaving,
+              onBrowse: _openSavedExercises,
+              onSave: _saveExercise,
+            ),
             Expanded(
               child: LayoutBuilder(
                 builder: (context, constraints) {
@@ -89,10 +145,16 @@ class _CustomExerciseEditorViewState extends State<_CustomExerciseEditorView> {
                 },
               ),
             ),
-            _EditorFooter(
-              onPlay: () => _showMilestoneMessage('播放功能將於 Milestone 5 完成'),
-              onPause: () => _showMilestoneMessage('播放功能將於 Milestone 5 完成'),
-              onStop: () => _showMilestoneMessage('播放功能將於 Milestone 5 完成'),
+            Consumer<CustomExerciseEditorController>(
+              builder: (_, controller, __) => _EditorFooter(
+                canPlay: controller.canPlay,
+                playbackStatus: controller.playbackStatus,
+                onPlay: controller.playbackStatus == EditorPlaybackStatus.paused
+                    ? controller.resumePreview
+                    : controller.playPreview,
+                onPause: controller.pausePreview,
+                onStop: controller.stopPreview,
+              ),
             ),
           ],
         ),
@@ -108,12 +170,7 @@ class _CustomExerciseEditorViewState extends State<_CustomExerciseEditorView> {
           children: [
             Expanded(
               flex: 3,
-              child: Consumer<CustomExerciseEditorController>(
-                builder: (_, controller, __) => CustomExercise3dViewer(
-                  selectedJoint: controller.selectedJoint,
-                  jointRotations: controller.currentPose,
-                ),
-              ),
+              child: _buildViewer(),
             ),
             const SizedBox(width: 20),
             Expanded(
@@ -149,7 +206,7 @@ class _CustomExerciseEditorViewState extends State<_CustomExerciseEditorView> {
           ],
         ),
         const SizedBox(height: 20),
-        const _TimelinePlaceholder(),
+        _buildTimeline(),
       ],
     );
   }
@@ -157,12 +214,7 @@ class _CustomExerciseEditorViewState extends State<_CustomExerciseEditorView> {
   Widget _buildCompactLayout() {
     return Column(
       children: [
-        Consumer<CustomExerciseEditorController>(
-          builder: (_, controller, __) => CustomExercise3dViewer(
-            selectedJoint: controller.selectedJoint,
-            jointRotations: controller.currentPose,
-          ),
-        ),
+        _buildViewer(),
         const SizedBox(height: 16),
         _BasicInfoCard(
           nameController: _nameController,
@@ -182,7 +234,7 @@ class _CustomExerciseEditorViewState extends State<_CustomExerciseEditorView> {
           ),
         ),
         const SizedBox(height: 16),
-        const _TimelinePlaceholder(),
+        _buildTimeline(),
         const SizedBox(height: 16),
         const _EditorSectionPlaceholder(
           icon: Icons.rule,
@@ -192,12 +244,47 @@ class _CustomExerciseEditorViewState extends State<_CustomExerciseEditorView> {
       ],
     );
   }
+
+  Widget _buildViewer() {
+    return Consumer<CustomExerciseEditorController>(
+      builder: (_, controller, __) => CustomExercise3dViewer(
+        selectedJoint: controller.selectedJoint,
+        jointRotations: controller.currentPose,
+        keyframes: controller.keyframes,
+        duration: controller.draft.duration,
+        playbackStatus: controller.playbackStatus,
+        onPlaybackProgress: controller.updatePlaybackProgress,
+        onPlaybackCompleted: controller.completePreview,
+      ),
+    );
+  }
+
+  Widget _buildTimeline() {
+    return Consumer<CustomExerciseEditorController>(
+      builder: (_, controller, __) => KeyframeTimeline(
+        keyframes: controller.keyframes,
+        selectedKeyframeId: controller.selectedKeyframeId,
+        playbackTime: controller.playbackTime,
+        duration: controller.draft.duration,
+        canPlay: controller.canPlay,
+        onAdd: controller.addKeyframeFromCurrentPose,
+        onSelected: controller.selectKeyframe,
+        onDeleted: controller.deleteKeyframe,
+      ),
+    );
+  }
 }
 
 class _EditorTopBar extends StatelessWidget {
   final VoidCallback onSave;
+  final VoidCallback onBrowse;
+  final bool isSaving;
 
-  const _EditorTopBar({required this.onSave});
+  const _EditorTopBar({
+    required this.onSave,
+    required this.onBrowse,
+    required this.isSaving,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -231,11 +318,24 @@ class _EditorTopBar extends StatelessWidget {
               ],
             ),
           ),
+          IconButton(
+            key: const Key('open-saved-custom-exercises'),
+            tooltip: '已儲存動作',
+            onPressed: onBrowse,
+            icon: const Icon(Icons.folder_open_outlined),
+            color: const Color(0xFF4A65FF),
+          ),
           FilledButton.icon(
             key: const Key('save-custom-exercise'),
-            onPressed: onSave,
-            icon: const Icon(Icons.save_outlined, size: 18),
-            label: const Text('儲存動作'),
+            onPressed: isSaving ? null : onSave,
+            icon: isSaving
+                ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.save_outlined, size: 18),
+            label: Text(isSaving ? '儲存中' : '儲存動作'),
             style: FilledButton.styleFrom(
               backgroundColor: const Color(0xFF4A65FF),
               foregroundColor: Colors.white,
@@ -296,62 +396,6 @@ class _BasicInfoCard extends StatelessWidget {
   }
 }
 
-class _TimelinePlaceholder extends StatelessWidget {
-  const _TimelinePlaceholder();
-
-  @override
-  Widget build(BuildContext context) {
-    return const _EditorCard(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _SectionTitle(icon: Icons.timeline, text: '姿勢時間軸'),
-          SizedBox(height: 18),
-          Row(
-            children: [
-              _TimelineDot(label: '起始', active: true),
-              Expanded(child: Divider(color: Color(0xFFDDE0F0), thickness: 2)),
-              _TimelineDot(label: '新增姿勢', active: false),
-            ],
-          ),
-          SizedBox(height: 12),
-          Text(
-            'Keyframe 操作將於 Milestone 4 加入',
-            style: TextStyle(color: Color(0xFF9CA3AF), fontSize: 12),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _TimelineDot extends StatelessWidget {
-  final String label;
-  final bool active;
-
-  const _TimelineDot({required this.label, required this.active});
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      children: [
-        Container(
-          width: 18,
-          height: 18,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            color: active ? const Color(0xFF4A65FF) : Colors.white,
-            border: Border.all(color: const Color(0xFF4A65FF), width: 2),
-          ),
-        ),
-        const SizedBox(height: 6),
-        Text(label,
-            style: const TextStyle(color: Color(0xFF6B7280), fontSize: 11)),
-      ],
-    );
-  }
-}
-
 class _EditorSectionPlaceholder extends StatelessWidget {
   final IconData icon;
   final String title;
@@ -382,11 +426,15 @@ class _EditorSectionPlaceholder extends StatelessWidget {
 }
 
 class _EditorFooter extends StatelessWidget {
+  final bool canPlay;
+  final EditorPlaybackStatus playbackStatus;
   final VoidCallback onPlay;
   final VoidCallback onPause;
   final VoidCallback onStop;
 
   const _EditorFooter({
+    required this.canPlay,
+    required this.playbackStatus,
     required this.onPlay,
     required this.onPause,
     required this.onStop,
@@ -394,6 +442,8 @@ class _EditorFooter extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isPlaying = playbackStatus == EditorPlaybackStatus.playing;
+    final isPaused = playbackStatus == EditorPlaybackStatus.paused;
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.fromLTRB(20, 10, 20, 12),
@@ -407,17 +457,20 @@ class _EditorFooter extends StatelessWidget {
         runSpacing: 8,
         children: [
           OutlinedButton.icon(
-            onPressed: onPlay,
+            key: const Key('play-keyframes'),
+            onPressed: canPlay && !isPlaying ? onPlay : null,
             icon: const Icon(Icons.play_arrow),
-            label: const Text('播放'),
+            label: Text(isPaused ? '繼續' : '播放'),
           ),
           OutlinedButton.icon(
-            onPressed: onPause,
+            key: const Key('pause-keyframes'),
+            onPressed: isPlaying ? onPause : null,
             icon: const Icon(Icons.pause),
             label: const Text('暫停'),
           ),
           OutlinedButton.icon(
-            onPressed: onStop,
+            key: const Key('stop-keyframes'),
+            onPressed: isPlaying || isPaused ? onStop : null,
             icon: const Icon(Icons.stop),
             label: const Text('停止'),
           ),

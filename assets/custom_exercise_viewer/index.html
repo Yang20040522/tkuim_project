@@ -58,13 +58,25 @@
     });
     const statusElement = document.getElementById('status');
 
+    const rawInitialWidth = Number(window.innerWidth);
+    const rawInitialHeight = Number(window.innerHeight);
+    const hasInitialViewport =
+      Number.isFinite(rawInitialWidth) && rawInitialWidth > 0 &&
+      Number.isFinite(rawInitialHeight) && rawInitialHeight > 0;
+    const initialViewportWidth = hasInitialViewport ? rawInitialWidth : 1;
+    const initialViewportHeight = hasInitialViewport ? rawInitialHeight : 1;
     const scene = new THREE.Scene();
-    const camera = new THREE.PerspectiveCamera(35, window.innerWidth / window.innerHeight, 0.1, 100);
+    const camera = new THREE.PerspectiveCamera(
+      35,
+      initialViewportWidth / initialViewportHeight,
+      0.1,
+      100,
+    );
     camera.position.set(0, 1.25, 3.25);
 
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setSize(initialViewportWidth, initialViewportHeight);
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     document.body.appendChild(renderer.domElement);
 
@@ -85,9 +97,19 @@
     let selectedJoint = 'rightShoulder';
     let selectedAxisHelper = null;
     let axisHelperSize = 0.1;
+    let editorModel = null;
+    let modelReady = false;
+    let lastRenderHeartbeatTimestamp = Number.NEGATIVE_INFINITY;
     const pendingRotations = Object.fromEntries(
       Object.keys(CONTROLLABLE_BONES).map((joint) => [joint, { x: 0, y: 0, z: 0 }]),
     );
+    let playbackState = 'stopped';
+    let playbackFrames = [];
+    let playbackDuration = 0;
+    let playbackTime = 0;
+    let playbackElapsedBeforeStart = 0;
+    let playbackStartTimestamp = null;
+    let lastPlaybackProgressTimestamp = Number.NEGATIVE_INFINITY;
 
     function callFlutter(handler, payload) {
       const bridge = window.flutter_inappwebview;
@@ -109,13 +131,10 @@
       };
     }
 
-    function applyJointRotation(joint, rotation) {
-      const bone = editorBones.get(joint);
+    function quaternionForJointRotation(joint, rotation) {
       const restQuaternion = restQuaternions.get(joint);
-      if (!bone || !restQuaternion) return false;
+      if (!restQuaternion) return null;
 
-      // 每次都從該骨骼的 GLB rest quaternion 計算，避免 slider 更新造成累積。
-      // XYZ 採骨骼 local axes，正值遵循 Three.js 右手定則。
       const eulerDelta = new THREE.Euler(
         THREE.MathUtils.degToRad(rotation.x),
         THREE.MathUtils.degToRad(rotation.y),
@@ -123,10 +142,17 @@
         'XYZ',
       );
       const deltaQuaternion = new THREE.Quaternion().setFromEuler(eulerDelta);
-      bone.quaternion
-        .copy(restQuaternion)
-        .multiply(deltaQuaternion)
-        .normalize();
+      return restQuaternion.clone().multiply(deltaQuaternion).normalize();
+    }
+
+    function applyJointRotation(joint, rotation) {
+      const bone = editorBones.get(joint);
+      const targetQuaternion = quaternionForJointRotation(joint, rotation);
+      if (!bone || !targetQuaternion) return false;
+
+      // 每次都從該骨骼的 GLB rest quaternion 計算，避免 slider 更新造成累積。
+      // XYZ 採骨骼 local axes，正值遵循 Three.js 右手定則。
+      bone.quaternion.copy(targetQuaternion);
       bone.updateMatrixWorld(true);
       return true;
     }
@@ -173,6 +199,155 @@
 
     window.setEditorPose = setEditorPose;
 
+    function normalizedPlaybackFrames(payload) {
+      if (!payload || !Array.isArray(payload.keyframes)) return [];
+      return payload.keyframes
+        .map((keyframe) => ({
+          id: String(keyframe && keyframe.id || ''),
+          time: Number(keyframe && keyframe.time),
+          rotations: Object.fromEntries(
+            Object.keys(CONTROLLABLE_BONES).map((joint) => [
+              joint,
+              normalizedRotation(keyframe && keyframe.rotations && keyframe.rotations[joint]),
+            ]),
+          ),
+        }))
+        .filter((keyframe) => Number.isFinite(keyframe.time) && keyframe.time >= 0)
+        .sort((left, right) => left.time - right.time);
+    }
+
+    function applyPlaybackPose(time) {
+      if (playbackFrames.length < 2) return false;
+      let endIndex = playbackFrames.findIndex((keyframe) => keyframe.time >= time);
+      if (endIndex < 0) endIndex = playbackFrames.length - 1;
+      const startIndex = Math.max(0, endIndex - 1);
+      const start = playbackFrames[startIndex];
+      const end = playbackFrames[endIndex];
+      const segmentDuration = end.time - start.time;
+      const progress = segmentDuration > 0
+        ? THREE.MathUtils.clamp((time - start.time) / segmentDuration, 0, 1)
+        : 0;
+
+      for (const joint of Object.keys(CONTROLLABLE_BONES)) {
+        const bone = editorBones.get(joint);
+        const startQuaternion = quaternionForJointRotation(joint, start.rotations[joint]);
+        const endQuaternion = quaternionForJointRotation(joint, end.rotations[joint]);
+        if (!bone || !startQuaternion || !endQuaternion) continue;
+        bone.quaternion
+          .slerpQuaternions(startQuaternion, endQuaternion, progress)
+          .normalize();
+      }
+      if (editorModel) editorModel.updateMatrixWorld(true);
+      return true;
+    }
+
+    function notifyPlaybackProgress(force = false, timestamp = performance.now()) {
+      if (!force && timestamp - lastPlaybackProgressTimestamp < 100) return;
+      lastPlaybackProgressTimestamp = timestamp;
+      statusElement.textContent =
+        `Keyframe 預覽 ${playbackTime.toFixed(1)} / ${playbackDuration.toFixed(1)} 秒`;
+      callFlutter('EditorPlaybackProgress', {
+        time: playbackTime,
+        duration: playbackDuration,
+      });
+    }
+
+    function notifyPlaybackState(state) {
+      callFlutter('EditorPlaybackState', {
+        state,
+        time: playbackTime,
+        duration: playbackDuration,
+      });
+    }
+
+    function playEditorKeyframes(payload) {
+      const frames = normalizedPlaybackFrames(payload);
+      if (
+        !modelReady ||
+        frames.length < 2 ||
+        editorBones.size !== Object.keys(CONTROLLABLE_BONES).length
+      ) {
+        return false;
+      }
+      for (let index = 1; index < frames.length; index += 1) {
+        if (frames[index].time <= frames[index - 1].time) return false;
+      }
+
+      playbackFrames = frames;
+      playbackDuration = frames[frames.length - 1].time;
+      playbackTime = 0;
+      playbackElapsedBeforeStart = 0;
+      playbackStartTimestamp = null;
+      lastPlaybackProgressTimestamp = Number.NEGATIVE_INFINITY;
+      playbackState = 'playing';
+      applyPlaybackPose(0);
+      notifyPlaybackProgress(true);
+      notifyPlaybackState('playing');
+      return true;
+    }
+
+    function pauseEditorPlayback() {
+      if (playbackState !== 'playing') return false;
+      const now = performance.now();
+      if (playbackStartTimestamp !== null) {
+        playbackTime = Math.min(
+          playbackDuration,
+          playbackElapsedBeforeStart + (now - playbackStartTimestamp) / 1000,
+        );
+      }
+      playbackElapsedBeforeStart = playbackTime;
+      playbackStartTimestamp = null;
+      playbackState = 'paused';
+      applyPlaybackPose(playbackTime);
+      notifyPlaybackProgress(true, now);
+      notifyPlaybackState('paused');
+      return true;
+    }
+
+    function resumeEditorPlayback() {
+      if (playbackState !== 'paused') return false;
+      playbackStartTimestamp = null;
+      playbackState = 'playing';
+      notifyPlaybackState('playing');
+      return true;
+    }
+
+    function stopEditorPlayback() {
+      const wasActive = playbackState !== 'stopped';
+      playbackState = 'stopped';
+      playbackTime = 0;
+      playbackElapsedBeforeStart = 0;
+      playbackStartTimestamp = null;
+      if (wasActive) {
+        notifyPlaybackProgress(true);
+        notifyPlaybackState('stopped');
+      }
+      return wasActive;
+    }
+
+    function updatePlayback(timestamp) {
+      if (!modelReady || playbackState !== 'playing') return;
+      if (playbackStartTimestamp === null) playbackStartTimestamp = timestamp;
+      playbackTime = Math.min(
+        playbackDuration,
+        playbackElapsedBeforeStart + (timestamp - playbackStartTimestamp) / 1000,
+      );
+      applyPlaybackPose(playbackTime);
+      const completed = playbackTime >= playbackDuration;
+      notifyPlaybackProgress(completed, timestamp);
+      if (completed) {
+        playbackElapsedBeforeStart = playbackDuration;
+        playbackStartTimestamp = null;
+        playbackState = 'completed';
+        notifyPlaybackState('completed');
+      }
+    }
+
+    window.playEditorKeyframes = playEditorKeyframes;
+    window.pauseEditorPlayback = pauseEditorPlayback;
+    window.resumeEditorPlayback = resumeEditorPlayback;
+    window.stopEditorPlayback = stopEditorPlayback;
+
     function fitCameraToObject(object, fitOffset = 1.2) {
       object.updateMatrixWorld(true);
       const box = new THREE.Box3().setFromObject(object);
@@ -180,11 +355,40 @@
 
       const size = box.getSize(new THREE.Vector3());
       const center = box.getCenter(new THREE.Vector3());
+      const finiteBounds = [...size.toArray(), ...center.toArray()]
+        .every((value) => Number.isFinite(value));
+      if (!finiteBounds || size.lengthSq() <= 0) {
+        throw new Error('模型 bounding box 含有無效數值');
+      }
+
+      const canvasWidth = Number(renderer.domElement.clientWidth);
+      const canvasHeight = Number(renderer.domElement.clientHeight);
+      const windowWidth = Number(window.innerWidth);
+      const windowHeight = Number(window.innerHeight);
+      const hasCanvasViewport =
+        Number.isFinite(canvasWidth) && canvasWidth > 0 &&
+        Number.isFinite(canvasHeight) && canvasHeight > 0;
+      const hasWindowViewport =
+        Number.isFinite(windowWidth) && windowWidth > 0 &&
+        Number.isFinite(windowHeight) && windowHeight > 0;
+      const viewportWidth = hasCanvasViewport
+        ? canvasWidth
+        : hasWindowViewport ? windowWidth : 1;
+      const viewportHeight = hasCanvasViewport
+        ? canvasHeight
+        : hasWindowViewport ? windowHeight : 1;
+      camera.aspect = viewportWidth / viewportHeight;
       const verticalFov = THREE.MathUtils.degToRad(camera.fov);
       const horizontalFov = 2 * Math.atan(Math.tan(verticalFov / 2) * camera.aspect);
       const verticalDistance = size.y / (2 * Math.tan(verticalFov / 2));
       const horizontalDistance = size.x / (2 * Math.tan(horizontalFov / 2));
       const distance = fitOffset * (Math.max(verticalDistance, horizontalDistance) + size.z / 2);
+      if (!Number.isFinite(distance) || distance <= 0) {
+        throw new Error(
+          `Camera auto-fit 距離無效：${distance} ` +
+          `(viewport ${viewportWidth}x${viewportHeight}, aspect ${camera.aspect})`,
+        );
+      }
 
       camera.position.set(center.x, center.y, center.z + distance);
       camera.near = Math.max(distance / 1000, 0.001);
@@ -197,6 +401,128 @@
       controls.maxDistance = Math.max(size.length() * 8, distance * 4);
       controls.update();
       return size;
+    }
+
+    function vectorSnapshot(vector) {
+      return { x: vector.x, y: vector.y, z: vector.z };
+    }
+
+    function quaternionSnapshot(quaternion) {
+      return {
+        x: quaternion.x,
+        y: quaternion.y,
+        z: quaternion.z,
+        w: quaternion.w,
+      };
+    }
+
+    function logViewerDiagnostics(model) {
+      model.updateMatrixWorld(true);
+      const boundingBox = new THREE.Box3().setFromObject(model);
+      const boundingSphere = boundingBox.getBoundingSphere(new THREE.Sphere());
+      const gl = renderer.getContext();
+      const contextAttributes = gl.getContextAttributes();
+      let meshCount = 0;
+      let visibleMeshCount = 0;
+      let skinnedMeshCount = 0;
+      const materialSummary = [];
+      model.traverse((object) => {
+        if (!object.isMesh) return;
+        meshCount += 1;
+        if (object.visible) visibleMeshCount += 1;
+        if (object.isSkinnedMesh) skinnedMeshCount += 1;
+        const materials = Array.isArray(object.material)
+          ? object.material
+          : [object.material];
+        for (const material of materials) {
+          if (!material || materialSummary.length >= 5) continue;
+          materialSummary.push({
+            name: material.name,
+            visible: material.visible,
+            opacity: material.opacity,
+            transparent: material.transparent,
+            color: material.color ? `#${material.color.getHexString()}` : null,
+          });
+        }
+      });
+      const controllableBoneStatus = Object.fromEntries(
+        Object.entries(CONTROLLABLE_BONES).map(([joint, boneName]) => [
+          joint,
+          {
+            boneName,
+            found: editorBones.has(joint),
+          },
+        ]),
+      );
+
+      console.info('[CustomExerciseViewer] GLB LOAD SUCCESS');
+      console.info('[CustomExerciseViewer] scene.children.length', scene.children.length);
+      console.info('[CustomExerciseViewer] model.name', model.name);
+      console.info('[CustomExerciseViewer] model.visible', model.visible);
+      console.info(
+        '[CustomExerciseViewer] model.position',
+        JSON.stringify(vectorSnapshot(model.position)),
+      );
+      console.info('[CustomExerciseViewer] model.rotation', JSON.stringify({
+        x: model.rotation.x,
+        y: model.rotation.y,
+        z: model.rotation.z,
+        order: model.rotation.order,
+      }));
+      console.info(
+        '[CustomExerciseViewer] model.quaternion',
+        JSON.stringify(quaternionSnapshot(model.quaternion)),
+      );
+      console.info(
+        '[CustomExerciseViewer] model.scale',
+        JSON.stringify(vectorSnapshot(model.scale)),
+      );
+      console.info('[CustomExerciseViewer] model.boundingBox', JSON.stringify({
+        min: vectorSnapshot(boundingBox.min),
+        max: vectorSnapshot(boundingBox.max),
+      }));
+      console.info('[CustomExerciseViewer] model.boundingSphere', JSON.stringify({
+        center: vectorSnapshot(boundingSphere.center),
+        radius: boundingSphere.radius,
+      }));
+      console.info(
+        '[CustomExerciseViewer] camera.position',
+        JSON.stringify(vectorSnapshot(camera.position)),
+      );
+      console.info('[CustomExerciseViewer] camera.near/far', camera.near, camera.far);
+      console.info(
+        '[CustomExerciseViewer] controls.target',
+        JSON.stringify(vectorSnapshot(controls.target)),
+      );
+      console.info('[CustomExerciseViewer] renderer.canvas', JSON.stringify({
+        width: renderer.domElement.width,
+        height: renderer.domElement.height,
+        clientWidth: renderer.domElement.clientWidth,
+        clientHeight: renderer.domElement.clientHeight,
+      }));
+      console.info(
+        '[CustomExerciseViewer] renderer.pixelRatio',
+        renderer.getPixelRatio(),
+      );
+      console.info('[CustomExerciseViewer] renderer.WebGL', JSON.stringify({
+        isWebGL2: renderer.capabilities.isWebGL2,
+        precision: renderer.capabilities.precision,
+        maxTextureSize: renderer.capabilities.maxTextureSize,
+        antialias: contextAttributes ? contextAttributes.antialias : null,
+        drawingBufferWidth: gl.drawingBufferWidth,
+        drawingBufferHeight: gl.drawingBufferHeight,
+        contextLost: gl.isContextLost(),
+      }));
+      console.info(
+        '[CustomExerciseViewer] controllableBones',
+        JSON.stringify(controllableBoneStatus),
+      );
+      console.info('[CustomExerciseViewer] renderables', JSON.stringify({
+        meshCount,
+        visibleMeshCount,
+        skinnedMeshCount,
+        materials: materialSummary,
+      }));
     }
 
     const loader = new GLTFLoader();
@@ -213,6 +539,7 @@
         '',
         (gltf) => {
           const model = gltf.scene;
+          editorModel = model;
           scene.add(model);
           const modelSize = fitCameraToObject(model);
 
@@ -252,6 +579,15 @@
 
           axisHelperSize = Math.max(modelSize.length() * 0.06, 0.05);
           setEditorPose({ selectedJoint, rotations: pendingRotations });
+          modelReady = true;
+          try {
+            logViewerDiagnostics(model);
+          } catch (diagnosticError) {
+            console.warn(
+              '[CustomExerciseViewer] diagnostics failed',
+              diagnosticError && diagnosticError.message || diagnosticError,
+            );
+          }
           callFlutter('EditorViewerReady', {
             runtimeBoneCount: runtimeBoneNames.length,
             controllableBoneCount: editorBones.size,
@@ -273,17 +609,38 @@
       console.error('[CustomExerciseViewer]', message);
     }
 
-    function animate() {
+    function animate(timestamp) {
       requestAnimationFrame(animate);
       controls.update();
       renderer.render(scene, camera);
+      updatePlayback(timestamp);
+      if (
+        Number.isFinite(timestamp) &&
+        timestamp - lastRenderHeartbeatTimestamp >= 2000
+      ) {
+        lastRenderHeartbeatTimestamp = timestamp;
+        console.info('[CustomExerciseViewer] RENDER ACTIVE', JSON.stringify({
+          modelReady,
+          sceneChildren: scene.children.length,
+          renderCalls: renderer.info.render.calls,
+          triangles: renderer.info.render.triangles,
+        }));
+      }
     }
     animate();
 
     window.addEventListener('resize', () => {
-      camera.aspect = window.innerWidth / window.innerHeight;
+      const width = Number(window.innerWidth);
+      const height = Number(window.innerHeight);
+      if (
+        !Number.isFinite(width) || width <= 0 ||
+        !Number.isFinite(height) || height <= 0
+      ) {
+        return;
+      }
+      camera.aspect = width / height;
       camera.updateProjectionMatrix();
-      renderer.setSize(window.innerWidth, window.innerHeight);
+      renderer.setSize(width, height);
     });
   </script>
 </body>

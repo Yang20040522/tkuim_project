@@ -4,18 +4,30 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 
+import '../../../models/exercise_keyframe.dart';
 import '../../../models/joint_definition.dart';
 import '../../../models/joint_rotation.dart';
 import '../../../models/joint_type.dart';
+import '../controllers/custom_exercise_editor_controller.dart';
 
 class CustomExercise3dViewer extends StatefulWidget {
   final JointType selectedJoint;
   final Map<JointType, JointRotation> jointRotations;
+  final List<ExerciseKeyframe> keyframes;
+  final double duration;
+  final EditorPlaybackStatus playbackStatus;
+  final ValueChanged<double> onPlaybackProgress;
+  final VoidCallback onPlaybackCompleted;
 
   const CustomExercise3dViewer({
     super.key,
     required this.selectedJoint,
     required this.jointRotations,
+    required this.keyframes,
+    required this.duration,
+    required this.playbackStatus,
+    required this.onPlaybackProgress,
+    required this.onPlaybackCompleted,
   });
 
   @override
@@ -31,8 +43,11 @@ class _CustomExercise3dViewerState extends State<CustomExercise3dViewer> {
   @override
   void didUpdateWidget(covariant CustomExercise3dViewer oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.selectedJoint != widget.selectedJoint ||
-        !mapEquals(oldWidget.jointRotations, widget.jointRotations)) {
+    if (oldWidget.playbackStatus != widget.playbackStatus) {
+      _syncPlaybackStatus(oldWidget.playbackStatus);
+    } else if (widget.playbackStatus == EditorPlaybackStatus.stopped &&
+        (oldWidget.selectedJoint != widget.selectedJoint ||
+            !mapEquals(oldWidget.jointRotations, widget.jointRotations))) {
       _sendPose();
     }
   }
@@ -51,7 +66,59 @@ class _CustomExercise3dViewerState extends State<CustomExercise3dViewer> {
     );
   }
 
-  void _onViewerReady(List<dynamic> arguments) {
+  Future<void> _syncPlaybackStatus(EditorPlaybackStatus previousStatus) async {
+    if (!_viewerReady || _webController == null) return;
+    switch (widget.playbackStatus) {
+      case EditorPlaybackStatus.playing:
+        if (previousStatus == EditorPlaybackStatus.paused) {
+          await _webController!.evaluateJavascript(
+            source: 'window.resumeEditorPlayback();',
+          );
+        } else {
+          await _playKeyframes();
+        }
+        break;
+      case EditorPlaybackStatus.paused:
+        await _webController!.evaluateJavascript(
+          source: 'window.pauseEditorPlayback();',
+        );
+        break;
+      case EditorPlaybackStatus.stopped:
+        await _webController!.evaluateJavascript(
+          source: 'window.stopEditorPlayback();',
+        );
+        await _sendPose();
+        break;
+    }
+  }
+
+  Future<void> _playKeyframes() async {
+    if (!_viewerReady || _webController == null || widget.keyframes.length < 2) {
+      return;
+    }
+    final payload = jsonEncode({
+      'duration': widget.duration,
+      'keyframes': [
+        for (final keyframe in widget.keyframes)
+          {
+            'id': keyframe.id,
+            'time': keyframe.time,
+            'rotations': {
+              for (final definition in JointDefinitions.all)
+                definition.type.name: (keyframe
+                            .jointRotations[definition.type] ??
+                        DefaultPose.rotationOf(definition.type))
+                    .toJson(),
+            },
+          },
+      ],
+    });
+    await _webController!.evaluateJavascript(
+      source: 'window.playEditorKeyframes($payload);',
+    );
+  }
+
+  Future<void> _onViewerReady(List<dynamic> arguments) async {
     final payload = arguments.isNotEmpty && arguments.first is Map
         ? Map<String, dynamic>.from(arguments.first as Map)
         : const <String, dynamic>{};
@@ -69,7 +136,10 @@ class _CustomExercise3dViewerState extends State<CustomExercise3dViewer> {
         _restQuaternion = '各關節 rest quaternion 已保存 · local XYZ';
       }
     });
-    _sendPose();
+    await _sendPose();
+    if (mounted && widget.playbackStatus == EditorPlaybackStatus.playing) {
+      await _playKeyframes();
+    }
   }
 
   String _short(dynamic value) {
@@ -82,6 +152,25 @@ class _CustomExercise3dViewerState extends State<CustomExercise3dViewer> {
         : const <String, dynamic>{};
     if (!mounted) return;
     setState(() => _status = payload['message']?.toString() ?? '3D 模型載入失敗');
+  }
+
+  void _onPlaybackProgress(List<dynamic> arguments) {
+    final payload = arguments.isNotEmpty && arguments.first is Map
+        ? Map<String, dynamic>.from(arguments.first as Map)
+        : const <String, dynamic>{};
+    final time = payload['time'];
+    if (mounted && time is num) {
+      widget.onPlaybackProgress(time.toDouble());
+    }
+  }
+
+  void _onPlaybackState(List<dynamic> arguments) {
+    final payload = arguments.isNotEmpty && arguments.first is Map
+        ? Map<String, dynamic>.from(arguments.first as Map)
+        : const <String, dynamic>{};
+    if (mounted && payload['state'] == 'completed') {
+      widget.onPlaybackCompleted();
+    }
   }
 
   @override
@@ -122,6 +211,20 @@ class _CustomExercise3dViewerState extends State<CustomExercise3dViewer> {
                         handlerName: 'EditorViewerError',
                         callback: (arguments) {
                           _onViewerError(arguments);
+                          return null;
+                        },
+                      );
+                      controller.addJavaScriptHandler(
+                        handlerName: 'EditorPlaybackProgress',
+                        callback: (arguments) {
+                          _onPlaybackProgress(arguments);
+                          return null;
+                        },
+                      );
+                      controller.addJavaScriptHandler(
+                        handlerName: 'EditorPlaybackState',
+                        callback: (arguments) {
+                          _onPlaybackState(arguments);
                           return null;
                         },
                       );

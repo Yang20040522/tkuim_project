@@ -59,8 +59,63 @@ void main() {
     );
 
     expect(decoded.toJson(), original.toJson());
-    expect(decoded.keyframes.singleWhere((item) => item.time == 2)
-        .jointRotations[JointType.rightShoulder], const JointRotation(z: 90));
+    expect(
+        decoded.keyframes
+            .singleWhere((item) => item.time == 2)
+            .jointRotations[JointType.rightShoulder],
+        const JointRotation(z: 90));
+  });
+
+  test('12 關節多 Keyframes JSON roundtrip 保留 double、enum 與 Map key', () {
+    Map<JointType, JointRotation> pose(double offset) {
+      return {
+        for (var index = 0; index < JointType.values.length; index++)
+          JointType.values[index]: JointRotation(
+            x: offset + index + 0.25,
+            y: -offset - index - 0.5,
+            z: offset * 2 + index + 0.75,
+          ),
+      };
+    }
+
+    final original = exercise(
+      duration: 2.0,
+      keyframes: [
+        ExerciseKeyframe(
+          id: 'kf_001',
+          time: 0.0,
+          jointRotations: pose(0),
+        ),
+        ExerciseKeyframe(
+          id: 'kf_002',
+          time: 1.0,
+          jointRotations: pose(10),
+        ),
+        ExerciseKeyframe(
+          id: 'kf_003',
+          time: 2.0,
+          jointRotations: pose(20),
+        ),
+      ],
+    );
+
+    final encoded = jsonEncode(original.toJson());
+    final decoded = CustomRehabExercise.fromJson(
+      jsonDecode(encoded) as Map<String, dynamic>,
+    );
+
+    expect(decoded.toJson(), original.toJson());
+    expect(decoded.keyframes, hasLength(3));
+    for (final keyframe in decoded.keyframes) {
+      expect(keyframe.jointRotations.keys.toSet(), JointType.values.toSet());
+      expect(keyframe.jointRotations, hasLength(12));
+      expect(keyframe.time, isA<double>());
+      expect(
+        keyframe.jointRotations.values
+            .expand((rotation) => [rotation.x, rotation.y, rotation.z]),
+        everyElement(isA<double>()),
+      );
+    }
   });
 
   test('EvaluationRule 依允許誤差判斷 pass/fail', () {

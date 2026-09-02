@@ -4,6 +4,8 @@ import 'package:flutter_body/features/custom_exercise/controllers/custom_exercis
 import 'package:flutter_body/features/custom_exercise/custom_exercise_editor_page.dart';
 import 'package:flutter_body/features/custom_exercise/services/custom_exercise_bone_mapping.dart';
 import 'package:flutter_body/features/custom_exercise/widgets/custom_exercise_3d_viewer.dart';
+import 'package:flutter_body/models/custom_rehab_exercise.dart';
+import 'package:flutter_body/models/exercise_keyframe.dart';
 import 'package:flutter_body/models/joint_rotation.dart';
 import 'package:flutter_body/models/joint_type.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -107,6 +109,140 @@ void main() {
     );
   });
 
+  test('新增 Keyframe 會保存完整 12 關節快照並以一秒遞增', () {
+    final controller = CustomExerciseEditorController();
+    addTearDown(controller.dispose);
+
+    controller.selectJoint(JointType.leftShoulder);
+    controller.updateSelectedJointRotation(const JointRotation(x: 35));
+    controller.addKeyframeFromCurrentPose();
+
+    final first = controller.keyframes.single;
+    expect(first.time, 0);
+    expect(first.jointRotations, hasLength(12));
+    expect(
+      first.jointRotations[JointType.leftShoulder],
+      const JointRotation(x: 35),
+    );
+    expect(controller.selectedKeyframeId, first.id);
+
+    controller.selectJoint(JointType.rightKnee);
+    controller.updateSelectedJointRotation(const JointRotation(z: -25));
+    expect(controller.selectedKeyframeId, isNull);
+    controller.addKeyframeFromCurrentPose();
+
+    final second = controller.keyframes.last;
+    expect(second.time, 1);
+    expect(controller.draft.duration, 1);
+    expect(second.jointRotations, hasLength(12));
+    expect(
+      second.jointRotations[JointType.rightKnee],
+      const JointRotation(z: -25),
+    );
+    expect(
+      first.jointRotations[JointType.rightKnee],
+      JointRotation.zero,
+    );
+  });
+
+  test('選取缺少關節的 Keyframe 時以 rest rotation 補齊', () {
+    final now = DateTime.utc(2026, 9, 3);
+    final controller = CustomExerciseEditorController(
+      initialExercise: CustomRehabExercise(
+        id: 'partial',
+        name: '部分姿勢',
+        description: '',
+        createdAt: now,
+        updatedAt: now,
+        repetitions: 1,
+        sets: 1,
+        holdSeconds: 0,
+        restSeconds: 0,
+        duration: 0,
+        keyframes: [
+          ExerciseKeyframe(
+            id: 'partial-frame',
+            time: 0,
+            jointRotations: const {
+              JointType.rightShoulder: JointRotation(y: 40),
+            },
+          ),
+        ],
+        evaluationRules: const [],
+      ),
+    );
+    addTearDown(controller.dispose);
+
+    controller.selectKeyframe('partial-frame');
+
+    expect(controller.currentPose, hasLength(12));
+    expect(
+      controller.currentPose[JointType.rightShoulder],
+      const JointRotation(y: 40),
+    );
+    expect(controller.currentPose[JointType.leftAnkle], JointRotation.zero);
+  });
+
+  test('刪除選取的 Keyframe 會選取相鄰項目並重算 duration', () {
+    final controller = CustomExerciseEditorController();
+    addTearDown(controller.dispose);
+
+    controller.addKeyframeFromCurrentPose();
+    controller.updateSelectedJointRotation(const JointRotation(x: 10));
+    controller.addKeyframeFromCurrentPose();
+    controller.updateSelectedJointRotation(const JointRotation(x: 20));
+    controller.addKeyframeFromCurrentPose();
+    final firstId = controller.keyframes[0].id;
+    final middleId = controller.keyframes[1].id;
+    final lastId = controller.keyframes[2].id;
+
+    controller.selectKeyframe(middleId);
+    controller.deleteKeyframe(middleId);
+
+    expect(controller.keyframes.map((item) => item.id), [firstId, lastId]);
+    expect(controller.draft.duration, 2);
+    expect(controller.selectedKeyframeId, lastId);
+    expect(controller.selectedJointRotation, const JointRotation(x: 20));
+
+    controller.deleteKeyframe(lastId);
+    expect(controller.draft.duration, 0);
+    expect(controller.selectedKeyframeId, firstId);
+    expect(controller.selectedJointRotation, JointRotation.zero);
+  });
+
+  test('播放狀態不修改 Keyframe 或 working pose，slider 操作會停止播放', () {
+    final controller = CustomExerciseEditorController();
+    addTearDown(controller.dispose);
+
+    controller.addKeyframeFromCurrentPose();
+    controller.updateSelectedJointRotation(const JointRotation(z: 45));
+    controller.addKeyframeFromCurrentPose();
+    final keyframesBefore = controller.keyframes;
+    final poseBefore = Map<JointType, JointRotation>.of(controller.currentPose);
+
+    controller.playPreview();
+    expect(controller.playbackStatus, EditorPlaybackStatus.playing);
+    controller.updatePlaybackProgress(0.4);
+    expect(controller.playbackTime, 0.4);
+    controller.pausePreview();
+    expect(controller.playbackStatus, EditorPlaybackStatus.paused);
+    controller.resumePreview();
+    expect(controller.playbackStatus, EditorPlaybackStatus.playing);
+    controller.completePreview();
+
+    expect(controller.playbackStatus, EditorPlaybackStatus.stopped);
+    expect(controller.playbackTime, controller.draft.duration);
+    expect(controller.currentPose, poseBefore);
+    expect(identical(controller.keyframes, keyframesBefore), isTrue);
+
+    controller.playPreview();
+    controller.updateSelectedJointRotation(const JointRotation(z: 55));
+    expect(controller.playbackStatus, EditorPlaybackStatus.stopped);
+    expect(controller.playbackTime, 0);
+    expect(controller.selectedKeyframeId, isNull);
+    expect(identical(controller.keyframes, keyframesBefore), isTrue);
+  });
+
   testWidgets('治療師首頁可進入自訂動作編輯器', (tester) async {
     await tester.pumpWidget(
       const MaterialApp(home: TherapistHomeScreen()),
@@ -175,5 +311,45 @@ void main() {
 
     expect(tester.takeException(), isNull);
     expect(find.byKey(const Key('save-custom-exercise')), findsOneWidget);
+  });
+
+  testWidgets('Timeline 可新增與刪除 Keyframe，兩個姿勢後開放播放',
+      (tester) async {
+    await tester.pumpWidget(
+      const MaterialApp(home: CustomExerciseEditorPage()),
+    );
+    await tester.pumpAndSettle();
+
+    final addButton = find.byKey(const Key('add-keyframe'));
+    await tester.ensureVisible(addButton);
+    await tester.tap(addButton);
+    await tester.pump();
+
+    expect(find.text('K1'), findsOneWidget);
+    expect(find.text('0.0s'), findsOneWidget);
+    expect(
+      tester.widget<OutlinedButton>(find.byKey(const Key('play-keyframes')))
+          .onPressed,
+      isNull,
+    );
+
+    await tester.tap(addButton);
+    await tester.pump();
+
+    expect(find.text('K2'), findsOneWidget);
+    expect(find.text('1.0s'), findsOneWidget);
+    expect(find.byKey(const Key('playback-time')), findsOneWidget);
+    expect(
+      tester.widget<OutlinedButton>(find.byKey(const Key('play-keyframes')))
+          .onPressed,
+      isNotNull,
+    );
+
+    final deleteSecond = find.byKey(const Key('delete-keyframe-kf_002'));
+    await tester.tap(deleteSecond);
+    await tester.pump();
+
+    expect(find.text('K2'), findsNothing);
+    expect(find.text('0.0 / 0.0 秒'), findsOneWidget);
   });
 }

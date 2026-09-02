@@ -2,6 +2,9 @@
 import 'package:flutter/material.dart';
 
 import '../custom_exercise/custom_exercise_editor_page.dart';
+import '../custom_exercise/custom_exercise_list_page.dart';
+import '../custom_exercise/repositories/custom_exercise_repository.dart';
+import '../../models/custom_rehab_exercise.dart';
 import 'app_session.dart';
 import 'role_select_screen.dart';
 
@@ -20,6 +23,26 @@ class TherapistHomeScreen extends StatelessWidget {
   void _openCustomExerciseEditor(BuildContext context) {
     Navigator.of(context).push(
       MaterialPageRoute(builder: (_) => const CustomExerciseEditorPage()),
+    );
+  }
+
+  void _openSavedCustomExercises(BuildContext context) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => CustomExerciseListPage(
+          editorBuilder: _buildCustomExerciseEditor,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCustomExerciseEditor(
+    CustomRehabExercise? exercise,
+    CustomExerciseRepository repository,
+  ) {
+    return CustomExerciseEditorPage(
+      initialExercise: exercise,
+      repository: repository,
     );
   }
 
@@ -75,6 +98,14 @@ class TherapistHomeScreen extends StatelessWidget {
                 title: '新增自訂復健動作',
                 subtitle: '設定人體姿勢、時間軸與復健判定條件',
                 onTap: () => _openCustomExerciseEditor(context),
+              ),
+              const SizedBox(height: 12),
+              _TherapistFeatureCard(
+                key: const Key('open-saved-custom-exercises'),
+                icon: Icons.folder_open_outlined,
+                title: '已儲存自訂動作',
+                subtitle: '開啟、修改或刪除本機自訂動作',
+                onTap: () => _openSavedCustomExercises(context),
               ),
               const Spacer(),
               const Text(
