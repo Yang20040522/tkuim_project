@@ -115,6 +115,7 @@ import '../tv_cast/socket_server_service.dart';
 import '../tv_cast/socket_client_service.dart';
 
 import 'package:permission_handler/permission_handler.dart';
+import '../training/training_preview_screen.dart';
 
 
 
@@ -801,7 +802,20 @@ class _TrainingScreenState extends State<TrainingScreen>
     }
     
     if (!mounted) return;
-    _pushReplacementNoAnimation(screen);
+
+    // 有 3D 示範的動作 → 先進示範頁;沒有的 → 直接進訓練
+    final Widget destination = hasDemo3D(action.type)
+        ? TrainingPreviewScreen(
+            actionType: action.type,
+            actionName: action.name,
+            targetScreen: screen,
+            difficultyLabel: difficulty.label,
+            targetReps: difficulty.targetReps,
+            description: action.description,
+          )
+        : screen;
+    //_pushReplacementNoAnimation(screen);
+    _pushReplacementNoAnimation(destination);
   }
 
   RehabDifficulty _mapDifficulty(DifficultyLevel level) {
