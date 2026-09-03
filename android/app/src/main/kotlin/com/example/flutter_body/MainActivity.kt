@@ -7,6 +7,8 @@ import android.content.Context
 import android.content.Intent
 import android.media.projection.MediaProjectionManager
 import android.os.Build
+import android.os.VibrationEffect
+import android.os.Vibrator
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.EventChannel
@@ -21,6 +23,7 @@ class MainActivity : FlutterActivity() {
     private val LANDMARK_CHANNEL = "com.rehabassist/landmarks"
     private val SCREEN_RECORDER_CHANNEL = "com.rehabassist/screen_recorder"
     private val NATIVE_NOTIFICATION_CHANNEL = "com.example.flutter_body/native_notification"
+    private val HAPTIC_CHANNEL = "com.example.flutter_body/haptic"
     private val SCREEN_RECORD_REQUEST_CODE = 9001
 
     private var mediaPipeBridge: MediaPipeBridge? = null
@@ -167,6 +170,33 @@ class MainActivity : FlutterActivity() {
                     else -> result.notImplemented()
                 }
             }
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, HAPTIC_CHANNEL)
+    .setMethodCallHandler { call, result ->
+        when (call.method) {
+            "navigationPulse" -> {
+                val vibrator =
+                    getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
+
+                if (vibrator.hasVibrator()) {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                        vibrator.vibrate(
+                            VibrationEffect.createOneShot(
+                                15L,
+                                VibrationEffect.DEFAULT_AMPLITUDE
+                            )
+                        )
+                    } else {
+                        @Suppress("DEPRECATION")
+                        vibrator.vibrate(15L)
+                    }
+                }
+
+                result.success(null)
+            }
+
+            else -> result.notImplemented()
+        }
+    }   
     }
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {

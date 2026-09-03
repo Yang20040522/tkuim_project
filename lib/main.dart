@@ -18,8 +18,8 @@ void main() async {
   await NotificationService().init();
   //runApp(const RehabAssistApp());
   runApp(
-    ChangeNotifierProvider(
-      create: (_) => HistoryService(),
+    ChangeNotifierProvider.value(
+      value: HistoryService(),
       child: const RehabAssistApp(),
     ),
   );

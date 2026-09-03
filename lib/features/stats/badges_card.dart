@@ -17,9 +17,33 @@ class BadgesCard extends StatefulWidget {
 }
 
 class _BadgesCardState extends State<BadgesCard> {
-  final _calculator = StatsCalculator();
+  late StatsCalculator _calculator;
+  HistoryService? _historyService;
   List<Achievement> _achievements = [];
   bool _loading = true;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final historyService = context.read<HistoryService>();
+    if (identical(historyService, _historyService)) return;
+
+    _historyService?.removeListener(_handleHistoryChanged);
+    _historyService = historyService;
+    _calculator = StatsCalculator(historyService: historyService);
+    historyService.addListener(_handleHistoryChanged);
+    _load();
+  }
+
+  void _handleHistoryChanged() {
+    _load();
+  }
+
+  @override
+  void dispose() {
+    _historyService?.removeListener(_handleHistoryChanged);
+    super.dispose();
+  }
 
   Future<void> _load() async {
     final data = await _calculator.getAchievements();
@@ -32,11 +56,6 @@ class _BadgesCardState extends State<BadgesCard> {
 
   @override
   Widget build(BuildContext context) {
-    context.watch<HistoryService>();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _load();
-    });
-
     final unlockedCount = _achievements.where((a) => a.unlocked).length;
     final total = _achievements.length;
 

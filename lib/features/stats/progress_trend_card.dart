@@ -16,9 +16,33 @@ class ProgressTrendCard extends StatefulWidget {
 }
 
 class _ProgressTrendCardState extends State<ProgressTrendCard> {
-  final _calculator = StatsCalculator();
+  late StatsCalculator _calculator;
+  HistoryService? _historyService;
   ProgressTrend _trend = ProgressTrend.empty;
   bool _loading = true;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final historyService = context.read<HistoryService>();
+    if (identical(historyService, _historyService)) return;
+
+    _historyService?.removeListener(_handleHistoryChanged);
+    _historyService = historyService;
+    _calculator = StatsCalculator(historyService: historyService);
+    historyService.addListener(_handleHistoryChanged);
+    _load();
+  }
+
+  void _handleHistoryChanged() {
+    _load();
+  }
+
+  @override
+  void dispose() {
+    _historyService?.removeListener(_handleHistoryChanged);
+    super.dispose();
+  }
 
   Future<void> _load() async {
     final data = await _calculator.getProgressTrend();
@@ -31,11 +55,6 @@ class _ProgressTrendCardState extends State<ProgressTrendCard> {
 
   @override
   Widget build(BuildContext context) {
-    context.watch<HistoryService>();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _load();
-    });
-
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(16),

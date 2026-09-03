@@ -13,12 +13,35 @@ class PersonalRecordsCard extends StatefulWidget {
 }
 
 class _PersonalRecordsCardState extends State<PersonalRecordsCard> {
-  final _calculator = StatsCalculator();
+  late StatsCalculator _calculator;
+  HistoryService? _historyService;
   PersonalRecords _records = PersonalRecords.empty;
   bool _loading = true;
 
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final historyService = context.read<HistoryService>();
+    if (identical(historyService, _historyService)) return;
+
+    _historyService?.removeListener(_handleHistoryChanged);
+    _historyService = historyService;
+    _calculator = StatsCalculator(historyService: historyService);
+    historyService.addListener(_handleHistoryChanged);
+    _load();
+  }
+
+  void _handleHistoryChanged() {
+    _load();
+  }
+
+  @override
+  void dispose() {
+    _historyService?.removeListener(_handleHistoryChanged);
+    super.dispose();
+  }
+
   Future<void> _load() async {
-    setState(() => _loading = true);
     final data = await _calculator.getPersonalRecords();
     if (!mounted) return;
     setState(() {
@@ -29,13 +52,6 @@ class _PersonalRecordsCardState extends State<PersonalRecordsCard> {
 
   @override
   Widget build(BuildContext context) {
-    // 訂閱 HistoryService,值變了會觸發 rebuild
-    context.watch<HistoryService>();
-    // rebuild 就重新載入(延到下一幀,避免 build 時 setState)
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _load();
-    });
-
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(

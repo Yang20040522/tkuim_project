@@ -56,10 +56,23 @@ class UploadResult {
 }
 
 class HistoryService extends ChangeNotifier {
-  Future<List<TrainingRecord>> getHistory() => historyRepository.getHistory();
+  HistoryService._(this._repository);
+
+  static final HistoryService _instance = HistoryService._(historyRepository);
+
+  /// App-wide history notifier. Existing call sites can keep using
+  /// `HistoryService()` and still observe writes made from another screen.
+  factory HistoryService() => _instance;
+
+  @visibleForTesting
+  HistoryService.withRepository(this._repository);
+
+  final HistoryRepository _repository;
+
+  Future<List<TrainingRecord>> getHistory() => _repository.getHistory();
 
   Future<void> saveRecord(TrainingRecord record) async {
-    await historyRepository.saveRecord(record);
+    await _repository.saveRecord(record);
 
     final mistakes = record.mistakeLogs.length;
     final acc = ((10 - mistakes) / 10 * 100).clamp(0, 100).round();
@@ -78,17 +91,17 @@ class HistoryService extends ChangeNotifier {
   /// 等到 session 真正結束、使用者做出保留/不保留的決定後,
   /// 才回頭把這幾筆紀錄的 videoPath 補齊,讓它們共用同一段影片。
   Future<void> updateLastRecordsVideoPath(int count, String? videoPath) async {
-    await historyRepository.updateLastRecordsVideoPath(count, videoPath);
+    await _repository.updateLastRecordsVideoPath(count, videoPath);
     notifyListeners();
   }
 
   Future<void> removeByTimestamp(String timestamp) async {
-    await historyRepository.removeByTimestamp(timestamp);
+    await _repository.removeByTimestamp(timestamp);
     notifyListeners();
   }
 
   Future<void> clearHistory() async {
-    await historyRepository.clearHistory();
+    await _repository.clearHistory();
     notifyListeners();
   }
 
@@ -98,7 +111,7 @@ class HistoryService extends ChangeNotifier {
 
   /// 取得目前有幾筆紀錄還沒上傳,給 UI 顯示「N 筆待同步」用。
   Future<int> getPendingUploadCount() async {
-    final pending = await historyRepository.getUnsyncedRecords();
+    final pending = await _repository.getUnsyncedRecords();
     return pending.length;
   }
 
@@ -111,7 +124,7 @@ class HistoryService extends ChangeNotifier {
   /// 最後回傳成功/失敗的統計,失敗的紀錄會保留 isSynced=false,
   /// 下次再按上傳時會繼續重試。
   Future<UploadResult> uploadPendingRecords({required int userId}) async {
-    final pending = await historyRepository.getUnsyncedRecords();
+    final pending = await _repository.getUnsyncedRecords();
 
     if (pending.isEmpty) {
       return const UploadResult(success: 0, failed: 0, total: 0);
@@ -123,7 +136,7 @@ class HistoryService extends ChangeNotifier {
     for (final record in pending) {
       try {
         await _uploadSingleRecord(record, userId: userId);
-        await historyRepository.markAsSynced(record.timestamp);
+        await _repository.markAsSynced(record.timestamp);
         success++;
       } catch (e) {
         debugPrint('上傳訓練紀錄失敗(${record.timestamp}): $e');
@@ -153,7 +166,7 @@ class HistoryService extends ChangeNotifier {
   }) async {
     try {
       await _uploadSingleRecord(record, userId: userId);
-      await historyRepository.markAsSynced(record.timestamp);
+      await _repository.markAsSynced(record.timestamp);
       notifyListeners();
       return true;
     } catch (e) {

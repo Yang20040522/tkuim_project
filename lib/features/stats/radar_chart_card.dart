@@ -19,14 +19,32 @@ class RadarChartCard extends StatefulWidget {
 }
 
 class _RadarChartCardState extends State<RadarChartCard> {
-  final _calculator = StatsCalculator();
+  late StatsCalculator _calculator;
+  HistoryService? _historyService;
   List<RadarAxis> _axes = [];
   bool _loading = true;
 
   @override
-  void initState() {
-    super.initState();
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final historyService = context.read<HistoryService>();
+    if (identical(historyService, _historyService)) return;
+
+    _historyService?.removeListener(_handleHistoryChanged);
+    _historyService = historyService;
+    _calculator = StatsCalculator(historyService: historyService);
+    historyService.addListener(_handleHistoryChanged);
     _load();
+  }
+
+  void _handleHistoryChanged() {
+    _load();
+  }
+
+  @override
+  void dispose() {
+    _historyService?.removeListener(_handleHistoryChanged);
+    super.dispose();
   }
 
   Future<void> _load() async {
@@ -49,13 +67,6 @@ class _RadarChartCardState extends State<RadarChartCard> {
 
   @override
   Widget build(BuildContext context) {
-    // 訂閱 HistoryService,值變了會 rebuild
-    context.watch<HistoryService>();
-    // rebuild 就重新載入(延到下一幀,避免 build 時 setState)
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _load();
-    });
-
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(16),

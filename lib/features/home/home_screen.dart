@@ -9,12 +9,13 @@
 //              手部動作 → TrainingScreen(isDisplay:true)
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../models/training_action.dart';
 import '../../services/history_service.dart';
 import '../history/history_screen.dart';
 import '../training/action_list_screen.dart';
-import '../demo/demo_library_screen.dart';   // ← 新增
+import '../demo/demo_library_screen.dart'; // ← 新增
 import '../plan/plan_screen.dart';
 import '../analysis/standard_analysis_screen.dart';
 import '../chat/chat_home_screen.dart';
@@ -48,23 +49,69 @@ import '../../actions/body_rehab_action.dart';
 import '../account/app_session.dart';
 
 import '../chat/chat_screen.dart';
-import '../notification/notification_settings_screen.dart';   // ← 加這行
+import '../notification/notification_settings_screen.dart'; // ← 加這行
 
-import '../demo/bone_viewer_screen.dart';    // ← 加這行
+import '../demo/bone_viewer_screen.dart'; // ← 加這行
 import '../body_test/body_test_screen.dart'; // ← 加這行
 
+/// 主分頁唯一順序。enum index 就是 UI page index；remote index 為相容舊版
+/// `_pages` 順序而保留的 wire protocol 值。
+enum MainTab {
+  home(label: '首頁', legacyRemoteIndex: 0),
+  stats(label: '數據', legacyRemoteIndex: 3),
+  plan(label: '計畫', legacyRemoteIndex: 1),
+  chat(label: '聊天', legacyRemoteIndex: 2),
+  profile(label: '個人', legacyRemoteIndex: 4);
+
+  const MainTab({required this.label, required this.legacyRemoteIndex});
+
+  final String label;
+  final int legacyRemoteIndex;
+
+  int get uiIndex => index;
+
+  static MainTab? fromUiIndex(int index) {
+    if (index < 0 || index >= values.length) return null;
+    return values[index];
+  }
+
+  static MainTab? fromLegacyRemoteIndex(int index) {
+    for (final tab in values) {
+      if (tab.legacyRemoteIndex == index) return tab;
+    }
+    return null;
+  }
+}
+
+enum _MainTabSelectionSource { bottomTap, swipe, remote }
+
 // ═══════════════════════════════════════════════════════════
-//  外殼:管理底部 tab 切換,IndexedStack 讓導航列常駐不消失
+//  外殼:管理底部 tab 與 PageView，讓導航列常駐並支援跟手切頁
 // ═══════════════════════════════════════════════════════════
 class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key});
+  const HomeScreen({
+    super.key,
+    this.remoteCommandStream,
+    this.onSendNavigationCommand,
+    this.onNavigationHaptic,
+  });
+
+  /// 可注入的 transport seam，production 未傳入時仍使用既有 socket services。
+  final Stream<Map<String, dynamic>>? remoteCommandStream;
+  final ValueChanged<Map<String, dynamic>>? onSendNavigationCommand;
+  final VoidCallback? onNavigationHaptic;
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  int _currentIndex = 0;
+  static const MethodChannel _hapticChannel =
+      MethodChannel('com.example.flutter_body/haptic');
+  MainTab _currentTab = MainTab.home;
+  late final PageController _pageController;
+  bool _isUserSwipe = false;
+  int _pendingSwipePage = MainTab.home.uiIndex;
 
   // 🖥️ 電視投放新增
   final _serverService = SocketServerService();
@@ -76,6 +123,10 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
+    _pageController = PageController(
+      initialPage: _currentTab.uiIndex,
+      keepPage: true,
+    );
     // WebRTC 信令透過 socket 轉發給對方
     _rtcService.onSignalingMessage = (signal) {
       final msg = {'type': 'RTC_SIGNAL', 'signal': signal};
@@ -86,13 +137,108 @@ class _HomeScreenState extends State<HomeScreen> {
       }
     };
     // 電視端:監聽手機傳來的指令
-    _serverSub = _serverService.messages.listen(_handleRemoteCommand);
-    _clientSub = _clientService.messages.listen(_handleRemoteCommand);
+    final remoteCommandStream = widget.remoteCommandStream;
+    if (remoteCommandStream != null) {
+      _serverSub = remoteCommandStream.listen(_handleRemoteCommand);
+    } else {
+      _serverSub = _serverService.messages.listen(_handleRemoteCommand);
+      _clientSub = _clientService.messages.listen(_handleRemoteCommand);
+    }
   }
 
-  void _onTabTapped(int index) {
-    setState(() => _currentIndex = index);
-    final msg = {'type': 'NAVIGATE_TO_TAB', 'index': index};
+  void _selectTab(
+    MainTab tab, {
+    _MainTabSelectionSource source = _MainTabSelectionSource.bottomTap,
+  }) {
+    if (_currentTab == tab) return;
+
+    final previousTab = _currentTab;
+    setState(() => _currentTab = tab);
+
+    switch (source) {
+      case _MainTabSelectionSource.bottomTap:
+        _performNavigationHaptic();
+        _broadcastTabSelection(tab);
+        _movePageController(
+          tab,
+          animate: (tab.uiIndex - previousTab.uiIndex).abs() == 1,
+        );
+      case _MainTabSelectionSource.swipe:
+        _performNavigationHaptic();
+        _broadcastTabSelection(tab);
+      case _MainTabSelectionSource.remote:
+        _movePageController(tab, animate: false);
+    }
+  }
+
+  void _movePageController(MainTab tab, {required bool animate}) {
+    void move() {
+      if (!mounted || !_pageController.hasClients) return;
+      if (animate) {
+        _pageController.animateToPage(
+          tab.uiIndex,
+          duration: const Duration(milliseconds: 250),
+          curve: Curves.easeOutCubic,
+        );
+      } else {
+        _pageController.jumpToPage(tab.uiIndex);
+      }
+    }
+
+    if (_pageController.hasClients) {
+      move();
+    } else {
+      WidgetsBinding.instance.addPostFrameCallback((_) => move());
+    }
+  }
+
+  void _performNavigationHaptic() {
+    final haptic = widget.onNavigationHaptic;
+    if (haptic != null) {
+      haptic();
+    } else {
+      _hapticChannel.invokeMethod('navigationPulse');
+    }
+  }
+
+  void _handlePageChanged(int pageIndex) {
+    _pendingSwipePage = pageIndex;
+  }
+
+  bool _handlePageScrollNotification(ScrollNotification notification) {
+    if (notification.depth != 0 ||
+        notification.metrics.axis != Axis.horizontal) {
+      return false;
+    }
+
+    if (notification is ScrollStartNotification &&
+        notification.dragDetails != null) {
+      _isUserSwipe = true;
+      _pendingSwipePage = _currentTab.uiIndex;
+    } else if (notification is ScrollEndNotification && _isUserSwipe) {
+      _isUserSwipe = false;
+      final settledPage = _pageController.hasClients
+          ? _pageController.page?.round() ?? _pendingSwipePage
+          : _pendingSwipePage;
+      final tab = MainTab.fromUiIndex(settledPage);
+      if (tab != null) {
+        _selectTab(tab, source: _MainTabSelectionSource.swipe);
+      }
+    }
+
+    return false;
+  }
+
+  void _broadcastTabSelection(MainTab tab) {
+    final msg = {
+      'type': 'NAVIGATE_TO_TAB',
+      'index': tab.legacyRemoteIndex,
+    };
+    final commandSink = widget.onSendNavigationCommand;
+    if (commandSink != null) {
+      commandSink(msg);
+      return;
+    }
     if (_clientService.isConnected) {
       _clientService.sendCommand(msg);
     } else if (_serverService.isClientConnected) {
@@ -158,6 +304,7 @@ class _HomeScreenState extends State<HomeScreen> {
   void dispose() {
     _serverSub?.cancel();
     _clientSub?.cancel();
+    _pageController.dispose();
     super.dispose();
   }
 
@@ -168,9 +315,12 @@ class _HomeScreenState extends State<HomeScreen> {
     final type = msg['type'];
 
     if (type == 'NAVIGATE_TO_TAB') {
-      final index = msg['index'] as int?;
-      if (index != null && index >= 0 && index < _pages.length) {
-        setState(() => _currentIndex = index);
+      final legacyIndex = msg['index'];
+      if (legacyIndex is int) {
+        final tab = MainTab.fromLegacyRemoteIndex(legacyIndex);
+        if (tab != null) {
+          _selectTab(tab, source: _MainTabSelectionSource.remote);
+        }
       }
       return;
     }
@@ -200,7 +350,10 @@ class _HomeScreenState extends State<HomeScreen> {
     }
 
     if (type == 'POP_SCREEN') {
-      Navigator.of(context).pop();
+      final navigator = Navigator.of(context);
+      if (navigator.canPop()) {
+        navigator.pop();
+      }
       return;
     }
 
@@ -288,20 +441,37 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  late final List<Widget> _pages = [
-    const _HomeContent(),
-    const PlanScreen(),
-    const ChatHomeScreen(),
-    const StatsScreen(),
-    const ProfileScreen(),
-  ];
+  late final List<Widget> _pages = MainTab.values
+      .map((tab) => switch (tab) {
+            MainTab.home => const _KeepAliveMainTabPage(
+                child: _HomeContent(),
+              ),
+            MainTab.stats => const _KeepAliveMainTabPage(
+                child: StatsScreen(),
+              ),
+            MainTab.plan => const _KeepAliveMainTabPage(
+                child: PlanScreen(),
+              ),
+            MainTab.chat => const _KeepAliveMainTabPage(
+                child: ChatHomeScreen(),
+              ),
+            MainTab.profile => const _KeepAliveMainTabPage(
+                child: ProfileScreen(),
+              ),
+          })
+      .toList(growable: false);
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: IndexedStack(
-        index: _currentIndex,
-        children: _pages,
+      body: NotificationListener<ScrollNotification>(
+        onNotification: _handlePageScrollNotification,
+        child: PageView(
+          key: const ValueKey('main-tab-pages'),
+          controller: _pageController,
+          onPageChanged: _handlePageChanged,
+          children: _pages,
+        ),
       ),
       bottomNavigationBar: _buildBottomNavBar(),
     );
@@ -326,35 +496,61 @@ class _HomeScreenState extends State<HomeScreen> {
           child: Row(
             children: [
               _NavItem(
-                label: '首頁',
-                isActive: _currentIndex == 0,
-                onTap: () => setState(() => _currentIndex = 0),
+                key: const ValueKey('main-tab-home'),
+                label: MainTab.home.label,
+                isActive: _currentTab == MainTab.home,
+                onTap: () => _selectTab(MainTab.home),
               ),
               _NavItem(
-                label: '數據',
-                isActive: _currentIndex == 3,
-                onTap: () => setState(() => _currentIndex = 3),
+                key: const ValueKey('main-tab-stats'),
+                label: MainTab.stats.label,
+                isActive: _currentTab == MainTab.stats,
+                onTap: () => _selectTab(MainTab.stats),
               ),
               _NavItem(
-                label: '計畫',
-                isActive: _currentIndex == 1,
-                onTap: () => setState(() => _currentIndex = 1),
+                key: const ValueKey('main-tab-plan'),
+                label: MainTab.plan.label,
+                isActive: _currentTab == MainTab.plan,
+                onTap: () => _selectTab(MainTab.plan),
               ),
               _NavItem(
-                label: '聊天',
-                isActive: _currentIndex == 2,
-                onTap: () => setState(() => _currentIndex = 2),
+                key: const ValueKey('main-tab-chat'),
+                label: MainTab.chat.label,
+                isActive: _currentTab == MainTab.chat,
+                onTap: () => _selectTab(MainTab.chat),
               ),
               _NavItem(
-                label: '個人',
-                isActive: _currentIndex == 4,
-                onTap: () => setState(() => _currentIndex = 4),
+                key: const ValueKey('main-tab-profile'),
+                label: MainTab.profile.label,
+                isActive: _currentTab == MainTab.profile,
+                onTap: () => _selectTab(MainTab.profile),
               ),
             ],
           ),
         ),
       ),
     );
+  }
+}
+
+class _KeepAliveMainTabPage extends StatefulWidget {
+  const _KeepAliveMainTabPage({required this.child});
+
+  final Widget child;
+
+  @override
+  State<_KeepAliveMainTabPage> createState() => _KeepAliveMainTabPageState();
+}
+
+class _KeepAliveMainTabPageState extends State<_KeepAliveMainTabPage>
+    with AutomaticKeepAliveClientMixin {
+  @override
+  bool get wantKeepAlive => true;
+
+  @override
+  Widget build(BuildContext context) {
+    super.build(context);
+    return widget.child;
   }
 }
 
@@ -374,7 +570,7 @@ class _HomeContentState extends State<_HomeContent>
   late Animation<double> _fadeAnim;
 
   // ─── 資料層(未來換資料庫只改 HistoryService 內部即可)
-  final HistoryService _historyService = HistoryService();
+  HistoryService? _historyService;
 
   // ─── 顯示用狀態
   String _accuracyText = '-- %';
@@ -389,27 +585,45 @@ class _HomeContentState extends State<_HomeContent>
       duration: const Duration(milliseconds: 600),
     )..forward();
     _fadeAnim = CurvedAnimation(parent: _fadeCtrl, curve: Curves.easeOut);
+  }
 
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final historyService = context.read<HistoryService>();
+    if (identical(historyService, _historyService)) return;
+
+    _historyService?.removeListener(_handleHistoryChanged);
+    _historyService = historyService;
+    historyService.addListener(_handleHistoryChanged);
+    _loadStats();
+  }
+
+  void _handleHistoryChanged() {
     _loadStats();
   }
 
   @override
   void dispose() {
+    _historyService?.removeListener(_handleHistoryChanged);
     _fadeCtrl.dispose();
     super.dispose();
   }
 
-  bool _hasHistory = false;                    // ✅ 新增
-  String _lastTrainingText = '';                // ✅ 新增
-  int _unreadCount = 0;                         // ✅ 新增(未讀通知數)
+  bool _hasHistory = false; // ✅ 新增
+  String _lastTrainingText = ''; // ✅ 新增
+  int _unreadCount = 0; // ✅ 新增(未讀通知數)
 
   // ═══ 載入統計 ═══════════════════════════════════════════════
   // 未來接資料庫時,只動 HistoryService 內部即可,本方法不變
   Future<void> _loadStats() async {
+    final historyService = _historyService;
+    if (historyService == null) return;
+
     // 每次進首頁時,如果通知開著就重新排下一次提醒(繞過 MIUI 殺鎖)
     await NotificationService().refreshDailyReminderIfEnabled();
-    final records = await _historyService.getHistory();
-    final unread = await NotificationService().getUnreadCount();  // ✅ 新增
+    final records = await historyService.getHistory();
+    final unread = await NotificationService().getUnreadCount(); // ✅ 新增
     if (!mounted) return;
 
     final acc = _calcTodayAccuracy(records);
@@ -419,7 +633,7 @@ class _HomeContentState extends State<_HomeContent>
       _accuracyText = acc.text;
       _accuracyFooter = acc.footer;
       _streakText = '$streak 天';
-      _unreadCount = unread;   // ✅ 新增
+      _unreadCount = unread; // ✅ 新增
 
       if (records.isNotEmpty) {
         _hasHistory = true;
@@ -448,9 +662,8 @@ class _HomeContentState extends State<_HomeContent>
   ({String text, String footer}) _calcTodayAccuracy(
       List<TrainingRecord> records) {
     final todayPrefix = _todayPrefix();
-    final today = records
-        .where((r) => r.timestamp.startsWith(todayPrefix))
-        .toList();
+    final today =
+        records.where((r) => r.timestamp.startsWith(todayPrefix)).toList();
 
     if (today.isEmpty) {
       return (text: '-- %', footer: '尚未開始訓練');
@@ -495,8 +708,7 @@ class _HomeContentState extends State<_HomeContent>
 
   String _todayPrefix() => _formatDate(DateTime.now());
 
-  String _formatDate(DateTime d) =>
-      '${d.year.toString().padLeft(4, '0')}-'
+  String _formatDate(DateTime d) => '${d.year.toString().padLeft(4, '0')}-'
       '${d.month.toString().padLeft(2, '0')}-'
       '${d.day.toString().padLeft(2, '0')}';
 
@@ -523,7 +735,7 @@ class _HomeContentState extends State<_HomeContent>
 
   // ← 新增：跳動作示範庫
   void _openDemoLibrary() {
-    _broadcastOpenScreen('DEMO_LIBRARY'); 
+    _broadcastOpenScreen('DEMO_LIBRARY');
     Navigator.of(context).push(
       MaterialPageRoute(builder: (_) => const DemoLibraryScreen()),
     );
@@ -660,8 +872,8 @@ class _HomeContentState extends State<_HomeContent>
                   const SizedBox(height: 2),
                   Text(
                     subtitle,
-                    style: const TextStyle(
-                        color: Color(0xFF6B7280), fontSize: 12),
+                    style:
+                        const TextStyle(color: Color(0xFF6B7280), fontSize: 12),
                   ),
                 ],
               ),
@@ -690,13 +902,6 @@ class _HomeContentState extends State<_HomeContent>
 
   @override
   Widget build(BuildContext context) {
-    // 訂閱 HistoryService,值變了會 rebuild
-    context.watch<HistoryService>();
-    // rebuild 就重新載入統計(延到下一幀,避免 build 時 setState)
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _loadStats();
-    });
-
     return Scaffold(
       backgroundColor: const Color(0xFFF5F6FA),
       body: FadeTransition(
@@ -720,7 +925,7 @@ class _HomeContentState extends State<_HomeContent>
                 const SizedBox(height: 12),
                 _buildShortcutsRow(),
                 const SizedBox(height: 12),
-                _buildStandardAnalysisCard(),   // ← 新增
+                _buildStandardAnalysisCard(), // ← 新增
                 const SizedBox(height: 20),
               ],
             ),
@@ -793,19 +998,19 @@ class _HomeContentState extends State<_HomeContent>
                 ),
               ],
             ),
-            child: const Icon(Icons.cast,
-                color: Color(0xFF374151), size: 22),
+            child: const Icon(Icons.cast, color: Color(0xFF374151), size: 22),
           ),
         ),
         const SizedBox(width: 12),
         GestureDetector(
-          onTap: () async {                               // ✅ 改
+          onTap: () async {
+            // ✅ 改
             await Navigator.of(context).push(
               MaterialPageRoute(
                 builder: (_) => const NotificationScreen(),
               ),
             );
-            if (mounted) _loadStats();                    // 回來後重算未讀數
+            if (mounted) _loadStats(); // 回來後重算未讀數
           },
           child: Container(
             width: 44,
@@ -826,7 +1031,7 @@ class _HomeContentState extends State<_HomeContent>
               children: [
                 const Icon(Icons.notifications_outlined,
                     color: Color(0xFF374151), size: 22),
-                if (_unreadCount > 0)                     // ✅ 改:加條件
+                if (_unreadCount > 0) // ✅ 改:加條件
                   Positioned(
                     top: 10,
                     right: 12,
@@ -852,8 +1057,9 @@ class _HomeContentState extends State<_HomeContent>
     return Row(
       children: [
         Expanded(
-          child: GestureDetector(           // ✅ 新增
-            onTap: _openHistory,            // ✅ 新增:沿用既有的 _openHistory,邏輯完全沒動
+          child: GestureDetector(
+            // ✅ 新增
+            onTap: _openHistory, // ✅ 新增:沿用既有的 _openHistory,邏輯完全沒動
             child: _StatCard(
               title: '今日準確度',
               value: _accuracyText,
@@ -888,7 +1094,7 @@ class _HomeContentState extends State<_HomeContent>
 
   Widget _buildMainTrainingCard() {
     return GestureDetector(
-      onTap: _openActionList,   // 互動不變
+      onTap: _openActionList, // 互動不變
       child: Container(
         width: double.infinity,
         padding: const EdgeInsets.all(20),
@@ -979,7 +1185,7 @@ class _HomeContentState extends State<_HomeContent>
           child: _ShortcutCard(
             label: '動作示範庫',
             iconBg: const Color(0xFFD1FAE5),
-            onTap: _openDemoLibrary,   // ← 改這裡
+            onTap: _openDemoLibrary, // ← 改這裡
           ),
         ),
         const SizedBox(width: 12),
@@ -1054,7 +1260,6 @@ class _HomeContentState extends State<_HomeContent>
       ),
     );
   }
-
 }
 
 // ═════════════════════════ 子元件 ═════════════════════════
@@ -1081,8 +1286,7 @@ class _StatCard extends StatelessWidget {
             end: Alignment.bottomRight,
           )
         : null;
-    final textColor =
-        isPrimary ? Colors.white : const Color(0xFF1A1D2E);
+    final textColor = isPrimary ? Colors.white : const Color(0xFF1A1D2E);
     final subColor = isPrimary
         ? Colors.white.withValues(alpha: 0.85)
         : const Color(0xFF6B7280);
@@ -1195,6 +1399,7 @@ class _NavItem extends StatelessWidget {
   final VoidCallback onTap;
 
   const _NavItem({
+    super.key,
     required this.label,
     required this.isActive,
     required this.onTap,
@@ -1202,9 +1407,7 @@ class _NavItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final color = isActive
-        ? const Color(0xFF4A65FF)
-        : const Color(0xFF9CA3AF);
+    final color = isActive ? const Color(0xFF4A65FF) : const Color(0xFF9CA3AF);
     return Expanded(
       child: GestureDetector(
         onTap: onTap,
@@ -1226,8 +1429,7 @@ class _NavItem extends StatelessWidget {
               style: TextStyle(
                 color: color,
                 fontSize: 11,
-                fontWeight:
-                    isActive ? FontWeight.w800 : FontWeight.w500,
+                fontWeight: isActive ? FontWeight.w800 : FontWeight.w500,
               ),
             ),
           ],

@@ -20,7 +20,10 @@ class RadarAxis {
 }
 
 class StatsCalculator {
-  final HistoryService _historyService = HistoryService();
+  StatsCalculator({HistoryService? historyService})
+      : _historyService = historyService ?? HistoryService();
+
+  final HistoryService _historyService;
 
   /// 近 30 天使用者練過的動作 + 各自平均準確度
   /// 回傳的 list 已經按準確度由低到高排序(讓弱項容易被看到)
