@@ -52,7 +52,6 @@ import '../notification/notification_settings_screen.dart';   // ← 加這行
 
 import '../demo/bone_viewer_screen.dart';    // ← 加這行
 import '../body_test/body_test_screen.dart'; // ← 加這行
-import '../custom_exercise/custom_exercise_editor_page.dart';
 
 // ═══════════════════════════════════════════════════════════
 //  外殼:管理底部 tab 切換,IndexedStack 讓導航列常駐不消失
@@ -538,13 +537,6 @@ class _HomeContentState extends State<_HomeContent>
     );
   }
 
-  // TEMPORARY ACCEPTANCE ENTRY:自訂動作驗收完成後可連同首頁測試卡一起移除。
-  void _openCustomExerciseEditorTest() {
-    Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => const CustomExerciseEditorPage()),
-    );
-  }
-
   void _broadcastOpenScreen(String screenName) {
     final clientService = SocketClientService();
     final serverService = SocketServerService();
@@ -729,8 +721,6 @@ class _HomeContentState extends State<_HomeContent>
                 _buildShortcutsRow(),
                 const SizedBox(height: 12),
                 _buildStandardAnalysisCard(),   // ← 新增
-                const SizedBox(height: 12),
-                _buildCustomExerciseEditorTestCard(),
                 const SizedBox(height: 20),
               ],
             ),
@@ -1065,74 +1055,6 @@ class _HomeContentState extends State<_HomeContent>
     );
   }
 
-  // TEMPORARY ACCEPTANCE ENTRY:只提供 navigation，不承擔任何 editor 邏輯。
-  Widget _buildCustomExerciseEditorTestCard() {
-    return Material(
-      color: const Color(0xFFFFFBEB),
-      borderRadius: BorderRadius.circular(16),
-      child: InkWell(
-        key: const Key('patient-custom-exercise-editor-test-entry'),
-        onTap: _openCustomExerciseEditorTest,
-        borderRadius: BorderRadius.circular(16),
-        child: Container(
-          width: double.infinity,
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: const Color(0xFFF59E0B)),
-          ),
-          child: const Row(
-            children: [
-              SizedBox(
-                width: 44,
-                height: 44,
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    color: Color(0xFFFEF3C7),
-                    borderRadius: BorderRadius.all(Radius.circular(12)),
-                  ),
-                  child: Icon(
-                    Icons.science_outlined,
-                    color: Color(0xFFD97706),
-                    size: 23,
-                  ),
-                ),
-              ),
-              SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      '自訂動作編輯器測試',
-                      style: TextStyle(
-                        color: Color(0xFF92400E),
-                        fontSize: 14,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                    SizedBox(height: 2),
-                    Text(
-                      '暫時驗收入口，不影響病人訓練流程',
-                      style: TextStyle(
-                        color: Color(0xFFB45309),
-                        fontSize: 11,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              Icon(
-                Icons.arrow_forward_ios,
-                color: Color(0xFFD97706),
-                size: 14,
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
 }
 
 // ═════════════════════════ 子元件 ═════════════════════════
