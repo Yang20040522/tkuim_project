@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:typed_data';
 import 'package:flutter/foundation.dart'; // 用 kDebugMode
 import 'package:flutter/services.dart';
 
@@ -12,7 +13,12 @@ class Landmark {
 class DetectionResult {
   final List<Landmark> landmarks;
   final bool handDetected;
-  DetectionResult({required this.landmarks, required this.handDetected});
+  final String? imageBase64;
+  DetectionResult({
+    required this.landmarks,
+    required this.handDetected,
+    this.imageBase64,
+  });
 }
 
 class TrainingUpdate {
@@ -153,6 +159,7 @@ class MediaPipeService {
         _landmarkController.add(DetectionResult(
           landmarks: landmarks,
           handDetected: map['handDetected'] ?? false,
+          imageBase64: map['imageBase64'], // 🚀 新增: 讀取影像資料
         ));
       },
       onError: (e) => debugPrint('=== LANDMARK ERROR: $e'),

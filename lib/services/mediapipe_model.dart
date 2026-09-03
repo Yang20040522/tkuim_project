@@ -7,6 +7,8 @@
 // ══════════════════════════════════════════════════════════════════
 
 import 'dart:async';
+import 'dart:convert'; // 🚀 新增：解碼 Base64
+import 'dart:typed_data'; // 🚀 新增：Uint8List
 import 'mediapipe_service.dart';
 import 'pose_model_interface.dart';
 
@@ -32,9 +34,19 @@ class MediaPipeModel implements IPoseModel {
 
     _landmarkSub = _svc.landmarkStream.listen((result) {
       final predicted = _predictNext(result.landmarks);
+
+      // 🚀 新增：影像資料轉成 bytes
+      Uint8List? imgBytes;
+      if (result.imageBase64 != null) {
+        try {
+          imgBytes = base64Decode(result.imageBase64!);
+        } catch (_) {}
+      }
+
       _frameCtrl.add(PoseFrame(
         handLandmarks: predicted,
         handDetected: result.handDetected,
+        imageBytes: imgBytes, // 🚀 新增
       ));
     });
   }

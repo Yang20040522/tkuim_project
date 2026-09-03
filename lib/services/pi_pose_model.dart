@@ -44,6 +44,7 @@ class PiPoseModel implements IPoseModel {
       _frameCtrl.add(PoseFrame(
         handLandmarks: result.landmarks,
         handDetected: result.handDetected,
+        imageBytes: _source!.latestJpeg.value, // 🚀 新增
       ));
     }
 
