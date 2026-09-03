@@ -10,6 +10,7 @@
 import 'package:flutter/material.dart';
 import 'package:model_viewer_plus/model_viewer_plus.dart';
 import '../../models/training_action.dart';
+import 'action_tips_dialog.dart';
 
 /// 一個動作的 3D 示範資料
 class ActionDemo3D {
@@ -160,6 +161,26 @@ class _TrainingPreviewScreenState extends State<TrainingPreviewScreen> {
       ),
     );
     if (skip == true) _startTraining();
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    // 進頁面後自動彈說明(只有這個動作+難度有填說明才彈)
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _maybeShowTips();
+    });
+  }
+
+  void _maybeShowTips() {
+    final tips = getActionTips(widget.actionType, widget.difficultyLabel);
+    if (tips == null) return; // 沒填說明就不彈
+    if (!mounted) return;
+    showActionTipsDialog(
+      context,
+      actionName: widget.actionName,
+      tips: tips,
+    );
   }
 
   @override

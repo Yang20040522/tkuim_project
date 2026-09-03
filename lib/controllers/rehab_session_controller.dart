@@ -345,6 +345,8 @@ class RehabSessionController implements RehabActionCallback {
     _emit(_state.copyWith(
       currentLevelLabel: levelLabel,
       currentLevel: newLevel,   // ✅ 補上這行,之前漏加了
+      targetReps: newTargetReps, // 🆕 補上這行,自訂次數/新一階的目標次數才會真的同步到畫面
+      repCount: 0, // 🆕 新一階開始,完成次數重新歸零
     ));
   }
 
