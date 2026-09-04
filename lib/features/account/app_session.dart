@@ -9,6 +9,7 @@ class AppSession {
   static String? userId;
   static String? name;
   static String? email;
+  static String? accountId;
   static String? bindingCode;
   static String? customExerciseToken;
 
@@ -18,6 +19,7 @@ class AppSession {
   static const _keyUserId = 'session_userId';
   static const _keyName = 'session_name';
   static const _keyEmail = 'session_email';
+  static const _keyAccountId = 'session_accountId';
   static const _keyBindingCode = 'session_bindingCode';
   static const _keyCustomExerciseToken = 'session_customExerciseToken';
 
@@ -36,6 +38,7 @@ class AppSession {
     userId = prefs.getString(_keyUserId);
     name = prefs.getString(_keyName);
     email = prefs.getString(_keyEmail);
+    accountId = prefs.getString(_keyAccountId);
     bindingCode = prefs.getString(_keyBindingCode);
     customExerciseToken = prefs.getString(_keyCustomExerciseToken);
   }
@@ -46,6 +49,7 @@ class AppSession {
     String? userId,
     String? name,
     String? email,
+    String? accountId,
     String? bindingCode,
     String? customExerciseToken,
   }) async {
@@ -53,6 +57,7 @@ class AppSession {
     AppSession.userId = userId;
     AppSession.name = name;
     AppSession.email = email;
+    AppSession.accountId = accountId;
     AppSession.bindingCode = bindingCode;
     AppSession.customExerciseToken = customExerciseToken;
 
@@ -61,6 +66,11 @@ class AppSession {
     if (userId != null) await prefs.setString(_keyUserId, userId);
     if (name != null) await prefs.setString(_keyName, name);
     if (email != null) await prefs.setString(_keyEmail, email);
+    if (accountId != null) {
+      await prefs.setString(_keyAccountId, accountId);
+    } else {
+      await prefs.remove(_keyAccountId);
+    }
     if (bindingCode != null) {
       await prefs.setString(_keyBindingCode, bindingCode);
     } else {
@@ -79,6 +89,7 @@ class AppSession {
     userId = null;
     name = null;
     email = null;
+    accountId = null;
     bindingCode = null;
     customExerciseToken = null;
 
@@ -87,6 +98,7 @@ class AppSession {
     await prefs.remove(_keyUserId);
     await prefs.remove(_keyName);
     await prefs.remove(_keyEmail);
+    await prefs.remove(_keyAccountId);
     await prefs.remove(_keyBindingCode);
     await prefs.remove(_keyCustomExerciseToken);
   }

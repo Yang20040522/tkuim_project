@@ -29,25 +29,51 @@ class AuthService {
   /// 成功時回傳 LoginResult(success: true, ...使用者資料)
   /// 失敗時回傳 LoginResult(success: false, message: 後端給的錯誤訊息)
   static Future<LoginResult> login({
-    required String email,
+    required String identifier,
     required String password,
   }) async {
     if (_useMockLogin) {
-      return _mockLogin(email: email, password: password);
+      return _mockLogin(email: identifier, password: password);
     }
 
     try {
-      final data = await ApiService.login(email: email, password: password);
-      return LoginResult.success(
-        userId: data['userId']?.toString() ?? '',
-        name: data['name']?.toString() ?? '',
-        email: data['email']?.toString() ?? email,
-        bindingCode: data['bindingCode']?.toString(),
-        customExerciseToken: data['customExerciseToken']?.toString(),
-        backendRole: data['role']?.toString(),
+      final data = await ApiService.login(
+        identifier: identifier,
+        password: password,
       );
-    } catch (e) {
-      return LoginResult.failure(e.toString());
+      return LoginResult.fromResponse(data, fallbackEmail: identifier);
+    } on AuthApiFailure catch (error) {
+      return LoginResult.failure(error.message, errorCode: error.code);
+    } catch (_) {
+      return LoginResult.failure('無法連線到伺服器，請確認網路狀態或稍後再試');
+    }
+  }
+
+  static Future<LoginResult> googleLogin({required String idToken}) async {
+    try {
+      final data = await ApiService.googleLogin(idToken: idToken);
+      return LoginResult.fromResponse(data);
+    } on AuthApiFailure catch (error) {
+      return LoginResult.failure(error.message, errorCode: error.code);
+    } catch (_) {
+      return LoginResult.failure('Google 登入失敗，請稍後再試');
+    }
+  }
+
+  static Future<LoginResult> linkGoogle({
+    required String idToken,
+    required String currentPassword,
+  }) async {
+    try {
+      final data = await ApiService.linkGoogle(
+        idToken: idToken,
+        currentPassword: currentPassword,
+      );
+      return LoginResult.fromResponse(data);
+    } on AuthApiFailure catch (error) {
+      return LoginResult.failure(error.message, errorCode: error.code);
+    } catch (_) {
+      return LoginResult.failure('帳號連結失敗，請稍後再試');
     }
   }
 
@@ -64,9 +90,11 @@ class AuthService {
     try {
       await ApiService.register(name: name, email: email, password: password);
       // 註冊成功後直接接著登入一次,拿到 userId 好存進 AppSession
-      return login(email: email, password: password);
-    } catch (e) {
-      return LoginResult.failure(e.toString());
+      return login(identifier: email, password: password);
+    } on AuthApiFailure catch (error) {
+      return LoginResult.failure(error.message, errorCode: error.code);
+    } catch (_) {
+      return LoginResult.failure('無法連線到伺服器，請確認網路狀態或稍後再試');
     }
   }
 
@@ -96,26 +124,46 @@ class LoginResult {
   final String? userId;
   final String? name;
   final String? email;
+  final String? accountId;
   final String? bindingCode;
   final String? customExerciseToken;
   final String? backendRole;
+  final String? errorCode;
 
   LoginResult.success({
     required this.userId,
     required this.name,
     required this.email,
+    this.accountId,
     required this.bindingCode,
     required this.customExerciseToken,
     required this.backendRole,
+    this.errorCode,
   })  : success = true,
         message = null;
 
-  LoginResult.failure(this.message)
+  LoginResult.failure(this.message, {this.errorCode})
       : success = false,
         userId = null,
         name = null,
         email = null,
+        accountId = null,
         bindingCode = null,
         customExerciseToken = null,
         backendRole = null;
+
+  factory LoginResult.fromResponse(
+    Map<String, dynamic> data, {
+    String fallbackEmail = '',
+  }) {
+    return LoginResult.success(
+      userId: data['userId']?.toString() ?? '',
+      name: data['name']?.toString() ?? '',
+      email: data['email']?.toString() ?? fallbackEmail,
+      accountId: data['accountId']?.toString(),
+      bindingCode: data['bindingCode']?.toString(),
+      customExerciseToken: data['customExerciseToken']?.toString(),
+      backendRole: data['role']?.toString(),
+    );
+  }
 }

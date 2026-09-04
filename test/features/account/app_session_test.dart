@@ -12,6 +12,7 @@ void main() {
     AppSession.userId = null;
     AppSession.name = null;
     AppSession.email = null;
+    AppSession.accountId = null;
     AppSession.bindingCode = null;
     AppSession.customExerciseToken = null;
   });
@@ -62,6 +63,19 @@ void main() {
     await AppSession.load();
 
     expect(AppSession.bindingCode, 'ABC12345');
+  });
+
+  test('AppSession 重載後保留帳號 ID', () async {
+    await AppSession.save(
+      role: UserRole.patient,
+      userId: '15',
+      accountId: 'rehab123',
+    );
+
+    AppSession.accountId = null;
+    await AppSession.load();
+
+    expect(AppSession.accountId, 'rehab123');
   });
 
   test('AppSession 允許 null token 並清除前一次的 token', () async {

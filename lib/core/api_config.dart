@@ -14,4 +14,12 @@
 // ============================================================
 class ApiConfig {
   static const String baseUrl = 'https://trianing-system.onrender.com';
+
+  // Public Web OAuth client ID. Supply with
+  // --dart-define=GOOGLE_SERVER_CLIENT_ID=... at run/build time.
+  static const String googleServerClientId = String.fromEnvironment(
+    'GOOGLE_SERVER_CLIENT_ID',
+    defaultValue:
+        '229850307155-70q5o0vg5d89hqidluq1obbkg2jbc2nq.apps.googleusercontent.com',
+  );
 }

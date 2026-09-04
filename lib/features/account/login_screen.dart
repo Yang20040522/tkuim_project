@@ -1,17 +1,24 @@
 // lib/features/account/login_screen.dart
 import 'package:flutter/material.dart';
 
-import 'app_session.dart';
 import 'auth_service.dart';
+import 'google_auth_service.dart';
 import 'home_router.dart';
+import 'patient_google_auth_button.dart';
+import 'patient_login_session.dart';
 import 'user_role.dart';
 
 import 'register_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   final UserRole role;
+  final PatientGoogleAuthCoordinator? googleAuthCoordinator;
 
-  const LoginScreen({super.key, required this.role});
+  const LoginScreen({
+    super.key,
+    required this.role,
+    this.googleAuthCoordinator,
+  });
 
   @override
   State<LoginScreen> createState() => _LoginScreenState();
@@ -32,13 +39,9 @@ class _LoginScreenState extends State<LoginScreen> {
     super.dispose();
   }
 
-  String? _validateEmail(String? value) {
+  String? _validateIdentifier(String? value) {
     if (value == null || value.trim().isEmpty) {
-      return '請輸入電子郵件';
-    }
-    final emailRegex = RegExp(r'^[\w\.\-]+@[\w\-]+\.[\w\-\.]+$');
-    if (!emailRegex.hasMatch(value.trim())) {
-      return '電子郵件格式不正確';
+      return '請輸入電子郵件或帳號 ID';
     }
     return null;
   }
@@ -60,7 +63,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
     try {
       final result = await AuthService.login(
-        email: _emailController.text.trim(),
+        identifier: _emailController.text.trim(),
         password: _passwordController.text,
       );
 
@@ -68,22 +71,9 @@ class _LoginScreenState extends State<LoginScreen> {
       setState(() => _isLoading = false);
 
       if (result.success) {
-        await AppSession.save(
-          role: widget.role,
-          userId: result.userId ?? '',
-          name: result.name ?? '',
-          email: result.email ?? _emailController.text.trim(),
-          bindingCode: result.bindingCode,
-          customExerciseToken: result.customExerciseToken,
-        );
-        if (!mounted) return;
-
-        // 後端加了 role 之後,可在這裡核對「選的身分 = 帳號實際身分」
-
-        Navigator.pushAndRemoveUntil(
-          context,
-          MaterialPageRoute(builder: (_) => homeForRole(widget.role)),
-          (route) => false,
+        await _completePatientLogin(
+          result,
+          fallbackEmail: _emailController.text.trim(),
         );
       } else {
         _showError(result.message ?? '登入失敗,請再試一次');
@@ -93,6 +83,30 @@ class _LoginScreenState extends State<LoginScreen> {
       setState(() => _isLoading = false);
       _showError('無法連線到伺服器,請確認網路狀態或稍後再試');
     }
+  }
+
+  Future<void> _completePatientLogin(
+    LoginResult result, {
+    String fallbackEmail = '',
+  }) async {
+    try {
+      await PatientLoginSession.save(
+        result,
+        fallbackEmail: fallbackEmail,
+      );
+    } on PatientRoleException {
+      _showError('此帳號無法使用患者登入');
+      return;
+    } on InvalidPatientSessionException {
+      _showError('伺服器登入資料不完整，請稍後再試');
+      return;
+    }
+    if (!mounted) return;
+    Navigator.pushAndRemoveUntil(
+      context,
+      MaterialPageRoute(builder: (_) => homeForRole(UserRole.patient)),
+      (route) => false,
+    );
   }
 
   void _showError(String message) {
@@ -143,7 +157,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   ),
                 ),
                 const SizedBox(height: 32),
-                _buildLabel('電子郵件'),
+                _buildLabel('電子郵件或帳號 ID'),
                 const SizedBox(height: 8),
                 _buildEmailField(),
                 const SizedBox(height: 20),
@@ -175,6 +189,28 @@ class _LoginScreenState extends State<LoginScreen> {
                 ),
                 const SizedBox(height: 24),
                 _buildLoginButton(),
+                if (widget.role == UserRole.patient) ...[
+                  const SizedBox(height: 16),
+                  const Row(
+                    children: [
+                      Expanded(child: Divider(color: Color(0xFFDDE0F0))),
+                      Padding(
+                        padding: EdgeInsets.symmetric(horizontal: 12),
+                        child: Text(
+                          '或',
+                          style: TextStyle(color: Color(0xFF9CA3AF)),
+                        ),
+                      ),
+                      Expanded(child: Divider(color: Color(0xFFDDE0F0))),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  PatientGoogleAuthButton(
+                    label: '使用 Google 登入',
+                    coordinator: widget.googleAuthCoordinator,
+                    onAuthenticated: _completePatientLogin,
+                  ),
+                ],
                 const SizedBox(height: 16),
                 Center(
                   child: TextButton(
@@ -182,7 +218,10 @@ class _LoginScreenState extends State<LoginScreen> {
                       Navigator.push(
                         context,
                         MaterialPageRoute(
-                          builder: (_) => RegisterScreen(role: widget.role),
+                          builder: (_) => RegisterScreen(
+                            role: widget.role,
+                            googleAuthCoordinator: widget.googleAuthCoordinator,
+                          ),
                         ),
                       );
                     },
@@ -254,10 +293,10 @@ class _LoginScreenState extends State<LoginScreen> {
       autofillHints: const [AutofillHints.email],
       style: const TextStyle(fontSize: 14, color: Color(0xFF1A1D2E)),
       decoration: _fieldDecoration(
-        hint: 'example@email.com',
-        icon: Icons.mail_outline,
+        hint: 'example@email.com 或 rehab123',
+        icon: Icons.person_outline,
       ),
-      validator: _validateEmail,
+      validator: _validateIdentifier,
     );
   }
 

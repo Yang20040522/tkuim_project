@@ -36,7 +36,7 @@ class _TherapistLoginScreenState extends State<TherapistLoginScreen> {
     setState(() => _isLoading = true);
 
     final result = await AuthService.login(
-      email: _emailController.text.trim(),
+      identifier: _emailController.text.trim(),
       password: _passwordController.text,
     );
 
@@ -119,7 +119,7 @@ class _TherapistLoginScreenState extends State<TherapistLoginScreen> {
                   style: TextStyle(color: Color(0xFF9CA3AF), fontSize: 13),
                 ),
                 const SizedBox(height: 32),
-                const Text('電子郵件',
+                const Text('電子郵件或帳號 ID',
                     style: TextStyle(
                         color: Color(0xFF1A1D2E),
                         fontSize: 13,
@@ -131,7 +131,7 @@ class _TherapistLoginScreenState extends State<TherapistLoginScreen> {
                   decoration:
                       _decoration('example@email.com', Icons.mail_outline),
                   validator: (v) =>
-                      (v == null || v.trim().isEmpty) ? '請輸入電子郵件' : null,
+                      (v == null || v.trim().isEmpty) ? '請輸入電子郵件或帳號 ID' : null,
                 ),
                 const SizedBox(height: 20),
                 const Text('密碼',

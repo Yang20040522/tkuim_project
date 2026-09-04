@@ -1,15 +1,22 @@
 // lib/features/account/register_screen.dart
 import 'package:flutter/material.dart';
 
-import 'app_session.dart';
 import 'auth_service.dart';
+import 'google_auth_service.dart';
 import 'home_router.dart';
+import 'patient_google_auth_button.dart';
+import 'patient_login_session.dart';
 import 'user_role.dart';
 
 class RegisterScreen extends StatefulWidget {
   final UserRole role;
+  final PatientGoogleAuthCoordinator? googleAuthCoordinator;
 
-  const RegisterScreen({super.key, required this.role});
+  const RegisterScreen({
+    super.key,
+    required this.role,
+    this.googleAuthCoordinator,
+  });
 
   @override
   State<RegisterScreen> createState() => _RegisterScreenState();
@@ -89,20 +96,10 @@ class _RegisterScreenState extends State<RegisterScreen> {
       setState(() => _isLoading = false);
 
       if (result.success) {
-        await AppSession.save(
-          role: widget.role,
-          userId: result.userId ?? '',
-          name: result.name ?? _nameController.text.trim(),
-          email: result.email ?? _emailController.text.trim(),
-          bindingCode: result.bindingCode,
-          customExerciseToken: result.customExerciseToken,
-        );
-        if (!mounted) return;
-
-        Navigator.pushAndRemoveUntil(
-          context,
-          MaterialPageRoute(builder: (_) => homeForRole(widget.role)),
-          (route) => false,
+        await _completePatientLogin(
+          result,
+          fallbackName: _nameController.text.trim(),
+          fallbackEmail: _emailController.text.trim(),
         );
       } else {
         _showError(result.message ?? '註冊失敗,請再試一次');
@@ -112,6 +109,32 @@ class _RegisterScreenState extends State<RegisterScreen> {
       setState(() => _isLoading = false);
       _showError('無法連線到伺服器,請確認網路狀態或稍後再試');
     }
+  }
+
+  Future<void> _completePatientLogin(
+    LoginResult result, {
+    String fallbackName = '',
+    String fallbackEmail = '',
+  }) async {
+    try {
+      await PatientLoginSession.save(
+        result,
+        fallbackName: fallbackName,
+        fallbackEmail: fallbackEmail,
+      );
+    } on PatientRoleException {
+      _showError('此帳號無法使用患者登入');
+      return;
+    } on InvalidPatientSessionException {
+      _showError('伺服器登入資料不完整，請稍後再試');
+      return;
+    }
+    if (!mounted) return;
+    Navigator.pushAndRemoveUntil(
+      context,
+      MaterialPageRoute(builder: (_) => homeForRole(UserRole.patient)),
+      (route) => false,
+    );
   }
 
   void _showError(String message) {
@@ -179,6 +202,28 @@ class _RegisterScreenState extends State<RegisterScreen> {
                 _buildConfirmPasswordField(),
                 const SizedBox(height: 24),
                 _buildRegisterButton(),
+                if (widget.role == UserRole.patient) ...[
+                  const SizedBox(height: 16),
+                  const Row(
+                    children: [
+                      Expanded(child: Divider(color: Color(0xFFDDE0F0))),
+                      Padding(
+                        padding: EdgeInsets.symmetric(horizontal: 12),
+                        child: Text(
+                          '或',
+                          style: TextStyle(color: Color(0xFF9CA3AF)),
+                        ),
+                      ),
+                      Expanded(child: Divider(color: Color(0xFFDDE0F0))),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  PatientGoogleAuthButton(
+                    label: '使用 Google 註冊',
+                    coordinator: widget.googleAuthCoordinator,
+                    onAuthenticated: _completePatientLogin,
+                  ),
+                ],
               ],
             ),
           ),
