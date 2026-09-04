@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import 'login_screen.dart';
 import 'user_role.dart';
+import 'therapist_login_screen.dart';
 
 class RoleSelectScreen extends StatelessWidget {
   const RoleSelectScreen({super.key});
@@ -51,7 +52,12 @@ class RoleSelectScreen extends StatelessWidget {
                 icon: Icons.medical_services_outlined,
                 title: '我是治療師',
                 subtitle: '管理病人、追蹤復健進度',
-                onTap: () => _selectRole(context, UserRole.therapist),
+                onTap: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const TherapistLoginScreen()),
+                  );
+                },
               ),
             ],
           ),

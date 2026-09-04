@@ -597,6 +597,7 @@ class _TrainingScreenState extends State<TrainingScreen>
 
   void _confirmLevelUp() {
     _levelUpJustHandled = true; // 🆕 鎖住,避免殘留訊號重新跳出視窗
+    _saveCurrentLevelRecord(_controller.currentState); // 🆕 確認升級前,先把這一階存成一筆獨立紀錄
     final customReps = int.tryParse(_levelUpRepsController.text);
     _controller.confirmLevelUp(
       customTargetReps: (customReps != null && customReps > 0) ? customReps : null,

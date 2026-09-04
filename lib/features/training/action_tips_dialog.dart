@@ -42,6 +42,110 @@ const Map<ActionType, Map<String, ActionTips>> kActionTips = {
       '每次翻到底停留約 1 秒再翻回',
       '過程中肩膀放鬆,不要聳肩',
     ]),
+    'Level 2': ActionTips(points: [
+      '(尚未撰寫說明)',
+    ]),
+  },
+  ActionType.sidePinch: {
+    'Level 1': ActionTips(points: [
+      '(尚未撰寫說明)',
+    ]),
+    'Level 2': ActionTips(points: [
+      '(尚未撰寫說明)',
+    ]),
+    'Level 3': ActionTips(points: [
+      '(尚未撰寫說明)',
+    ]),
+  },
+  ActionType.wipeBody: {
+    '初級': ActionTips(points: [
+      '(尚未撰寫說明)',
+    ]),
+    '中級': ActionTips(points: [
+      '(尚未撰寫說明)',
+    ]),
+    '高級': ActionTips(points: [
+      '(尚未撰寫說明)',
+    ]),
+  },
+  ActionType.drawCircle: {
+    '初級': ActionTips(points: [
+      '(尚未撰寫說明)',
+    ]),
+    '中級': ActionTips(points: [
+      '(尚未撰寫說明)',
+    ]),
+    '高級': ActionTips(points: [
+      '(尚未撰寫說明)',
+    ]),
+  },
+  ActionType.reach: {
+    '初級': ActionTips(points: [
+      '(尚未撰寫說明)',
+    ]),
+    '中級': ActionTips(points: [
+      '(尚未撰寫說明)',
+    ]),
+    '高級': ActionTips(points: [
+      '(尚未撰寫說明)',
+    ]),
+  },
+  ActionType.raiseBothArms: {
+    '初級': ActionTips(points: [
+      '(尚未撰寫說明)',
+    ]),
+    '中級': ActionTips(points: [
+      '(尚未撰寫說明)',
+    ]),
+    '高級': ActionTips(points: [
+      '(尚未撰寫說明)',
+    ]),
+  },
+  ActionType.elbowForward: {
+    '初級': ActionTips(points: [
+      '(尚未撰寫說明)',
+    ]),
+    '中級': ActionTips(points: [
+      '(尚未撰寫說明)',
+    ]),
+    '高級': ActionTips(points: [
+      '(尚未撰寫說明)',
+    ]),
+  },
+  ActionType.wristExtension: {
+    'Level 1': ActionTips(points: [
+      '(尚未撰寫說明)',
+    ]),
+    'Level 2': ActionTips(points: [
+      '(尚未撰寫說明)',
+    ]),
+  },
+  ActionType.wristSideBend: {
+    '標準': ActionTips(points: [
+      '(尚未撰寫說明)',
+    ]),
+  },
+  ActionType.sitToStand: {
+    '初級': ActionTips(points: [
+      '(尚未撰寫說明)',
+    ]),
+    '中級': ActionTips(points: [
+      '(尚未撰寫說明)',
+    ]),
+    '高級': ActionTips(points: [
+      '(尚未撰寫說明)',
+    ]),
+  },
+  ActionType.lateralStep: {
+    '初級': ActionTips(points: [
+      '(尚未撰寫說明)',
+    ]),
+    '中級': ActionTips(points: [
+      '(尚未撰寫說明)',
+    ]),
+    '高級': ActionTips(points: [
+      '(尚未撰寫說明)',
+    ]),
   },
 };
 
