@@ -21,7 +21,7 @@ import '../analysis/standard_analysis_screen.dart';
 import '../chat/chat_home_screen.dart';
 import '../account/profile_screen.dart';
 import '../stats/stats_screen.dart';
-import '../custom_exercise/patient_custom_exercise_list_page.dart';
+import '../custom_exercise/patient_assigned_exercise_list_page.dart';
 
 import '../notification/notification_screen.dart';
 import '../notification/notification_service.dart';
@@ -750,9 +750,9 @@ class _HomeContentState extends State<_HomeContent>
     );
   }
 
-  void _openAssignedCustomExercises() {
+  void _openAssignedExercises() {
     Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => PatientCustomExerciseListPage()),
+      MaterialPageRoute(builder: (_) => PatientAssignedExerciseListPage()),
     );
   }
 
@@ -1189,8 +1189,8 @@ class _HomeContentState extends State<_HomeContent>
 
   Widget _buildAssignedCustomExerciseCard() {
     return GestureDetector(
-      key: const Key('open-patient-custom-exercises'),
-      onTap: _openAssignedCustomExercises,
+      key: const Key('open-patient-assigned-exercises'),
+      onTap: _openAssignedExercises,
       child: Container(
         width: double.infinity,
         padding: const EdgeInsets.all(16),
@@ -1221,7 +1221,7 @@ class _HomeContentState extends State<_HomeContent>
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    '我的自訂復健動作',
+                    '我的復健動作',
                     style: TextStyle(
                       color: Color(0xFF1A1D2E),
                       fontSize: 14,
@@ -1230,7 +1230,7 @@ class _HomeContentState extends State<_HomeContent>
                   ),
                   SizedBox(height: 3),
                   Text(
-                    '查看並播放治療師指派的動作',
+                    '查看治療師指派的預設與自訂動作',
                     style: TextStyle(
                       color: Color(0xFF6B7280),
                       fontSize: 11,

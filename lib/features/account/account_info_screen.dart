@@ -10,8 +10,10 @@
 // 開頭說明,目前只是本機占位機制)。
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'app_session.dart';
 import 'account_profile_service.dart';
+import 'user_role.dart';
 
 // 🖥️ 電視投放新增(跟其他畫面保持一致的返回同步行為)
 import '../tv_cast/socket_client_service.dart';
@@ -30,6 +32,7 @@ class _AccountInfoScreenState extends State<AccountInfoScreen> {
   bool _loading = true;
   String _name = '使用者';
   String? _email;
+  String? _bindingCode;
   DateTime? _birthday;
   int? _age;
   bool _hasPassword = false;
@@ -49,6 +52,7 @@ class _AccountInfoScreenState extends State<AccountInfoScreen> {
           ? AppSession.name!
           : '使用者';
       _email = AppSession.email;
+      _bindingCode = AppSession.bindingCode;
       _birthday = birthday;
       _age = _service.calculateAge(birthday);
       _hasPassword = hasPassword;
@@ -70,7 +74,8 @@ class _AccountInfoScreenState extends State<AccountInfoScreen> {
       context: context,
       builder: (dialogContext) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: const Text('編輯姓名', style: TextStyle(fontWeight: FontWeight.w800)),
+        title:
+            const Text('編輯姓名', style: TextStyle(fontWeight: FontWeight.w800)),
         content: TextField(
           controller: controller,
           decoration: const InputDecoration(
@@ -88,7 +93,8 @@ class _AccountInfoScreenState extends State<AccountInfoScreen> {
               backgroundColor: const Color(0xFF4A65FF),
               foregroundColor: Colors.white,
             ),
-            onPressed: () => Navigator.pop(dialogContext, controller.text.trim()),
+            onPressed: () =>
+                Navigator.pop(dialogContext, controller.text.trim()),
             child: const Text('儲存'),
           ),
         ],
@@ -132,7 +138,8 @@ class _AccountInfoScreenState extends State<AccountInfoScreen> {
         return StatefulBuilder(
           builder: (dialogContext, setDialogState) {
             return AlertDialog(
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16)),
               title: Text(
                 _hasPassword ? '變更密碼' : '設定密碼',
                 style: const TextStyle(fontWeight: FontWeight.w800),
@@ -161,7 +168,8 @@ class _AccountInfoScreenState extends State<AccountInfoScreen> {
                     const SizedBox(height: 10),
                     Text(
                       errorText!,
-                      style: const TextStyle(color: Color(0xFFE24B4A), fontSize: 12),
+                      style: const TextStyle(
+                          color: Color(0xFFE24B4A), fontSize: 12),
                     ),
                   ],
                 ],
@@ -206,6 +214,16 @@ class _AccountInfoScreenState extends State<AccountInfoScreen> {
     setState(() => _hasPassword = true);
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('密碼已更新')),
+    );
+  }
+
+  Future<void> _copyBindingCode() async {
+    final code = _bindingCode?.trim();
+    if (code == null || code.isEmpty) return;
+    await Clipboard.setData(ClipboardData(text: code));
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('綁定碼已複製')),
     );
   }
 
@@ -264,6 +282,10 @@ class _AccountInfoScreenState extends State<AccountInfoScreen> {
                       ),
                     ],
                   ),
+                  if (AppSession.role == UserRole.patient) ...[
+                    const SizedBox(height: 16),
+                    _buildBindingCodeCard(),
+                  ],
                   const SizedBox(height: 16),
                   _buildSectionCard(
                     children: [
@@ -325,8 +347,79 @@ class _AccountInfoScreenState extends State<AccountInfoScreen> {
     );
   }
 
+  Widget _buildBindingCodeCard() {
+    final code = _bindingCode?.trim();
+    final hasCode = code != null && code.isNotEmpty;
+    return Container(
+      key: const Key('patient-binding-code-card'),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.04),
+            blurRadius: 10,
+            offset: const Offset(0, 3),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Row(
+            children: [
+              Icon(Icons.link, color: Color(0xFF4A65FF), size: 20),
+              SizedBox(width: 10),
+              Text(
+                '我的綁定碼',
+                style: TextStyle(
+                  color: Color(0xFF1A1D2E),
+                  fontSize: 15,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: SelectableText(
+                  hasCode ? code : '尚未取得，請登出後重新登入',
+                  key: const Key('patient-binding-code-value'),
+                  style: TextStyle(
+                    color: hasCode
+                        ? const Color(0xFF1A1D2E)
+                        : const Color(0xFF9CA3AF),
+                    fontSize: hasCode ? 22 : 13,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: hasCode ? 2 : 0,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              IconButton.outlined(
+                key: const Key('copy-patient-binding-code'),
+                tooltip: '複製綁定碼',
+                onPressed: hasCode ? _copyBindingCode : null,
+                icon: const Icon(Icons.copy_outlined, size: 19),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            '請將此綁定碼提供給您的治療師',
+            style: TextStyle(color: Color(0xFF6B7280), fontSize: 12),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildDivider() {
-    return const Divider(height: 1, color: Color(0xFFDDE0F0), indent: 16, endIndent: 16);
+    return const Divider(
+        height: 1, color: Color(0xFFDDE0F0), indent: 16, endIndent: 16);
   }
 
   Widget _buildInfoTile({
@@ -351,7 +444,8 @@ class _AccountInfoScreenState extends State<AccountInfoScreen> {
                 children: [
                   Text(
                     label,
-                    style: const TextStyle(color: Color(0xFF9CA3AF), fontSize: 11),
+                    style:
+                        const TextStyle(color: Color(0xFF9CA3AF), fontSize: 11),
                   ),
                   const SizedBox(height: 2),
                   Text(

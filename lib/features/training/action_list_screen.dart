@@ -51,7 +51,13 @@ final _bodyActions = [
 
 class ActionListScreen extends StatefulWidget {
   final bool isDisplay; // 🖥️ 電視投放新增
-  const ActionListScreen({super.key, this.isDisplay = false});
+  final ActionType? initialActionType;
+
+  const ActionListScreen({
+    super.key,
+    this.isDisplay = false,
+    this.initialActionType,
+  });
 
   @override
   State<ActionListScreen> createState() => _ActionListScreenState();
@@ -86,6 +92,17 @@ class _ActionListScreenState extends State<ActionListScreen>
       duration: const Duration(milliseconds: 600),
     )..forward();
     _fadeAnim = CurvedAnimation(parent: _fadeCtrl, curve: Curves.easeOut);
+
+    final initialActionType = widget.initialActionType;
+    if (initialActionType != null) {
+      _selectedAction = kTrainingActions.firstWhere(
+        (action) => action.type == initialActionType,
+      );
+      _selectedDifficulty = _selectedAction!.difficulties.first;
+      _repsController.text = '${_selectedDifficulty!.targetReps}';
+      _handExpanded = _handActions.contains(initialActionType);
+      _bodyExpanded = _bodyActions.contains(initialActionType);
+    }
 
     // 🖥️ 電視投放新增:監聽同步指令
     final clientService = SocketClientService();

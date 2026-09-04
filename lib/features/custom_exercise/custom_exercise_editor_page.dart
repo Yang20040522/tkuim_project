@@ -46,9 +46,19 @@ class _CustomExerciseEditorView extends StatefulWidget {
 }
 
 class _CustomExerciseEditorViewState extends State<_CustomExerciseEditorView> {
+  static const double _viewerHeight = 420;
+  static const double _showFloatingThreshold = 0.02;
+  static const double _hideFloatingThreshold = 0.18;
+
   late final TextEditingController _nameController;
   late final TextEditingController _descriptionController;
+  final ScrollController _scrollController = ScrollController();
+  final GlobalKey _editorViewportKey = GlobalKey();
+  final GlobalKey _viewerSlotKey = GlobalKey();
   bool _isSaving = false;
+  bool _showFloatingPreview = false;
+  bool _viewerGeometryScheduled = false;
+  Rect? _mainViewerRect;
 
   @override
   void initState() {
@@ -56,13 +66,71 @@ class _CustomExerciseEditorViewState extends State<_CustomExerciseEditorView> {
     final draft = context.read<CustomExerciseEditorController>().draft;
     _nameController = TextEditingController(text: draft.name);
     _descriptionController = TextEditingController(text: draft.description);
+    _scrollController.addListener(_handleEditorScroll);
+    _scheduleViewerGeometryUpdate();
   }
 
   @override
   void dispose() {
     _nameController.dispose();
     _descriptionController.dispose();
+    _scrollController
+      ..removeListener(_handleEditorScroll)
+      ..dispose();
     super.dispose();
+  }
+
+  void _handleEditorScroll() {
+    _updateViewerGeometry();
+    _scheduleViewerGeometryUpdate();
+  }
+
+  void _scheduleViewerGeometryUpdate() {
+    if (_viewerGeometryScheduled) return;
+    _viewerGeometryScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _viewerGeometryScheduled = false;
+      _updateViewerGeometry();
+    });
+  }
+
+  void _updateViewerGeometry() {
+    if (!mounted) return;
+    final viewportBox =
+        _editorViewportKey.currentContext?.findRenderObject() as RenderBox?;
+    final slotBox =
+        _viewerSlotKey.currentContext?.findRenderObject() as RenderBox?;
+    if (viewportBox == null ||
+        slotBox == null ||
+        !viewportBox.attached ||
+        !slotBox.attached ||
+        !viewportBox.hasSize ||
+        !slotBox.hasSize) {
+      return;
+    }
+
+    final viewportGlobalRect =
+        viewportBox.localToGlobal(Offset.zero) & viewportBox.size;
+    final slotGlobalRect = slotBox.localToGlobal(Offset.zero) & slotBox.size;
+    final intersection = viewportGlobalRect.intersect(slotGlobalRect);
+    final visibleHeight = intersection.isEmpty ? 0.0 : intersection.height;
+    final visibleFraction = slotBox.size.height == 0
+        ? 0.0
+        : (visibleHeight / slotBox.size.height).clamp(0.0, 1.0);
+    final nextFloating = _showFloatingPreview
+        ? visibleFraction < _hideFloatingThreshold
+        : visibleFraction <= _showFloatingThreshold;
+    final localTopLeft = viewportBox.globalToLocal(slotGlobalRect.topLeft);
+    final nextMainRect = localTopLeft & slotBox.size;
+
+    if (_mainViewerRect == nextMainRect &&
+        _showFloatingPreview == nextFloating) {
+      return;
+    }
+    setState(() {
+      _mainViewerRect = nextMainRect;
+      _showFloatingPreview = nextFloating;
+    });
   }
 
   void _updateBasicInfo() {
@@ -139,10 +207,8 @@ class _CustomExerciseEditorViewState extends State<_CustomExerciseEditorView> {
               child: LayoutBuilder(
                 builder: (context, constraints) {
                   final isWide = constraints.maxWidth >= 900;
-                  return SingleChildScrollView(
-                    padding: const EdgeInsets.fromLTRB(20, 8, 20, 28),
-                    child: isWide ? _buildWideLayout() : _buildCompactLayout(),
-                  );
+                  _scheduleViewerGeometryUpdate();
+                  return _buildEditorViewport(constraints, isWide);
                 },
               ),
             ),
@@ -164,6 +230,52 @@ class _CustomExerciseEditorViewState extends State<_CustomExerciseEditorView> {
     );
   }
 
+  Widget _buildEditorViewport(BoxConstraints constraints, bool isWide) {
+    final mainRect = _mainViewerRect;
+    final floatingWidth =
+        (constraints.maxWidth * 0.34).clamp(140.0, 220.0).toDouble();
+    final floatingRect = Rect.fromLTWH(
+      constraints.maxWidth - floatingWidth - 12,
+      12,
+      floatingWidth,
+      floatingWidth * 1.28,
+    );
+    final viewerRect = _showFloatingPreview ? floatingRect : mainRect;
+
+    return Stack(
+      key: _editorViewportKey,
+      clipBehavior: Clip.hardEdge,
+      children: [
+        Positioned.fill(
+          child: SingleChildScrollView(
+            key: const Key('custom-exercise-editor-scroll-view'),
+            controller: _scrollController,
+            padding: const EdgeInsets.fromLTRB(20, 8, 20, 28),
+            child: isWide ? _buildWideLayout() : _buildCompactLayout(),
+          ),
+        ),
+        if (viewerRect != null)
+          Positioned.fromRect(
+            rect: viewerRect,
+            child: IgnorePointer(
+              ignoring: _showFloatingPreview,
+              child: Material(
+                key: const Key('shared-editor-viewer-layer'),
+                elevation: _showFloatingPreview ? 8 : 0,
+                shadowColor: Colors.black45,
+                borderRadius: BorderRadius.circular(18),
+                clipBehavior: Clip.antiAlias,
+                child: _buildViewer(
+                  height: viewerRect.height,
+                  compactPreview: _showFloatingPreview,
+                ),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
   Widget _buildWideLayout() {
     return Column(
       children: [
@@ -172,7 +284,7 @@ class _CustomExerciseEditorViewState extends State<_CustomExerciseEditorView> {
           children: [
             Expanded(
               flex: 3,
-              child: _buildViewer(),
+              child: _buildViewerSlot(),
             ),
             const SizedBox(width: 20),
             Expanded(
@@ -216,7 +328,7 @@ class _CustomExerciseEditorViewState extends State<_CustomExerciseEditorView> {
   Widget _buildCompactLayout() {
     return Column(
       children: [
-        _buildViewer(),
+        _buildViewerSlot(),
         const SizedBox(height: 16),
         _BasicInfoCard(
           nameController: _nameController,
@@ -247,9 +359,21 @@ class _CustomExerciseEditorViewState extends State<_CustomExerciseEditorView> {
     );
   }
 
-  Widget _buildViewer() {
+  Widget _buildViewerSlot() {
+    return SizedBox(
+      key: _viewerSlotKey,
+      width: double.infinity,
+      height: _viewerHeight,
+    );
+  }
+
+  Widget _buildViewer({
+    required double height,
+    required bool compactPreview,
+  }) {
     return Consumer<CustomExerciseEditorController>(
       builder: (_, controller, __) => CustomExercise3dViewer(
+        key: const ValueKey('shared-custom-exercise-3d-viewer'),
         selectedJoint: controller.selectedJoint,
         jointRotations: controller.currentPose,
         keyframes: controller.keyframes,
@@ -257,6 +381,8 @@ class _CustomExerciseEditorViewState extends State<_CustomExerciseEditorView> {
         playbackStatus: controller.playbackStatus,
         onPlaybackProgress: controller.updatePlaybackProgress,
         onPlaybackCompleted: controller.completePreview,
+        height: height,
+        compactPreview: compactPreview,
       ),
     );
   }

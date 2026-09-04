@@ -12,6 +12,7 @@ void main() {
     AppSession.userId = null;
     AppSession.name = null;
     AppSession.email = null;
+    AppSession.bindingCode = null;
     AppSession.customExerciseToken = null;
   });
 
@@ -48,6 +49,19 @@ void main() {
 
     expect(AppSession.userId, isNull);
     expect(AppSession.customExerciseToken, isNull);
+  });
+
+  test('AppSession 重載後保留患者 binding code', () async {
+    await AppSession.save(
+      role: UserRole.patient,
+      userId: '15',
+      bindingCode: 'ABC12345',
+    );
+
+    AppSession.bindingCode = null;
+    await AppSession.load();
+
+    expect(AppSession.bindingCode, 'ABC12345');
   });
 
   test('AppSession 允許 null token 並清除前一次的 token', () async {

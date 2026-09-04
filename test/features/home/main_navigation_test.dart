@@ -6,7 +6,7 @@ import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:flutter_body/features/account/profile_screen.dart';
-import 'package:flutter_body/features/custom_exercise/patient_custom_exercise_list_page.dart';
+import 'package:flutter_body/features/custom_exercise/patient_assigned_exercise_list_page.dart';
 import 'package:flutter_body/features/home/home_screen.dart';
 import 'package:flutter_body/features/plan/plan_screen.dart';
 import 'package:flutter_body/models/training_action.dart';
@@ -50,15 +50,15 @@ void main() {
     await harness.dispose(tester);
   });
 
-  testWidgets('患者首頁可進入我的自訂復健動作', (tester) async {
+  testWidgets('患者首頁可進入統一的我的復健動作', (tester) async {
     final harness = await _pumpHome(tester);
-    final entry = find.byKey(const Key('open-patient-custom-exercises'));
+    final entry = find.byKey(const Key('open-patient-assigned-exercises'));
 
     await tester.ensureVisible(entry);
     await tester.tap(entry);
     await tester.pumpAndSettle();
 
-    expect(find.byType(PatientCustomExerciseListPage), findsOneWidget);
+    expect(find.byType(PatientAssignedExerciseListPage), findsOneWidget);
 
     await harness.dispose(tester);
   });

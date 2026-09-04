@@ -18,6 +18,8 @@ class CustomExercise3dViewer extends StatefulWidget {
   final CustomExercisePlaybackStatus playbackStatus;
   final ValueChanged<double> onPlaybackProgress;
   final VoidCallback onPlaybackCompleted;
+  final double height;
+  final bool compactPreview;
 
   const CustomExercise3dViewer({
     super.key,
@@ -28,6 +30,8 @@ class CustomExercise3dViewer extends StatefulWidget {
     required this.playbackStatus,
     required this.onPlaybackProgress,
     required this.onPlaybackCompleted,
+    this.height = 420,
+    this.compactPreview = false,
   });
 
   @override
@@ -181,7 +185,7 @@ class _CustomExercise3dViewerState extends State<CustomExercise3dViewer> {
   @override
   Widget build(BuildContext context) {
     return Container(
-      height: 420,
+      height: widget.height,
       decoration: BoxDecoration(
         color: const Color(0xFF1A1D2E),
         borderRadius: BorderRadius.circular(18),
@@ -190,7 +194,7 @@ class _CustomExercise3dViewerState extends State<CustomExercise3dViewer> {
       clipBehavior: Clip.antiAlias,
       child: Column(
         children: [
-          _buildHeader(),
+          if (!widget.compactPreview) _buildHeader(),
           Expanded(
             child: InAppWebViewPlatform.instance == null
                 ? const _WebViewUnavailablePlaceholder()

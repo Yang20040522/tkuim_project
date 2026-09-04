@@ -73,8 +73,10 @@ class _LoginScreenState extends State<LoginScreen> {
           userId: result.userId ?? '',
           name: result.name ?? '',
           email: result.email ?? _emailController.text.trim(),
+          bindingCode: result.bindingCode,
           customExerciseToken: result.customExerciseToken,
         );
+        if (!mounted) return;
 
         // 後端加了 role 之後,可在這裡核對「選的身分 = 帳號實際身分」
 
@@ -225,8 +227,7 @@ class _LoginScreenState extends State<LoginScreen> {
       suffixIcon: suffixIcon,
       filled: true,
       fillColor: Colors.white,
-      contentPadding:
-          const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(14),
         borderSide: const BorderSide(color: Color(0xFFDDE0F0)),

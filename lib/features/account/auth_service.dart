@@ -42,6 +42,7 @@ class AuthService {
         userId: data['userId']?.toString() ?? '',
         name: data['name']?.toString() ?? '',
         email: data['email']?.toString() ?? email,
+        bindingCode: data['bindingCode']?.toString(),
         customExerciseToken: data['customExerciseToken']?.toString(),
         backendRole: data['role']?.toString(),
       );
@@ -82,6 +83,7 @@ class AuthService {
       userId: 'mock-${email.hashCode}',
       name: namePart.isEmpty ? '測試使用者' : namePart,
       email: email,
+      bindingCode: null,
       customExerciseToken: null,
       backendRole: 'THERAPIST',
     );
@@ -94,6 +96,7 @@ class LoginResult {
   final String? userId;
   final String? name;
   final String? email;
+  final String? bindingCode;
   final String? customExerciseToken;
   final String? backendRole;
 
@@ -101,6 +104,7 @@ class LoginResult {
     required this.userId,
     required this.name,
     required this.email,
+    required this.bindingCode,
     required this.customExerciseToken,
     required this.backendRole,
   })  : success = true,
@@ -111,6 +115,7 @@ class LoginResult {
         userId = null,
         name = null,
         email = null,
+        bindingCode = null,
         customExerciseToken = null,
         backendRole = null;
 }

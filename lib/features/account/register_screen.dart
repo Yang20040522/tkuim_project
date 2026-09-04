@@ -94,8 +94,10 @@ class _RegisterScreenState extends State<RegisterScreen> {
           userId: result.userId ?? '',
           name: result.name ?? _nameController.text.trim(),
           email: result.email ?? _emailController.text.trim(),
+          bindingCode: result.bindingCode,
           customExerciseToken: result.customExerciseToken,
         );
+        if (!mounted) return;
 
         Navigator.pushAndRemoveUntil(
           context,
@@ -208,8 +210,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
       suffixIcon: suffixIcon,
       filled: true,
       fillColor: Colors.white,
-      contentPadding:
-          const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(14),
         borderSide: const BorderSide(color: Color(0xFFDDE0F0)),
@@ -300,8 +301,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
             size: 20,
           ),
           onPressed: () {
-            setState(
-                () => _obscureConfirmPassword = !_obscureConfirmPassword);
+            setState(() => _obscureConfirmPassword = !_obscureConfirmPassword);
           },
         ),
       ),

@@ -276,6 +276,7 @@ void main() {
 
     final leftElbowChip = find.byKey(const Key('joint-leftElbow'));
     await tester.ensureVisible(leftElbowChip);
+    await tester.pump();
     await tester.tap(leftElbowChip);
     await tester.pump();
 
@@ -293,6 +294,7 @@ void main() {
 
     final leftAnkleChip = find.byKey(const Key('joint-leftAnkle'));
     await tester.ensureVisible(leftAnkleChip);
+    await tester.pump();
     await tester.tap(leftAnkleChip);
     await tester.pump();
 
@@ -325,6 +327,7 @@ void main() {
 
     final addButton = find.byKey(const Key('add-keyframe'));
     await tester.ensureVisible(addButton);
+    await tester.pump();
     await tester.tap(addButton);
     await tester.pump();
 

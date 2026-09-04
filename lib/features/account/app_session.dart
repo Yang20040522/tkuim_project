@@ -9,6 +9,7 @@ class AppSession {
   static String? userId;
   static String? name;
   static String? email;
+  static String? bindingCode;
   static String? customExerciseToken;
 
   static bool get isLoggedIn => userId != null || email != null;
@@ -17,6 +18,7 @@ class AppSession {
   static const _keyUserId = 'session_userId';
   static const _keyName = 'session_name';
   static const _keyEmail = 'session_email';
+  static const _keyBindingCode = 'session_bindingCode';
   static const _keyCustomExerciseToken = 'session_customExerciseToken';
 
   /// App 啟動時呼叫一次,把上次登入狀態從本機讀回記憶體。
@@ -34,6 +36,7 @@ class AppSession {
     userId = prefs.getString(_keyUserId);
     name = prefs.getString(_keyName);
     email = prefs.getString(_keyEmail);
+    bindingCode = prefs.getString(_keyBindingCode);
     customExerciseToken = prefs.getString(_keyCustomExerciseToken);
   }
 
@@ -43,12 +46,14 @@ class AppSession {
     String? userId,
     String? name,
     String? email,
+    String? bindingCode,
     String? customExerciseToken,
   }) async {
     AppSession.role = role;
     AppSession.userId = userId;
     AppSession.name = name;
     AppSession.email = email;
+    AppSession.bindingCode = bindingCode;
     AppSession.customExerciseToken = customExerciseToken;
 
     final prefs = await SharedPreferences.getInstance();
@@ -56,6 +61,11 @@ class AppSession {
     if (userId != null) await prefs.setString(_keyUserId, userId);
     if (name != null) await prefs.setString(_keyName, name);
     if (email != null) await prefs.setString(_keyEmail, email);
+    if (bindingCode != null) {
+      await prefs.setString(_keyBindingCode, bindingCode);
+    } else {
+      await prefs.remove(_keyBindingCode);
+    }
     if (customExerciseToken != null) {
       await prefs.setString(_keyCustomExerciseToken, customExerciseToken);
     } else {
@@ -69,6 +79,7 @@ class AppSession {
     userId = null;
     name = null;
     email = null;
+    bindingCode = null;
     customExerciseToken = null;
 
     final prefs = await SharedPreferences.getInstance();
@@ -76,6 +87,7 @@ class AppSession {
     await prefs.remove(_keyUserId);
     await prefs.remove(_keyName);
     await prefs.remove(_keyEmail);
+    await prefs.remove(_keyBindingCode);
     await prefs.remove(_keyCustomExerciseToken);
   }
 }
