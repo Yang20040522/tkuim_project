@@ -94,6 +94,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
           userId: result.userId ?? '',
           name: result.name ?? _nameController.text.trim(),
           email: result.email ?? _emailController.text.trim(),
+          customExerciseToken: result.customExerciseToken,
         );
 
         Navigator.pushAndRemoveUntil(

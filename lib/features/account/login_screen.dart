@@ -73,6 +73,7 @@ class _LoginScreenState extends State<LoginScreen> {
           userId: result.userId ?? '',
           name: result.name ?? '',
           email: result.email ?? _emailController.text.trim(),
+          customExerciseToken: result.customExerciseToken,
         );
 
         // 後端加了 role 之後,可在這裡核對「選的身分 = 帳號實際身分」

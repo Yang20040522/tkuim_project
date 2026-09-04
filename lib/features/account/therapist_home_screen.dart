@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import '../custom_exercise/custom_exercise_editor_page.dart';
 import '../custom_exercise/custom_exercise_list_page.dart';
 import '../custom_exercise/repositories/custom_exercise_repository.dart';
+import '../custom_exercise/repositories/custom_exercise_repository_selection.dart';
 import '../../models/custom_rehab_exercise.dart';
 import 'app_session.dart';
 import 'role_select_screen.dart';
@@ -22,7 +23,11 @@ class TherapistHomeScreen extends StatelessWidget {
 
   void _openCustomExerciseEditor(BuildContext context) {
     Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => const CustomExerciseEditorPage()),
+      MaterialPageRoute(
+        builder: (_) => CustomExerciseEditorPage(
+          repository: therapistCustomExerciseRepository,
+        ),
+      ),
     );
   }
 
@@ -30,6 +35,7 @@ class TherapistHomeScreen extends StatelessWidget {
     Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => CustomExerciseListPage(
+          repository: therapistCustomExerciseRepository,
           editorBuilder: _buildCustomExerciseEditor,
         ),
       ),
@@ -104,7 +110,7 @@ class TherapistHomeScreen extends StatelessWidget {
                 key: const Key('open-saved-custom-exercises'),
                 icon: Icons.folder_open_outlined,
                 title: '已儲存自訂動作',
-                subtitle: '開啟、修改或刪除本機自訂動作',
+                subtitle: '開啟、修改或刪除雲端自訂動作',
                 onTap: () => _openSavedCustomExercises(context),
               ),
               const Spacer(),

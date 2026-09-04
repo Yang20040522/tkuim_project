@@ -13,5 +13,5 @@
 //     'http://組員電腦的區網IP:8080'(在對方電腦上用 ipconfig 查詢 IPv4 位址)
 // ============================================================
 class ApiConfig {
-  static const String baseUrl = 'http://REPLACE_WITH_BACKEND_HOST:8080';
+  static const String baseUrl = 'https://trianing-system.onrender.com';
 }

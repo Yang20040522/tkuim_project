@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../models/custom_rehab_exercise.dart';
 import 'repositories/custom_exercise_repository.dart';
 import 'repositories/local_custom_exercise_repository.dart';
+import 'services/custom_exercise_api_client.dart';
 
 typedef CustomExerciseEditorBuilder = Widget Function(
   CustomRehabExercise? exercise,
@@ -110,6 +111,16 @@ class _CustomExerciseListPageState extends State<CustomExerciseListPage> {
             return const Center(child: CircularProgressIndicator());
           }
           if (snapshot.hasError) {
+            final error = snapshot.error;
+            if (error is CustomExerciseApiException &&
+                error.isDevelopmentUnavailable) {
+              return _ListMessage(
+                icon: Icons.cloud_off_outlined,
+                message: error.message,
+                actionLabel: '建立動作',
+                onAction: () => _openEditor(null),
+              );
+            }
             return _ListMessage(
               icon: Icons.error_outline,
               message: '讀取已儲存動作失敗',

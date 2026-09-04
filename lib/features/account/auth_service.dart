@@ -42,6 +42,8 @@ class AuthService {
         userId: data['userId']?.toString() ?? '',
         name: data['name']?.toString() ?? '',
         email: data['email']?.toString() ?? email,
+        customExerciseToken: data['customExerciseToken']?.toString(),
+        backendRole: data['role']?.toString(),
       );
     } catch (e) {
       return LoginResult.failure(e.toString());
@@ -80,6 +82,8 @@ class AuthService {
       userId: 'mock-${email.hashCode}',
       name: namePart.isEmpty ? '測試使用者' : namePart,
       email: email,
+      customExerciseToken: null,
+      backendRole: 'THERAPIST',
     );
   }
 }
@@ -90,11 +94,15 @@ class LoginResult {
   final String? userId;
   final String? name;
   final String? email;
+  final String? customExerciseToken;
+  final String? backendRole;
 
   LoginResult.success({
     required this.userId,
     required this.name,
     required this.email,
+    required this.customExerciseToken,
+    required this.backendRole,
   })  : success = true,
         message = null;
 
@@ -102,5 +110,7 @@ class LoginResult {
       : success = false,
         userId = null,
         name = null,
-        email = null;
+        email = null,
+        customExerciseToken = null,
+        backendRole = null;
 }

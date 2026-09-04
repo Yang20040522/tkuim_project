@@ -2,9 +2,10 @@ import 'dart:convert';
 
 import 'package:http/http.dart' as http;
 
+import '../../core/api_config.dart';
+
 class ApiService {
-  static const String baseUrl =
-      'https://trianing-system.onrender.com';
+  static String get baseUrl => ApiConfig.baseUrl;
 
   static Future<String> register({
     required String name,

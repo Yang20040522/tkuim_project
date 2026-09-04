@@ -1,18 +1,14 @@
 // lib/features/account/therapist_login_screen.dart
 //
-// 治療端專用登入頁(空殼,尚未接後端)。
-// 目前用固定帳密比對,demo/口試用,之後接真後端時
-// 只要把 _handleLogin() 裡的比對邏輯換成打 API 即可。
+// 治療端專用登入頁，使用正式後端登入並驗證 THERAPIST role。
 
 import 'package:flutter/material.dart';
 
+import '../../core/custom_exercise_development_fallback.dart';
 import 'app_session.dart';
+import 'auth_service.dart';
 import 'home_router.dart';
 import 'user_role.dart';
-
-// 🔧 demo用固定帳密,之後接後端時整段改成呼叫 API
-const String _kDemoTherapistEmail = 'therapist@demo.com';
-const String _kDemoTherapistPassword = '123456';
 
 class TherapistLoginScreen extends StatefulWidget {
   const TherapistLoginScreen({super.key});
@@ -40,24 +36,39 @@ class _TherapistLoginScreenState extends State<TherapistLoginScreen> {
     if (!_formKey.currentState!.validate()) return;
     setState(() => _isLoading = true);
 
-    await Future.delayed(const Duration(milliseconds: 500)); // 模擬loading
-
-    final emailOk = _emailController.text.trim() == _kDemoTherapistEmail;
-    final passwordOk = _passwordController.text == _kDemoTherapistPassword;
+    final result = await AuthService.login(
+      email: _emailController.text.trim(),
+      password: _passwordController.text,
+    );
 
     if (!mounted) return;
     setState(() => _isLoading = false);
 
-    if (!emailOk || !passwordOk) {
-      _showError('帳號或密碼錯誤');
+    if (!result.success) {
+      _showError(result.message ?? '登入失敗，請稍後再試');
+      return;
+    }
+    if (result.backendRole?.toUpperCase() != 'THERAPIST') {
+      _showError('此帳號不是治療師帳號');
+      return;
+    }
+    final customExerciseToken =
+        CustomExerciseDevelopmentFallback.normalizeToken(
+      result.customExerciseToken,
+    );
+    if (!CustomExerciseDevelopmentFallback.canCompleteTherapistLogin(
+      customExerciseToken,
+    )) {
+      _showError('伺服器尚未啟用自訂動作授權，請聯絡管理員');
       return;
     }
 
     await AppSession.save(
       role: UserRole.therapist,
-      userId: 'demo-therapist',
-      name: '治療師示範帳號',
-      email: _kDemoTherapistEmail,
+      userId: result.userId,
+      name: result.name,
+      email: result.email,
+      customExerciseToken: customExerciseToken,
     );
 
     if (!mounted) return;
@@ -109,31 +120,8 @@ class _TherapistLoginScreenState extends State<TherapistLoginScreen> {
                 ),
                 const SizedBox(height: 8),
                 const Text(
-                  '目前為demo測試帳號,尚未串接雲端後端',
+                  '使用雲端治療師帳號登入',
                   style: TextStyle(color: Color(0xFF9CA3AF), fontSize: 13),
-                ),
-                const SizedBox(height: 12),
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFFEF9E7),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: const Color(0xFFF5E5A8)),
-                  ),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Icon(Icons.info_outline, color: Color(0xFFB8860B), size: 16),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          '測試帳號:$_kDemoTherapistEmail\n測試密碼:$_kDemoTherapistPassword',
-                          style: const TextStyle(
-                              color: Color(0xFF8B6F00), fontSize: 12, height: 1.5),
-                        ),
-                      ),
-                    ],
-                  ),
                 ),
                 const SizedBox(height: 32),
                 const Text('電子郵件',
@@ -175,22 +163,7 @@ class _TherapistLoginScreenState extends State<TherapistLoginScreen> {
                       (v == null || v.isEmpty) ? '請輸入密碼' : null,
                   onFieldSubmitted: (_) => _handleLogin(),
                 ),
-                const SizedBox(height: 12),
-                Align(
-                  alignment: Alignment.centerRight,
-                  child: TextButton(
-                    onPressed: () {
-                      _emailController.text = _kDemoTherapistEmail;
-                      _passwordController.text = _kDemoTherapistPassword;
-                    },
-                    child: const Text(
-                      '帶入測試帳密',
-                      style: TextStyle(
-                          color: Color(0xFF4A65FF), fontSize: 12, fontWeight: FontWeight.w600),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 12),
+                const SizedBox(height: 24),
                 SizedBox(
                   width: double.infinity,
                   height: 52,
