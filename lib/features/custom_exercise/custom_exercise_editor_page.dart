@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../../models/custom_rehab_exercise.dart';
 import '../account/app_session.dart';
 import 'controllers/custom_exercise_editor_controller.dart';
+import 'controllers/custom_exercise_playback_controller.dart';
 import 'custom_exercise_list_page.dart';
 import 'repositories/custom_exercise_repository.dart';
 import 'repositories/local_custom_exercise_repository.dart';
@@ -149,7 +150,8 @@ class _CustomExerciseEditorViewState extends State<_CustomExerciseEditorView> {
               builder: (_, controller, __) => _EditorFooter(
                 canPlay: controller.canPlay,
                 playbackStatus: controller.playbackStatus,
-                onPlay: controller.playbackStatus == EditorPlaybackStatus.paused
+                onPlay: controller.playbackStatus ==
+                        CustomExercisePlaybackStatus.paused
                     ? controller.resumePreview
                     : controller.playPreview,
                 onPause: controller.pausePreview,
@@ -427,7 +429,7 @@ class _EditorSectionPlaceholder extends StatelessWidget {
 
 class _EditorFooter extends StatelessWidget {
   final bool canPlay;
-  final EditorPlaybackStatus playbackStatus;
+  final CustomExercisePlaybackStatus playbackStatus;
   final VoidCallback onPlay;
   final VoidCallback onPause;
   final VoidCallback onStop;
@@ -442,8 +444,8 @@ class _EditorFooter extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isPlaying = playbackStatus == EditorPlaybackStatus.playing;
-    final isPaused = playbackStatus == EditorPlaybackStatus.paused;
+    final isPlaying = playbackStatus == CustomExercisePlaybackStatus.playing;
+    final isPaused = playbackStatus == CustomExercisePlaybackStatus.paused;
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.fromLTRB(20, 10, 20, 12),

@@ -88,7 +88,7 @@ void main() {
     );
   });
 
-  test('缺少登入 token 時不送出 request 並回報開發中不可用', () async {
+  test('缺少登入 token 時不送出 request 並提示重新登入', () async {
     var requested = false;
     final client = CustomExerciseApiClient(
       baseUrl: baseUrl,
@@ -103,17 +103,11 @@ void main() {
     await expectLater(
       client.getAllExercises(),
       throwsA(
-        isA<CustomExerciseApiException>()
-            .having(
-              (error) => error.isDevelopmentUnavailable,
-              'isDevelopmentUnavailable',
-              isTrue,
-            )
-            .having(
-              (error) => error.message,
-              'message',
-              contains('雲端已儲存自訂動作暫時無法使用'),
-            ),
+        isA<CustomExerciseApiException>().having(
+          (error) => error.message,
+          'message',
+          contains('重新登入'),
+        ),
       ),
     );
     expect(requested, isFalse);

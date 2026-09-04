@@ -6,8 +6,7 @@ import '../../../models/joint_definition.dart';
 import '../../../models/joint_rotation.dart';
 import '../../../models/joint_type.dart';
 import '../services/custom_exercise_bone_mapping.dart';
-
-enum EditorPlaybackStatus { stopped, playing, paused }
+import 'custom_exercise_playback_controller.dart';
 
 /// 自訂動作編輯器的單一狀態來源。
 ///
@@ -20,7 +19,8 @@ class CustomExerciseEditorController extends ChangeNotifier {
       joint: JointRotation.zero,
   };
   String? _selectedKeyframeId;
-  EditorPlaybackStatus _playbackStatus = EditorPlaybackStatus.stopped;
+  CustomExercisePlaybackStatus _playbackStatus =
+      CustomExercisePlaybackStatus.stopped;
   double _playbackTime = 0;
   int _nextKeyframeSequence = 1;
   final bool isEditing;
@@ -53,7 +53,7 @@ class CustomExerciseEditorController extends ChangeNotifier {
       _currentPose[_selectedJoint] ?? DefaultPose.rotationOf(_selectedJoint);
   List<ExerciseKeyframe> get keyframes => _draft.keyframes;
   String? get selectedKeyframeId => _selectedKeyframeId;
-  EditorPlaybackStatus get playbackStatus => _playbackStatus;
+  CustomExercisePlaybackStatus get playbackStatus => _playbackStatus;
   double get playbackTime => _playbackTime;
   bool get canPlay => _draft.keyframes.length >= 2;
 
@@ -196,25 +196,27 @@ class CustomExerciseEditorController extends ChangeNotifier {
   }
 
   void playPreview() {
-    if (!canPlay || _playbackStatus == EditorPlaybackStatus.playing) return;
-    if (_playbackStatus == EditorPlaybackStatus.paused) {
+    if (!canPlay || _playbackStatus == CustomExercisePlaybackStatus.playing) {
+      return;
+    }
+    if (_playbackStatus == CustomExercisePlaybackStatus.paused) {
       resumePreview();
       return;
     }
-    _playbackStatus = EditorPlaybackStatus.playing;
+    _playbackStatus = CustomExercisePlaybackStatus.playing;
     _playbackTime = 0;
     notifyListeners();
   }
 
   void pausePreview() {
-    if (_playbackStatus != EditorPlaybackStatus.playing) return;
-    _playbackStatus = EditorPlaybackStatus.paused;
+    if (_playbackStatus != CustomExercisePlaybackStatus.playing) return;
+    _playbackStatus = CustomExercisePlaybackStatus.paused;
     notifyListeners();
   }
 
   void resumePreview() {
-    if (_playbackStatus != EditorPlaybackStatus.paused) return;
-    _playbackStatus = EditorPlaybackStatus.playing;
+    if (_playbackStatus != CustomExercisePlaybackStatus.paused) return;
+    _playbackStatus = CustomExercisePlaybackStatus.playing;
     notifyListeners();
   }
 
@@ -224,7 +226,8 @@ class CustomExerciseEditorController extends ChangeNotifier {
   }
 
   void updatePlaybackProgress(double time) {
-    if (_playbackStatus == EditorPlaybackStatus.stopped || !time.isFinite) {
+    if (_playbackStatus == CustomExercisePlaybackStatus.stopped ||
+        !time.isFinite) {
       return;
     }
     final safeTime = time.clamp(0, _draft.duration).toDouble();
@@ -234,8 +237,8 @@ class CustomExerciseEditorController extends ChangeNotifier {
   }
 
   void completePreview() {
-    if (_playbackStatus == EditorPlaybackStatus.stopped) return;
-    _playbackStatus = EditorPlaybackStatus.stopped;
+    if (_playbackStatus == CustomExercisePlaybackStatus.stopped) return;
+    _playbackStatus = CustomExercisePlaybackStatus.stopped;
     _playbackTime = _draft.duration;
     notifyListeners();
   }
@@ -271,9 +274,9 @@ class CustomExerciseEditorController extends ChangeNotifier {
   }
 
   bool _stopPlaybackState() {
-    final changed =
-        _playbackStatus != EditorPlaybackStatus.stopped || _playbackTime != 0;
-    _playbackStatus = EditorPlaybackStatus.stopped;
+    final changed = _playbackStatus != CustomExercisePlaybackStatus.stopped ||
+        _playbackTime != 0;
+    _playbackStatus = CustomExercisePlaybackStatus.stopped;
     _playbackTime = 0;
     return changed;
   }

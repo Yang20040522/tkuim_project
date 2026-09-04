@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_body/features/account/therapist_home_screen.dart';
 import 'package:flutter_body/features/custom_exercise/controllers/custom_exercise_editor_controller.dart';
+import 'package:flutter_body/features/custom_exercise/controllers/custom_exercise_playback_controller.dart';
 import 'package:flutter_body/features/custom_exercise/custom_exercise_editor_page.dart';
 import 'package:flutter_body/features/custom_exercise/services/custom_exercise_bone_mapping.dart';
 import 'package:flutter_body/features/custom_exercise/widgets/custom_exercise_3d_viewer.dart';
@@ -221,23 +222,26 @@ void main() {
     final poseBefore = Map<JointType, JointRotation>.of(controller.currentPose);
 
     controller.playPreview();
-    expect(controller.playbackStatus, EditorPlaybackStatus.playing);
+    expect(
+      controller.playbackStatus,
+      CustomExercisePlaybackStatus.playing,
+    );
     controller.updatePlaybackProgress(0.4);
     expect(controller.playbackTime, 0.4);
     controller.pausePreview();
-    expect(controller.playbackStatus, EditorPlaybackStatus.paused);
+    expect(controller.playbackStatus, CustomExercisePlaybackStatus.paused);
     controller.resumePreview();
-    expect(controller.playbackStatus, EditorPlaybackStatus.playing);
+    expect(controller.playbackStatus, CustomExercisePlaybackStatus.playing);
     controller.completePreview();
 
-    expect(controller.playbackStatus, EditorPlaybackStatus.stopped);
+    expect(controller.playbackStatus, CustomExercisePlaybackStatus.stopped);
     expect(controller.playbackTime, controller.draft.duration);
     expect(controller.currentPose, poseBefore);
     expect(identical(controller.keyframes, keyframesBefore), isTrue);
 
     controller.playPreview();
     controller.updateSelectedJointRotation(const JointRotation(z: 55));
-    expect(controller.playbackStatus, EditorPlaybackStatus.stopped);
+    expect(controller.playbackStatus, CustomExercisePlaybackStatus.stopped);
     expect(controller.playbackTime, 0);
     expect(controller.selectedKeyframeId, isNull);
     expect(identical(controller.keyframes, keyframesBefore), isTrue);
@@ -313,8 +317,7 @@ void main() {
     expect(find.byKey(const Key('save-custom-exercise')), findsOneWidget);
   });
 
-  testWidgets('Timeline 可新增與刪除 Keyframe，兩個姿勢後開放播放',
-      (tester) async {
+  testWidgets('Timeline 可新增與刪除 Keyframe，兩個姿勢後開放播放', (tester) async {
     await tester.pumpWidget(
       const MaterialApp(home: CustomExerciseEditorPage()),
     );
@@ -328,7 +331,8 @@ void main() {
     expect(find.text('K1'), findsOneWidget);
     expect(find.text('0.0s'), findsOneWidget);
     expect(
-      tester.widget<OutlinedButton>(find.byKey(const Key('play-keyframes')))
+      tester
+          .widget<OutlinedButton>(find.byKey(const Key('play-keyframes')))
           .onPressed,
       isNull,
     );
@@ -340,7 +344,8 @@ void main() {
     expect(find.text('1.0s'), findsOneWidget);
     expect(find.byKey(const Key('playback-time')), findsOneWidget);
     expect(
-      tester.widget<OutlinedButton>(find.byKey(const Key('play-keyframes')))
+      tester
+          .widget<OutlinedButton>(find.byKey(const Key('play-keyframes')))
           .onPressed,
       isNotNull,
     );

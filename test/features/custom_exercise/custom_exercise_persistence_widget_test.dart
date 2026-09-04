@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_body/features/custom_exercise/custom_exercise_editor_page.dart';
 import 'package:flutter_body/features/custom_exercise/custom_exercise_list_page.dart';
 import 'package:flutter_body/features/custom_exercise/repositories/custom_exercise_repository.dart';
-import 'package:flutter_body/features/custom_exercise/services/custom_exercise_api_client.dart';
 import 'package:flutter_body/models/custom_rehab_exercise.dart';
 import 'package:flutter_body/models/exercise_keyframe.dart';
 import 'package:flutter_body/models/joint_rotation.dart';
@@ -166,51 +165,28 @@ void main() {
     expect(find.text('尚未儲存自訂動作'), findsOneWidget);
   });
 
-  testWidgets('缺少 token 時已儲存清單顯示開發中不可用並可開啟 Editor',
-      (tester) async {
+  testWidgets('治療師已儲存動作可開啟指派患者入口', (tester) async {
+    final repository = _MemoryCustomExerciseRepository()..seed(_exercise());
     await tester.pumpWidget(
       MaterialApp(
         home: CustomExerciseListPage(
-          repository: _UnavailableCustomExerciseRepository(),
-          editorBuilder: (exercise, repository) => const Scaffold(
-            body: Text('Editor opened'),
+          repository: repository,
+          editorBuilder: (exercise, repository) => const SizedBox.shrink(),
+          assignmentBuilder: (exercise) => Scaffold(
+            body: Text('Assign ${exercise.id}'),
           ),
         ),
       ),
     );
     await tester.pumpAndSettle();
 
-    expect(find.textContaining('雲端已儲存自訂動作暫時無法使用'), findsOneWidget);
-    await tester.tap(find.widgetWithText(OutlinedButton, '建立動作'));
+    await tester.tap(
+      find.byKey(const Key('assign-saved-exercise-custom_persisted')),
+    );
     await tester.pumpAndSettle();
 
-    expect(find.text('Editor opened'), findsOneWidget);
+    expect(find.text('Assign custom_persisted'), findsOneWidget);
   });
-}
-
-class _UnavailableCustomExerciseRepository
-    implements CustomExerciseRepository {
-  static const _error = CustomExerciseApiException(
-    '開發模式：新版伺服器尚未部署，雲端已儲存自訂動作暫時無法使用。',
-    isDevelopmentUnavailable: true,
-  );
-
-  @override
-  Future<void> deleteExercise(String id) => Future.error(_error);
-
-  @override
-  Future<List<CustomRehabExercise>> getAllExercises() => Future.error(_error);
-
-  @override
-  Future<CustomRehabExercise?> getExercise(String id) => Future.error(_error);
-
-  @override
-  Future<void> saveExercise(CustomRehabExercise exercise) =>
-      Future.error(_error);
-
-  @override
-  Future<void> updateExercise(CustomRehabExercise exercise) =>
-      Future.error(_error);
 }
 
 class _MemoryCustomExerciseRepository implements CustomExerciseRepository {

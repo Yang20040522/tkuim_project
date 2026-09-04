@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:flutter_body/features/account/profile_screen.dart';
+import 'package:flutter_body/features/custom_exercise/patient_custom_exercise_list_page.dart';
 import 'package:flutter_body/features/home/home_screen.dart';
 import 'package:flutter_body/features/plan/plan_screen.dart';
 import 'package:flutter_body/models/training_action.dart';
@@ -42,8 +43,22 @@ void main() {
     final pageView = _mainPageView(tester);
     expect(pageView.controller!.initialPage, MainTab.home.uiIndex);
     expect(pageView.controller!.keepPage, isTrue);
-    expect(pageView.childrenDelegate.estimatedChildCount, MainTab.values.length);
+    expect(
+        pageView.childrenDelegate.estimatedChildCount, MainTab.values.length);
     _expectSelectedTab(tester, MainTab.home);
+
+    await harness.dispose(tester);
+  });
+
+  testWidgets('患者首頁可進入我的自訂復健動作', (tester) async {
+    final harness = await _pumpHome(tester);
+    final entry = find.byKey(const Key('open-patient-custom-exercises'));
+
+    await tester.ensureVisible(entry);
+    await tester.tap(entry);
+    await tester.pumpAndSettle();
+
+    expect(find.byType(PatientCustomExerciseListPage), findsOneWidget);
 
     await harness.dispose(tester);
   });
@@ -209,10 +224,8 @@ void main() {
 
     await tester.tap(find.byKey(const ValueKey('main-tab-plan')));
     await tester.pumpAndSettle();
-    final planElement = find
-        .byType(PlanScreen, skipOffstage: false)
-        .evaluate()
-        .single;
+    final planElement =
+        find.byType(PlanScreen, skipOffstage: false).evaluate().single;
 
     await tester.tap(find.byKey(const ValueKey('main-tab-profile')));
     await tester.pumpAndSettle();
@@ -284,9 +297,7 @@ void _expectSelectedTab(WidgetTester tester, MainTab tab) {
     );
     expect(
       label.style!.color,
-      candidate == tab
-          ? const Color(0xFF4A65FF)
-          : const Color(0xFF9CA3AF),
+      candidate == tab ? const Color(0xFF4A65FF) : const Color(0xFF9CA3AF),
     );
   }
 }

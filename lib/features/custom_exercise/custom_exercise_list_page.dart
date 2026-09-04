@@ -3,21 +3,26 @@ import 'package:flutter/material.dart';
 import '../../models/custom_rehab_exercise.dart';
 import 'repositories/custom_exercise_repository.dart';
 import 'repositories/local_custom_exercise_repository.dart';
-import 'services/custom_exercise_api_client.dart';
 
 typedef CustomExerciseEditorBuilder = Widget Function(
   CustomRehabExercise? exercise,
   CustomExerciseRepository repository,
 );
 
+typedef CustomExerciseAssignmentBuilder = Widget Function(
+  CustomRehabExercise exercise,
+);
+
 class CustomExerciseListPage extends StatefulWidget {
   final CustomExerciseRepository? repository;
   final CustomExerciseEditorBuilder editorBuilder;
+  final CustomExerciseAssignmentBuilder? assignmentBuilder;
 
   const CustomExerciseListPage({
     super.key,
     this.repository,
     required this.editorBuilder,
+    this.assignmentBuilder,
   });
 
   @override
@@ -46,6 +51,15 @@ class _CustomExerciseListPageState extends State<CustomExerciseListPage> {
       MaterialPageRoute(
         builder: (_) => widget.editorBuilder(exercise, _repository),
       ),
+    );
+    if (mounted) _reload();
+  }
+
+  Future<void> _openAssignment(CustomRehabExercise exercise) async {
+    final builder = widget.assignmentBuilder;
+    if (builder == null) return;
+    await Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => builder(exercise)),
     );
     if (mounted) _reload();
   }
@@ -111,16 +125,6 @@ class _CustomExerciseListPageState extends State<CustomExerciseListPage> {
             return const Center(child: CircularProgressIndicator());
           }
           if (snapshot.hasError) {
-            final error = snapshot.error;
-            if (error is CustomExerciseApiException &&
-                error.isDevelopmentUnavailable) {
-              return _ListMessage(
-                icon: Icons.cloud_off_outlined,
-                message: error.message,
-                actionLabel: '建立動作',
-                onAction: () => _openEditor(null),
-              );
-            }
             return _ListMessage(
               icon: Icons.error_outline,
               message: '讀取已儲存動作失敗',
@@ -151,6 +155,9 @@ class _CustomExerciseListPageState extends State<CustomExerciseListPage> {
                   exercise: exercise,
                   onOpen: () => _openEditor(exercise),
                   onDelete: () => _deleteExercise(exercise),
+                  onAssign: widget.assignmentBuilder == null
+                      ? null
+                      : () => _openAssignment(exercise),
                 );
               },
             ),
@@ -165,11 +172,13 @@ class _ExerciseCard extends StatelessWidget {
   final CustomRehabExercise exercise;
   final VoidCallback onOpen;
   final VoidCallback onDelete;
+  final VoidCallback? onAssign;
 
   const _ExerciseCard({
     required this.exercise,
     required this.onOpen,
     required this.onDelete,
+    this.onAssign,
   });
 
   @override
@@ -220,9 +229,19 @@ class _ExerciseCard extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 10),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.end,
+            Wrap(
+              alignment: WrapAlignment.end,
+              spacing: 4,
+              runSpacing: 4,
               children: [
+                if (onAssign != null) ...[
+                  TextButton.icon(
+                    key: Key('assign-saved-exercise-${exercise.id}'),
+                    onPressed: onAssign,
+                    icon: const Icon(Icons.person_add_alt_1_outlined),
+                    label: const Text('指派患者'),
+                  ),
+                ],
                 TextButton.icon(
                   key: Key('delete-saved-exercise-${exercise.id}'),
                   onPressed: onDelete,
@@ -232,7 +251,6 @@ class _ExerciseCard extends StatelessWidget {
                     foregroundColor: const Color(0xFFE24B4A),
                   ),
                 ),
-                const SizedBox(width: 8),
                 FilledButton.icon(
                   key: Key('open-saved-exercise-${exercise.id}'),
                   onPressed: onOpen,

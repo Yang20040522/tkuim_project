@@ -21,6 +21,7 @@ import '../analysis/standard_analysis_screen.dart';
 import '../chat/chat_home_screen.dart';
 import '../account/profile_screen.dart';
 import '../stats/stats_screen.dart';
+import '../custom_exercise/patient_custom_exercise_list_page.dart';
 
 import '../notification/notification_screen.dart';
 import '../notification/notification_service.dart';
@@ -749,6 +750,12 @@ class _HomeContentState extends State<_HomeContent>
     );
   }
 
+  void _openAssignedCustomExercises() {
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => PatientCustomExerciseListPage()),
+    );
+  }
+
   void _broadcastOpenScreen(String screenName) {
     final clientService = SocketClientService();
     final serverService = SocketServerService();
@@ -920,6 +927,8 @@ class _HomeContentState extends State<_HomeContent>
                 _buildSectionTitle('今日復健計畫'),
                 const SizedBox(height: 12),
                 _buildMainTrainingCard(),
+                const SizedBox(height: 12),
+                _buildAssignedCustomExerciseCard(),
                 const SizedBox(height: 28),
                 _buildSectionTitle('功能捷徑'),
                 const SizedBox(height: 12),
@@ -1171,6 +1180,69 @@ class _HomeContentState extends State<_HomeContent>
                   ],
                 ),
               ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildAssignedCustomExerciseCard() {
+    return GestureDetector(
+      key: const Key('open-patient-custom-exercises'),
+      onTap: _openAssignedCustomExercises,
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: const Color(0xFFDDE0F0)),
+        ),
+        child: const Row(
+          children: [
+            SizedBox(
+              width: 44,
+              height: 44,
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  color: Color(0xFFEFF1FF),
+                  borderRadius: BorderRadius.all(Radius.circular(12)),
+                ),
+                child: Icon(
+                  Icons.assignment_turned_in_outlined,
+                  color: Color(0xFF4A65FF),
+                ),
+              ),
+            ),
+            SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '我的自訂復健動作',
+                    style: TextStyle(
+                      color: Color(0xFF1A1D2E),
+                      fontSize: 14,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  SizedBox(height: 3),
+                  Text(
+                    '查看並播放治療師指派的動作',
+                    style: TextStyle(
+                      color: Color(0xFF6B7280),
+                      fontSize: 11,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Icon(
+              Icons.arrow_forward_ios,
+              color: Color(0xFF9CA3AF),
+              size: 14,
             ),
           ],
         ),

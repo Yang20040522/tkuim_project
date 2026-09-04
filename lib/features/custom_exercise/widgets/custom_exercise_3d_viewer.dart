@@ -8,14 +8,14 @@ import '../../../models/exercise_keyframe.dart';
 import '../../../models/joint_definition.dart';
 import '../../../models/joint_rotation.dart';
 import '../../../models/joint_type.dart';
-import '../controllers/custom_exercise_editor_controller.dart';
+import '../controllers/custom_exercise_playback_controller.dart';
 
 class CustomExercise3dViewer extends StatefulWidget {
   final JointType selectedJoint;
   final Map<JointType, JointRotation> jointRotations;
   final List<ExerciseKeyframe> keyframes;
   final double duration;
-  final EditorPlaybackStatus playbackStatus;
+  final CustomExercisePlaybackStatus playbackStatus;
   final ValueChanged<double> onPlaybackProgress;
   final VoidCallback onPlaybackCompleted;
 
@@ -45,7 +45,7 @@ class _CustomExercise3dViewerState extends State<CustomExercise3dViewer> {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.playbackStatus != widget.playbackStatus) {
       _syncPlaybackStatus(oldWidget.playbackStatus);
-    } else if (widget.playbackStatus == EditorPlaybackStatus.stopped &&
+    } else if (widget.playbackStatus == CustomExercisePlaybackStatus.stopped &&
         (oldWidget.selectedJoint != widget.selectedJoint ||
             !mapEquals(oldWidget.jointRotations, widget.jointRotations))) {
       _sendPose();
@@ -66,11 +66,13 @@ class _CustomExercise3dViewerState extends State<CustomExercise3dViewer> {
     );
   }
 
-  Future<void> _syncPlaybackStatus(EditorPlaybackStatus previousStatus) async {
+  Future<void> _syncPlaybackStatus(
+    CustomExercisePlaybackStatus previousStatus,
+  ) async {
     if (!_viewerReady || _webController == null) return;
     switch (widget.playbackStatus) {
-      case EditorPlaybackStatus.playing:
-        if (previousStatus == EditorPlaybackStatus.paused) {
+      case CustomExercisePlaybackStatus.playing:
+        if (previousStatus == CustomExercisePlaybackStatus.paused) {
           await _webController!.evaluateJavascript(
             source: 'window.resumeEditorPlayback();',
           );
@@ -78,12 +80,12 @@ class _CustomExercise3dViewerState extends State<CustomExercise3dViewer> {
           await _playKeyframes();
         }
         break;
-      case EditorPlaybackStatus.paused:
+      case CustomExercisePlaybackStatus.paused:
         await _webController!.evaluateJavascript(
           source: 'window.pauseEditorPlayback();',
         );
         break;
-      case EditorPlaybackStatus.stopped:
+      case CustomExercisePlaybackStatus.stopped:
         await _webController!.evaluateJavascript(
           source: 'window.stopEditorPlayback();',
         );
@@ -93,7 +95,9 @@ class _CustomExercise3dViewerState extends State<CustomExercise3dViewer> {
   }
 
   Future<void> _playKeyframes() async {
-    if (!_viewerReady || _webController == null || widget.keyframes.length < 2) {
+    if (!_viewerReady ||
+        _webController == null ||
+        widget.keyframes.length < 2) {
       return;
     }
     final payload = jsonEncode({
@@ -105,10 +109,10 @@ class _CustomExercise3dViewerState extends State<CustomExercise3dViewer> {
             'time': keyframe.time,
             'rotations': {
               for (final definition in JointDefinitions.all)
-                definition.type.name: (keyframe
-                            .jointRotations[definition.type] ??
-                        DefaultPose.rotationOf(definition.type))
-                    .toJson(),
+                definition.type.name:
+                    (keyframe.jointRotations[definition.type] ??
+                            DefaultPose.rotationOf(definition.type))
+                        .toJson(),
             },
           },
       ],
@@ -137,7 +141,8 @@ class _CustomExercise3dViewerState extends State<CustomExercise3dViewer> {
       }
     });
     await _sendPose();
-    if (mounted && widget.playbackStatus == EditorPlaybackStatus.playing) {
+    if (mounted &&
+        widget.playbackStatus == CustomExercisePlaybackStatus.playing) {
       await _playKeyframes();
     }
   }

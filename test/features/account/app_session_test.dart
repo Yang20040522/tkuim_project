@@ -1,6 +1,5 @@
 import 'package:flutter_body/features/account/app_session.dart';
 import 'package:flutter_body/features/account/user_role.dart';
-import 'package:flutter_body/core/custom_exercise_development_fallback.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -69,20 +68,5 @@ void main() {
     expect(AppSession.role, UserRole.therapist);
     expect(AppSession.userId, '7');
     expect(AppSession.customExerciseToken, isNull);
-  });
-
-  test('開發 fallback 允許治療師在缺少 token 時完成登入', () {
-    expect(
-      CustomExerciseDevelopmentFallback.canCompleteTherapistLogin(null),
-      isTrue,
-    );
-    expect(
-      CustomExerciseDevelopmentFallback.normalizeToken('   '),
-      isNull,
-    );
-    expect(
-      CustomExerciseDevelopmentFallback.normalizeToken(' signed-token '),
-      'signed-token',
-    );
   });
 }

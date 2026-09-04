@@ -2,7 +2,9 @@
 import 'package:flutter/material.dart';
 
 import '../custom_exercise/custom_exercise_editor_page.dart';
+import '../custom_exercise/custom_exercise_assignment_page.dart';
 import '../custom_exercise/custom_exercise_list_page.dart';
+import '../custom_exercise/repositories/custom_exercise_assignment_repository_selection.dart';
 import '../custom_exercise/repositories/custom_exercise_repository.dart';
 import '../custom_exercise/repositories/custom_exercise_repository_selection.dart';
 import '../../models/custom_rehab_exercise.dart';
@@ -37,6 +39,10 @@ class TherapistHomeScreen extends StatelessWidget {
         builder: (_) => CustomExerciseListPage(
           repository: therapistCustomExerciseRepository,
           editorBuilder: _buildCustomExerciseEditor,
+          assignmentBuilder: (exercise) => CustomExerciseAssignmentPage(
+            exercise: exercise,
+            repository: customExerciseAssignmentRepository,
+          ),
         ),
       ),
     );
@@ -115,7 +121,7 @@ class TherapistHomeScreen extends StatelessWidget {
               ),
               const Spacer(),
               const Text(
-                '患者管理與動作指派功能將於後續版本提供',
+                '更多患者管理功能將於後續版本提供',
                 textAlign: TextAlign.center,
                 style: TextStyle(color: Color(0xFF9CA3AF), fontSize: 12),
               ),

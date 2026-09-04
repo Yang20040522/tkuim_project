@@ -4,7 +4,6 @@
 
 import 'package:flutter/material.dart';
 
-import '../../core/custom_exercise_development_fallback.dart';
 import 'app_session.dart';
 import 'auth_service.dart';
 import 'home_router.dart';
@@ -52,13 +51,8 @@ class _TherapistLoginScreenState extends State<TherapistLoginScreen> {
       _showError('此帳號不是治療師帳號');
       return;
     }
-    final customExerciseToken =
-        CustomExerciseDevelopmentFallback.normalizeToken(
-      result.customExerciseToken,
-    );
-    if (!CustomExerciseDevelopmentFallback.canCompleteTherapistLogin(
-      customExerciseToken,
-    )) {
+    final customExerciseToken = result.customExerciseToken?.trim();
+    if (customExerciseToken == null || customExerciseToken.isEmpty) {
       _showError('伺服器尚未啟用自訂動作授權，請聯絡管理員');
       return;
     }
@@ -155,12 +149,11 @@ class _TherapistLoginScreenState extends State<TherapistLoginScreen> {
                       icon: Icon(_obscurePassword
                           ? Icons.visibility_outlined
                           : Icons.visibility_off_outlined),
-                      onPressed: () => setState(
-                          () => _obscurePassword = !_obscurePassword),
+                      onPressed: () =>
+                          setState(() => _obscurePassword = !_obscurePassword),
                     ),
                   ),
-                  validator: (v) =>
-                      (v == null || v.isEmpty) ? '請輸入密碼' : null,
+                  validator: (v) => (v == null || v.isEmpty) ? '請輸入密碼' : null,
                   onFieldSubmitted: (_) => _handleLogin(),
                 ),
                 const SizedBox(height: 24),
@@ -206,8 +199,7 @@ class _TherapistLoginScreenState extends State<TherapistLoginScreen> {
       suffixIcon: suffix,
       filled: true,
       fillColor: Colors.white,
-      contentPadding:
-          const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
       border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(14),
           borderSide: const BorderSide(color: Color(0xFFDDE0F0))),

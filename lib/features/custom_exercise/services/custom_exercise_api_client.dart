@@ -3,7 +3,6 @@ import 'dart:convert';
 
 import 'package:http/http.dart' as http;
 
-import '../../../core/custom_exercise_development_fallback.dart';
 import '../../../models/custom_rehab_exercise.dart';
 
 typedef SessionValueProvider = String? Function();
@@ -11,12 +10,10 @@ typedef SessionValueProvider = String? Function();
 class CustomExerciseApiException implements Exception {
   final int? statusCode;
   final String message;
-  final bool isDevelopmentUnavailable;
 
   const CustomExerciseApiException(
     this.message, {
     this.statusCode,
-    this.isDevelopmentUnavailable = false,
   });
 
   @override
@@ -110,12 +107,6 @@ class CustomExerciseApiClient {
       throw const CustomExerciseApiException('找不到登入使用者，請重新登入');
     }
     if (identityToken == null || identityToken.isEmpty) {
-      if (CustomExerciseDevelopmentFallback.isActiveFor(identityToken)) {
-        throw const CustomExerciseApiException(
-          CustomExerciseDevelopmentFallback.remoteUnavailableMessage,
-          isDevelopmentUnavailable: true,
-        );
-      }
       throw const CustomExerciseApiException(
         '目前登入狀態缺少自訂動作授權，請登出後重新登入',
       );
