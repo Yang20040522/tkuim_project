@@ -185,8 +185,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
               _buildProfileHeader(),
               const SizedBox(height: 20),
               _buildStatsRow(),
-              const SizedBox(height: 20),
-              _buildBindTherapistCard(),
               const SizedBox(height: 24),
               _buildSettingsList(),
             ],
@@ -303,52 +301,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
           child: _MiniStatCard(title: '平均準確度', value: _avgAccuracy),
         ),
       ],
-    );
-  }
-
-  Widget _buildBindTherapistCard() {
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: const Color(0xFFE0E7FF),
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 36,
-            height: 36,
-            decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.6),
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: const Icon(Icons.link, color: Color(0xFF4A65FF), size: 18),
-          ),
-          const SizedBox(width: 12),
-          const Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  '帳號尚未綁定',
-                  style: TextStyle(
-                    color: Color(0xFF373F8C),
-                    fontSize: 14,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-                SizedBox(height: 2),
-                Text(
-                  '綁定治療師或家人以同步復健紀錄',
-                  style: TextStyle(color: Color(0xFF4A65FF), fontSize: 11),
-                ),
-              ],
-            ),
-          ),
-          const Icon(Icons.arrow_forward_ios,
-              color: Color(0xFF4A65FF), size: 14),
-        ],
-      ),
     );
   }
 
