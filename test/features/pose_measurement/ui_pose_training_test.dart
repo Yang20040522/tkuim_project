@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_body/features/custom_exercise/patient_assigned_exercise_list_page.dart';
@@ -20,6 +21,136 @@ const _exercise = AssignableExercise(
 );
 
 void main() {
+  testWidgets('unsupported exercise shows no-rules evaluation state',
+      (tester) async {
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    final platform = _Platform();
+    await tester.pumpWidget(MaterialApp(
+      home: PoseTrainingPage(
+        exercise: _exercise,
+        controller: _controller(platform),
+        previewBuilder: (_, onCreated) => _Preview(onCreated: onCreated),
+      ),
+    ));
+    await tester.pumpAndSettle();
+    expect(find.text('此動作尚未設定姿勢評估規則'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox.shrink());
+    await platform.close();
+  });
+
+  testWidgets('stable pass and fail show overall status and feedback',
+      (tester) async {
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    final platform = _Platform();
+    await tester.pumpWidget(MaterialApp(
+      home: PoseTrainingPage(
+        exercise: const AssignableExercise(
+          id: '9',
+          name: '手肘屈伸訓練',
+          description: '',
+          type: AssignableExerciseType.defaultExercise,
+          assigned: true,
+        ),
+        controller: _controller(platform),
+        previewBuilder: (_, onCreated) => _Preview(onCreated: onCreated),
+      ),
+    ));
+    await tester.pumpAndSettle();
+    expect(find.text('尚未偵測完整姿勢'), findsOneWidget);
+
+    for (var i = 0; i < 3; i++) {
+      platform.emit(_elbowEvaluationFrame(150, 150, timestamp: 300 + i));
+      await tester.pump();
+    }
+    expect(find.text('姿勢正確'), findsOneWidget);
+    expect(find.text('左手肘'), findsOneWidget);
+    expect(find.textContaining('目標：150°'), findsNWidgets(2));
+    expect(find.textContaining('容許：130°–170°'), findsNWidgets(2));
+
+    for (var i = 0; i < 3; i++) {
+      platform.emit(_elbowEvaluationFrame(180, 180, timestamp: 400 + i));
+      await tester.pump();
+    }
+    expect(find.text('請調整姿勢'), findsOneWidget);
+    expect(find.text('請減少左手肘角度'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox.shrink());
+    await platform.close();
+  });
+
+  testWidgets('sustained missing measurements replaces prior correct state',
+      (tester) async {
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    final platform = _Platform();
+    await tester.pumpWidget(MaterialApp(
+      home: PoseTrainingPage(
+        exercise: const AssignableExercise(
+          id: '9',
+          name: '手肘屈伸訓練',
+          description: '',
+          type: AssignableExerciseType.defaultExercise,
+          assigned: true,
+        ),
+        controller: _controller(platform),
+        previewBuilder: (_, onCreated) => _Preview(onCreated: onCreated),
+      ),
+    ));
+    await tester.pumpAndSettle();
+    for (var i = 0; i < 3; i++) {
+      platform.emit(_elbowEvaluationFrame(150, 150, timestamp: 500 + i));
+      await tester.pump();
+    }
+    expect(find.text('姿勢正確'), findsOneWidget);
+    for (var i = 0; i < 3; i++) {
+      platform.emit(_frame(hasPose: false));
+      await tester.pump();
+    }
+    expect(find.text('尚未偵測完整姿勢'), findsOneWidget);
+    expect(find.text('目前無法可靠判定此關節'), findsNWidgets(2));
+    await tester.pumpWidget(const SizedBox.shrink());
+    await platform.close();
+  });
+
+  testWidgets('changing exercise resets evaluation and resolves fresh rules',
+      (tester) async {
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    final platform = _Platform();
+    final controller = _controller(platform);
+    Widget app(AssignableExercise exercise) => MaterialApp(
+          home: PoseTrainingPage(
+            exercise: exercise,
+            controller: controller,
+            previewBuilder: (_, onCreated) => _Preview(onCreated: onCreated),
+          ),
+        );
+    const elbowExercise = AssignableExercise(
+      id: '9',
+      name: '手肘屈伸訓練',
+      description: '',
+      type: AssignableExerciseType.defaultExercise,
+      assigned: true,
+    );
+    await tester.pumpWidget(app(elbowExercise));
+    await tester.pumpAndSettle();
+    for (var i = 0; i < 3; i++) {
+      platform.emit(_elbowEvaluationFrame(150, 150, timestamp: 600 + i));
+      await tester.pump();
+    }
+    expect(find.text('姿勢正確'), findsOneWidget);
+
+    await tester.pumpWidget(app(const AssignableExercise(
+      id: 'custom-1',
+      name: '自訂姿勢',
+      description: '',
+      type: AssignableExerciseType.custom,
+      assigned: true,
+    )));
+    await tester.pump();
+    expect(find.text('姿勢正確'), findsNothing);
+    expect(find.text('此動作尚未設定姿勢評估規則'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox.shrink());
+    await platform.close();
+  });
+
   testWidgets('shows states and world angles without recreating preview',
       (tester) async {
     tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
@@ -132,8 +263,8 @@ void main() {
     final platform = _Platform();
     await tester.pumpWidget(MaterialApp(
       builder: (context, child) => MediaQuery(
-        data:
-            MediaQuery.of(context).copyWith(textScaler: TextScaler.linear(1.8)),
+        data: MediaQuery.of(context)
+            .copyWith(textScaler: const TextScaler.linear(1.8)),
         child: child!,
       ),
       home: PoseTrainingPage(
@@ -152,7 +283,7 @@ void main() {
   });
 
   testWidgets(
-      'both exercise types have independent measurement entry and guard',
+      'DEFAULT keeps secondary measurement entry; CUSTOM uses demo flow',
       (tester) async {
     final repository = _Repository();
     final destinations = <AssignableExercise>[];
@@ -166,7 +297,7 @@ void main() {
       ),
     ));
     await tester.pumpAndSettle();
-    expect(find.text('姿勢量測'), findsNWidgets(2));
+    expect(find.text('姿勢量測'), findsOneWidget);
     final firstButton = tester.widget<TextButton>(
       find.byKey(const Key('patient-pose-measurement-DEFAULT:1')),
     );
@@ -177,12 +308,11 @@ void main() {
     expect(destinations.first, same(repository.exercises.first));
     Navigator.of(tester.element(find.text('量測 DEFAULT:1'))).pop();
     await tester.pumpAndSettle();
-    await tester
-        .tap(find.byKey(const Key('patient-pose-measurement-CUSTOM:2')));
-    await tester.pumpAndSettle();
-    expect(find.text('量測 CUSTOM:2'), findsOneWidget);
+    expect(
+      find.byKey(const Key('patient-pose-measurement-CUSTOM:2')),
+      findsNothing,
+    );
     expect(repository.detailReads, 0);
-    expect(destinations.last, same(repository.exercises.last));
   });
 }
 
@@ -215,6 +345,41 @@ Map<String, dynamic> _frame({bool hasPose = true, bool reliable = true}) {
     'landmarks': landmarks,
     'worldLandmarks': world,
     'inferenceMs': 12.0,
+  };
+}
+
+Map<String, dynamic> _elbowEvaluationFrame(
+  double left,
+  double right, {
+  required int timestamp,
+}) {
+  Map<String, double> point(double x, double y) => {
+        'x': x,
+        'y': y,
+        'z': 0,
+        'visibility': 1,
+        'presence': 1,
+      };
+  final normalized = List.generate(33, (_) => point(.5, .5));
+  final world = List.generate(33, (_) => point(0, 0));
+  world[11] = point(1, 0);
+  world[13] = point(0, 0);
+  world[15] = point(
+    math.cos(left * math.pi / 180),
+    math.sin(left * math.pi / 180),
+  );
+  world[12] = point(1, 0);
+  world[14] = point(0, 0);
+  world[16] = point(
+    math.cos(right * math.pi / 180),
+    math.sin(right * math.pi / 180),
+  );
+  return {
+    'type': 'frame',
+    'timestampMs': timestamp,
+    'landmarks': normalized,
+    'worldLandmarks': world,
+    'inferenceMs': 10.0,
   };
 }
 

@@ -5,6 +5,7 @@ import '../../../models/exercise_keyframe.dart';
 import '../../../models/joint_definition.dart';
 import '../../../models/joint_rotation.dart';
 import '../../../models/joint_type.dart';
+import '../../pose_measurement/evaluation/pose_measurement_rule.dart';
 import '../services/custom_exercise_bone_mapping.dart';
 import 'custom_exercise_playback_controller.dart';
 
@@ -57,6 +58,9 @@ class CustomExerciseEditorController extends ChangeNotifier {
   double get playbackTime => _playbackTime;
   bool get canPlay => _draft.keyframes.length >= 2;
 
+  List<PoseMeasurementRule> get poseMeasurementRules =>
+      _draft.poseMeasurementRules;
+
   String? get saveValidationError {
     if (_draft.name.trim().isEmpty) {
       return '請輸入動作名稱';
@@ -66,6 +70,14 @@ class CustomExerciseEditorController extends ChangeNotifier {
     }
     if (_draft.duration != _draft.keyframes.last.time) {
       return 'Keyframes 與 duration 不一致';
+    }
+    final measurements = <Object>{};
+    for (final rule in _draft.poseMeasurementRules) {
+      final error = rule.validationError;
+      if (error != null) return error;
+      if (!measurements.add(rule.measurement)) {
+        return '${rule.measurement.poseRuleLabel}已經有一條評估規則';
+      }
     }
     try {
       CustomRehabExercise.fromJson(_draft.toJson());
@@ -251,6 +263,62 @@ class CustomExerciseEditorController extends ChangeNotifier {
       updatedAt: DateTime.now(),
     );
     notifyListeners();
+  }
+
+  String? addPoseMeasurementRule(PoseMeasurementRule rule) {
+    final error = _validatePoseMeasurementRule(rule);
+    if (error != null) return error;
+    _draft = _draft.copyWith(
+      poseMeasurementRules: [..._draft.poseMeasurementRules, rule],
+      updatedAt: DateTime.now(),
+    );
+    notifyListeners();
+    return null;
+  }
+
+  String? updatePoseMeasurementRule(
+    int index,
+    PoseMeasurementRule rule,
+  ) {
+    if (index < 0 || index >= _draft.poseMeasurementRules.length) {
+      return '找不到要編輯的評估規則';
+    }
+    final error = _validatePoseMeasurementRule(rule, replacingIndex: index);
+    if (error != null) return error;
+    final rules = List<PoseMeasurementRule>.of(_draft.poseMeasurementRules);
+    rules[index] = rule;
+    _draft = _draft.copyWith(
+      poseMeasurementRules: rules,
+      updatedAt: DateTime.now(),
+    );
+    notifyListeners();
+    return null;
+  }
+
+  void deletePoseMeasurementRule(int index) {
+    if (index < 0 || index >= _draft.poseMeasurementRules.length) return;
+    final rules = List<PoseMeasurementRule>.of(_draft.poseMeasurementRules)
+      ..removeAt(index);
+    _draft = _draft.copyWith(
+      poseMeasurementRules: rules,
+      updatedAt: DateTime.now(),
+    );
+    notifyListeners();
+  }
+
+  String? _validatePoseMeasurementRule(
+    PoseMeasurementRule rule, {
+    int? replacingIndex,
+  }) {
+    final error = rule.validationError;
+    if (error != null) return error;
+    for (var index = 0; index < _draft.poseMeasurementRules.length; index++) {
+      if (index != replacingIndex &&
+          _draft.poseMeasurementRules[index].measurement == rule.measurement) {
+        return '${rule.measurement.poseRuleLabel}已經有一條評估規則';
+      }
+    }
+    return null;
   }
 
   CustomRehabExercise createSaveSnapshot({DateTime? now}) {

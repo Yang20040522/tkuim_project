@@ -48,7 +48,7 @@ class JointRotationPanel extends StatelessWidget {
               SizedBox(width: 8),
               Expanded(
                 child: Text(
-                  '關節與角度',
+                  '3D 動作設定（骨骼角度）',
                   style: TextStyle(
                     color: Color(0xFF1A1D2E),
                     fontSize: 15,

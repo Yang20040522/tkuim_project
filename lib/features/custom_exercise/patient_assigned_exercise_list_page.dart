@@ -94,6 +94,7 @@ class _PatientAssignedExerciseListPageState
   }
 
   Future<void> _openPoseMeasurement(AssignableExercise exercise) async {
+    if (exercise.type != AssignableExerciseType.defaultExercise) return;
     if (_openingExerciseKey != null || _openingPosePage) return;
     setState(() => _openingPosePage = true);
     try {
@@ -209,20 +210,21 @@ class _PatientAssignedExerciseListPageState
                 : const Icon(Icons.arrow_forward_ios, size: 15),
             onTap: opening ? null : () => _openExercise(exercise),
           ),
-          Align(
-            alignment: Alignment.centerRight,
-            child: Padding(
-              padding: const EdgeInsets.only(right: 12, bottom: 8),
-              child: TextButton.icon(
-                key: Key('patient-pose-measurement-${exercise.identityKey}'),
-                onPressed: _openingExerciseKey != null || _openingPosePage
-                    ? null
-                    : () => _openPoseMeasurement(exercise),
-                icon: const Icon(Icons.accessibility_new),
-                label: const Text('姿勢量測'),
+          if (isDefault)
+            Align(
+              alignment: Alignment.centerRight,
+              child: Padding(
+                padding: const EdgeInsets.only(right: 12, bottom: 8),
+                child: TextButton.icon(
+                  key: Key('patient-pose-measurement-${exercise.identityKey}'),
+                  onPressed: _openingExerciseKey != null || _openingPosePage
+                      ? null
+                      : () => _openPoseMeasurement(exercise),
+                  icon: const Icon(Icons.accessibility_new),
+                  label: const Text('姿勢量測'),
+                ),
               ),
             ),
-          ),
         ],
       ),
     );

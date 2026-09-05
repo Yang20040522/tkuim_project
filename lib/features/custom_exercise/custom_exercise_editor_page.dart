@@ -11,6 +11,7 @@ import 'repositories/local_custom_exercise_repository.dart';
 import 'widgets/custom_exercise_3d_viewer.dart';
 import 'widgets/joint_rotation_panel.dart';
 import 'widgets/keyframe_timeline.dart';
+import 'widgets/pose_measurement_rules_editor.dart';
 
 class CustomExerciseEditorPage extends StatelessWidget {
   final CustomRehabExercise? initialExercise;
@@ -309,11 +310,7 @@ class _CustomExerciseEditorViewState extends State<_CustomExerciseEditorView> {
                     ),
                   ),
                   const SizedBox(height: 16),
-                  const _EditorSectionPlaceholder(
-                    icon: Icons.rule,
-                    title: '判定條件與復健設定',
-                    description: '設定介面將於後續階段加入',
-                  ),
+                  const PoseMeasurementRulesEditor(),
                 ],
               ),
             ),
@@ -350,11 +347,7 @@ class _CustomExerciseEditorViewState extends State<_CustomExerciseEditorView> {
         const SizedBox(height: 16),
         _buildTimeline(),
         const SizedBox(height: 16),
-        const _EditorSectionPlaceholder(
-          icon: Icons.rule,
-          title: '判定條件與復健設定',
-          description: '設定介面將於後續階段加入',
-        ),
+        const PoseMeasurementRulesEditor(),
       ],
     );
   }
@@ -517,35 +510,6 @@ class _BasicInfoCard extends StatelessWidget {
               alignLabelWithHint: true,
               border: OutlineInputBorder(),
             ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _EditorSectionPlaceholder extends StatelessWidget {
-  final IconData icon;
-  final String title;
-  final String description;
-
-  const _EditorSectionPlaceholder({
-    required this.icon,
-    required this.title,
-    required this.description,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return _EditorCard(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _SectionTitle(icon: icon, text: title),
-          const SizedBox(height: 12),
-          Text(
-            description,
-            style: const TextStyle(color: Color(0xFF9CA3AF), fontSize: 13),
           ),
         ],
       ),

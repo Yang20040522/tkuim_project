@@ -2,31 +2,51 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../models/custom_rehab_exercise.dart';
+import '../../models/assignable_exercise.dart';
 import '../../models/joint_type.dart';
+import '../pose_measurement/pose_training_page.dart';
 import 'controllers/custom_exercise_playback_controller.dart';
 import 'widgets/custom_exercise_3d_viewer.dart';
 
+typedef CustomExerciseTrainingBuilder = Widget Function(
+  AssignableExercise exercise,
+  CustomRehabExercise customExercise,
+);
+
 class CustomExercisePlaybackPage extends StatelessWidget {
   final CustomRehabExercise exercise;
+  final CustomExerciseTrainingBuilder trainingBuilder;
 
-  const CustomExercisePlaybackPage({
+  CustomExercisePlaybackPage({
     super.key,
     required this.exercise,
-  });
+    CustomExerciseTrainingBuilder? trainingBuilder,
+  }) : trainingBuilder = trainingBuilder ??
+            ((assignedExercise, customExercise) => PoseTrainingPage(
+                  exercise: assignedExercise,
+                  customExercise: customExercise,
+                ));
 
   @override
   Widget build(BuildContext context) {
     return ChangeNotifierProvider(
       create: (_) => CustomExercisePlaybackController(exercise: exercise),
-      child: _CustomExercisePlaybackView(exercise: exercise),
+      child: _CustomExercisePlaybackView(
+        exercise: exercise,
+        trainingBuilder: trainingBuilder,
+      ),
     );
   }
 }
 
 class _CustomExercisePlaybackView extends StatelessWidget {
   final CustomRehabExercise exercise;
+  final CustomExerciseTrainingBuilder trainingBuilder;
 
-  const _CustomExercisePlaybackView({required this.exercise});
+  const _CustomExercisePlaybackView({
+    required this.exercise,
+    required this.trainingBuilder,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -62,6 +82,30 @@ class _CustomExercisePlaybackView extends StatelessWidget {
                 ),
                 const SizedBox(height: 14),
                 _PlaybackControls(controller: controller),
+                const SizedBox(height: 14),
+                FilledButton.icon(
+                  key: const Key('start-custom-pose-training'),
+                  onPressed: () {
+                    controller.stop();
+                    final assignedExercise = AssignableExercise(
+                      id: exercise.id,
+                      name: exercise.name,
+                      description: exercise.description,
+                      type: AssignableExerciseType.custom,
+                      assigned: true,
+                    );
+                    Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) => trainingBuilder(
+                          assignedExercise,
+                          exercise,
+                        ),
+                      ),
+                    );
+                  },
+                  icon: const Icon(Icons.directions_run),
+                  label: const Text('開始訓練'),
+                ),
               ],
             ),
           );

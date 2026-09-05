@@ -1,5 +1,6 @@
 import 'evaluation_rule.dart';
 import 'exercise_keyframe.dart';
+import '../features/pose_measurement/evaluation/pose_measurement_rule.dart';
 
 class CustomRehabExercise {
   final String id;
@@ -15,6 +16,7 @@ class CustomRehabExercise {
   final double duration;
   final List<ExerciseKeyframe> keyframes;
   final List<EvaluationRule> evaluationRules;
+  final List<PoseMeasurementRule> poseMeasurementRules;
 
   CustomRehabExercise({
     required this.id,
@@ -30,13 +32,15 @@ class CustomRehabExercise {
     required this.duration,
     required List<ExerciseKeyframe> keyframes,
     required List<EvaluationRule> evaluationRules,
+    List<PoseMeasurementRule> poseMeasurementRules = const [],
   })  : assert(repetitions > 0),
         assert(sets > 0),
         assert(holdSeconds >= 0 && holdSeconds.isFinite),
         assert(restSeconds >= 0 && restSeconds.isFinite),
         assert(duration >= 0 && duration.isFinite),
         keyframes = List.unmodifiable(_orderedKeyframes(keyframes, duration)),
-        evaluationRules = List.unmodifiable(evaluationRules);
+        evaluationRules = List.unmodifiable(evaluationRules),
+        poseMeasurementRules = List.unmodifiable(poseMeasurementRules);
 
   static List<ExerciseKeyframe> _orderedKeyframes(
     List<ExerciseKeyframe> source,
@@ -73,6 +77,7 @@ class CustomRehabExercise {
     double? duration,
     List<ExerciseKeyframe>? keyframes,
     List<EvaluationRule>? evaluationRules,
+    List<PoseMeasurementRule>? poseMeasurementRules,
   }) {
     return CustomRehabExercise(
       id: id ?? this.id,
@@ -90,6 +95,7 @@ class CustomRehabExercise {
       duration: duration ?? this.duration,
       keyframes: keyframes ?? this.keyframes,
       evaluationRules: evaluationRules ?? this.evaluationRules,
+      poseMeasurementRules: poseMeasurementRules ?? this.poseMeasurementRules,
     );
   }
 
@@ -106,7 +112,10 @@ class CustomRehabExercise {
         'restSeconds': restSeconds,
         'duration': duration,
         'keyframes': keyframes.map((item) => item.toJson()).toList(),
-        'evaluationRules': evaluationRules.map((item) => item.toJson()).toList(),
+        'evaluationRules':
+            evaluationRules.map((item) => item.toJson()).toList(),
+        'poseMeasurementRules':
+            poseMeasurementRules.map((item) => item.toJson()).toList(),
       };
 
   factory CustomRehabExercise.fromJson(Map<String, dynamic> json) {
@@ -123,6 +132,7 @@ class CustomRehabExercise {
     }
     final rawKeyframes = json['keyframes'];
     final rawRules = json['evaluationRules'];
+    final rawPoseRules = json['poseMeasurementRules'];
     if (rawKeyframes is! List || rawRules is! List) {
       throw const FormatException('keyframes 或 evaluationRules 格式錯誤');
     }
@@ -144,15 +154,30 @@ class CustomRehabExercise {
                 Map<String, dynamic>.from(item as Map)))
             .toList(),
         evaluationRules: rawRules
-            .map((item) => EvaluationRule.fromJson(
-                Map<String, dynamic>.from(item as Map)))
+            .map((item) =>
+                EvaluationRule.fromJson(Map<String, dynamic>.from(item as Map)))
             .toList(),
+        poseMeasurementRules: _parsePoseMeasurementRules(rawPoseRules),
       );
     } on TypeError catch (error) {
       throw FormatException('CustomRehabExercise 欄位格式錯誤', error);
     } on ArgumentError catch (error) {
       throw FormatException(error.message.toString(), error);
     }
+  }
+
+  static List<PoseMeasurementRule> _parsePoseMeasurementRules(Object? value) {
+    if (value == null) return const [];
+    if (value is! List) return const [];
+    final result = <PoseMeasurementRule>[];
+    final measurements = <Object>{};
+    for (final item in value) {
+      final rule = PoseMeasurementRule.tryFromJson(item);
+      if (rule != null && measurements.add(rule.measurement)) {
+        result.add(rule);
+      }
+    }
+    return result;
   }
 
   static double _finiteDouble(dynamic value, {required String field}) {

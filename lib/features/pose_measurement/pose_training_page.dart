@@ -3,25 +3,33 @@ import 'package:flutter/material.dart';
 import 'package:permission_handler/permission_handler.dart';
 
 import '../../models/assignable_exercise.dart';
-import 'joint_angle_calculator.dart';
+import '../../models/custom_rehab_exercise.dart';
+import 'evaluation/pose_evaluation_engine.dart';
+import 'evaluation/pose_evaluation_result.dart';
+import 'evaluation/pose_evaluation_session.dart';
+import 'evaluation/pose_measurement_rule.dart';
+import 'evaluation/pose_measurement_rule_resolver.dart';
 import 'models/joint_angle_frame.dart';
-import 'models/pose_frame.dart';
 import 'pose_camera_controller.dart';
 import 'pose_camera_view.dart';
 
-/// Measurement only: no evaluation, repetition counting, recording or upload.
+/// Real-time geometric pose evaluation only: no repetition counting or upload.
 /// An injected controller is owned and disposed by this page as well.
 class PoseTrainingPage extends StatefulWidget {
   const PoseTrainingPage({
     super.key,
     required this.exercise,
+    this.customExercise,
     this.controller,
     this.previewBuilder,
+    this.ruleResolver = const PoseMeasurementRuleResolver(),
   });
 
   final AssignableExercise exercise;
+  final CustomRehabExercise? customExercise;
   final PoseCameraController? controller;
   final PoseNativePreviewBuilder? previewBuilder;
+  final PoseMeasurementRuleResolver ruleResolver;
 
   @override
   State<PoseTrainingPage> createState() => _PoseTrainingPageState();
@@ -30,6 +38,8 @@ class PoseTrainingPage extends StatefulWidget {
 class _PoseTrainingPageState extends State<PoseTrainingPage>
     with WidgetsBindingObserver {
   late final PoseCameraController _controller;
+  late List<PoseMeasurementRule> _rules;
+  late PoseEvaluationSession _evaluationSession;
   bool _foreground = true;
   bool _routeVisible = true;
 
@@ -37,12 +47,35 @@ class _PoseTrainingPageState extends State<PoseTrainingPage>
   void initState() {
     super.initState();
     _controller = widget.controller ?? PoseCameraController();
+    _createEvaluationSession();
     WidgetsBinding.instance.addObserver(this);
     final lifecycle = WidgetsBinding.instance.lifecycleState;
     _foreground = lifecycle == null || lifecycle == AppLifecycleState.resumed;
     if (widget.previewBuilder == null &&
         (kIsWeb || defaultTargetPlatform != TargetPlatform.android)) {
       _controller.markUnavailable();
+    }
+  }
+
+  void _createEvaluationSession() {
+    _rules = widget.ruleResolver.resolve(
+      widget.exercise,
+      customExercise: widget.customExercise,
+    );
+    _evaluationSession = PoseEvaluationSession(
+      camera: _controller,
+      rules: _rules,
+    );
+  }
+
+  @override
+  void didUpdateWidget(PoseTrainingPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.exercise.identityKey != widget.exercise.identityKey ||
+        oldWidget.customExercise != widget.customExercise ||
+        oldWidget.ruleResolver != widget.ruleResolver) {
+      _evaluationSession.dispose();
+      _createEvaluationSession();
     }
   }
 
@@ -68,6 +101,7 @@ class _PoseTrainingPageState extends State<PoseTrainingPage>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _evaluationSession.dispose();
     _controller.dispose();
     super.dispose();
   }
@@ -117,7 +151,9 @@ class _PoseTrainingPageState extends State<PoseTrainingPage>
                       valueListenable: _controller.state,
                       builder: (_, state, __) => _buildStatus(state),
                     ),
-                    _AngleReadout(controller: _controller),
+                    _AngleAndEvaluationReadout(
+                      session: _evaluationSession,
+                    ),
                   ],
                 ),
               ),
@@ -148,9 +184,9 @@ class _PoseTrainingPageState extends State<PoseTrainingPage>
               child: const Text('重試'),
             ),
           if (state == PoseCameraState.permissionPermanentlyDenied)
-            TextButton(
+            const TextButton(
               onPressed: openAppSettings,
-              child: const Text('開啟系統設定'),
+              child: Text('開啟系統設定'),
             ),
         ],
       ),
@@ -158,20 +194,18 @@ class _PoseTrainingPageState extends State<PoseTrainingPage>
   }
 }
 
-class _AngleReadout extends StatelessWidget {
-  const _AngleReadout({required this.controller});
+class _AngleAndEvaluationReadout extends StatelessWidget {
+  const _AngleAndEvaluationReadout({required this.session});
 
-  final PoseCameraController controller;
+  final PoseEvaluationSession session;
 
   @override
   Widget build(BuildContext context) {
-    return ValueListenableBuilder<PoseFrame?>(
-      valueListenable: controller.frame,
-      builder: (_, frame, __) {
-        // World coordinates only. The painter and its mirrored display
-        // coordinates are deliberately never passed into this calculator.
-        final angles =
-            frame == null ? null : JointAngleCalculator().calculate(frame);
+    return ValueListenableBuilder<PoseEvaluationSnapshot>(
+      valueListenable: session.snapshot,
+      builder: (_, snapshot, __) {
+        final angles = snapshot.measurements;
+        final evaluation = snapshot.evaluation;
         return Padding(
           padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
           child: Column(
@@ -183,21 +217,30 @@ class _AngleReadout extends StatelessWidget {
                 children: [
                   for (final joint in JointMeasurementType.values)
                     Text(
-                      '${joint.label}：${angles?[joint]?.toStringAsFixed(0) ?? '--'}${angles?[joint] == null ? '' : '°'}',
+                      '${joint.label}：${angles[joint]?.toStringAsFixed(0) ?? '--'}${angles[joint] == null ? '' : '°'}',
                       key: Key('pose-angle-${joint.name}'),
                       style: const TextStyle(color: Color(0xFF1A1D2E)),
                     ),
                 ],
               ),
-              const SizedBox(height: 6),
+              const SizedBox(height: 10),
+              _OverallEvaluationCard(
+                status: evaluation.presentedOverallStatus,
+              ),
+              if (evaluation.raw.rules.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                for (final result in evaluation.raw.rules)
+                  _RuleEvaluationCard(result: result),
+              ],
+              const SizedBox(height: 8),
               const Text(
-                '請與鏡頭保持距離，讓頭部與雙腳入鏡。\n左右以您自身為準；關節不清楚時顯示 --。\n此頁僅量測幾何角度，不判定動作正確性、不記錄結果。',
+                '請與鏡頭保持距離，讓頭部與雙腳入鏡。\n左右以您自身為準；關節不清楚時顯示 --。\n此頁只依幾何角度檢查目前姿勢，不計次、不記錄結果，亦不代表醫療診斷。',
                 textAlign: TextAlign.center,
                 style: TextStyle(color: Color(0xFF667085), fontSize: 11),
               ),
-              if (frame != null)
+              if (snapshot.inferenceMs > 0)
                 Text(
-                  '本機推論：${frame.inferenceMs.toStringAsFixed(0)} 毫秒',
+                  '本機推論：${snapshot.inferenceMs.toStringAsFixed(0)} 毫秒',
                   style: const TextStyle(
                     color: Color(0xFF667085),
                     fontSize: 11,
@@ -207,6 +250,134 @@ class _AngleReadout extends StatelessWidget {
           ),
         );
       },
+    );
+  }
+}
+
+class _OverallEvaluationCard extends StatelessWidget {
+  const _OverallEvaluationCard({required this.status});
+
+  final PoseOverallEvaluationStatus status;
+
+  @override
+  Widget build(BuildContext context) {
+    final (icon, color, label) = switch (status) {
+      PoseOverallEvaluationStatus.correct => (
+          Icons.check_circle,
+          const Color(0xFF2E7D32),
+          '姿勢正確'
+        ),
+      PoseOverallEvaluationStatus.needsAdjustment => (
+          Icons.tune,
+          const Color(0xFFC2410C),
+          '請調整姿勢'
+        ),
+      PoseOverallEvaluationStatus.unavailable => (
+          Icons.visibility_off_outlined,
+          const Color(0xFF667085),
+          '尚未偵測完整姿勢'
+        ),
+      PoseOverallEvaluationStatus.noRules => (
+          Icons.info_outline,
+          const Color(0xFF667085),
+          '此動作尚未設定姿勢評估規則'
+        ),
+    };
+    return Container(
+      key: const Key('pose-overall-evaluation'),
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.09),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: color.withValues(alpha: 0.35)),
+      ),
+      child: Row(
+        children: [
+          Icon(icon, color: color, size: 20),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              label,
+              key: Key('pose-overall-${status.name}'),
+              style: TextStyle(color: color, fontWeight: FontWeight.w700),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _RuleEvaluationCard extends StatelessWidget {
+  const _RuleEvaluationCard({required this.result});
+
+  final PoseRuleEvaluationResult result;
+
+  @override
+  Widget build(BuildContext context) {
+    final rule = result.rule;
+    final passed = result.status == PoseRuleEvaluationStatus.pass;
+    final unavailable = result.status == PoseRuleEvaluationStatus.unavailable;
+    final color = passed
+        ? const Color(0xFF2E7D32)
+        : unavailable
+            ? const Color(0xFF667085)
+            : const Color(0xFFC2410C);
+    String degrees(double value) => '${value.toStringAsFixed(0)}°';
+    return Container(
+      key: Key('pose-rule-${rule.measurement.name}'),
+      width: double.infinity,
+      margin: const EdgeInsets.only(bottom: 6),
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: const Color(0xFFE5E7EB)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            rule.measurement.evaluationLabel,
+            style: const TextStyle(fontWeight: FontWeight.w700),
+          ),
+          const SizedBox(height: 3),
+          Text(
+            '目前：${result.currentAngleDegrees == null ? '--' : degrees(result.currentAngleDegrees!)}　'
+            '目標：${degrees(rule.targetAngleDegrees)}',
+          ),
+          Text(
+            '容許：${degrees(result.lowerBound)}–${degrees(result.upperBound)}',
+            style: const TextStyle(color: Color(0xFF667085), fontSize: 12),
+          ),
+          const SizedBox(height: 3),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(
+                passed
+                    ? Icons.check
+                    : unavailable
+                        ? Icons.remove
+                        : Icons.tune,
+                color: color,
+                size: 17,
+              ),
+              const SizedBox(width: 5),
+              Expanded(
+                child: Text(
+                  result.feedback,
+                  key: Key(
+                    'pose-rule-feedback-${rule.measurement.name}-${result.status.name}',
+                  ),
+                  style: TextStyle(color: color, fontWeight: FontWeight.w600),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
     );
   }
 }
