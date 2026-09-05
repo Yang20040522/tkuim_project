@@ -107,6 +107,7 @@ import '../../actions/sit_to_stand_action.dart'; // 🆕 補上,原本漏掉
 import '../../actions/lateral_step_action.dart'; // 🆕 補上,原本漏掉
 
 import '../../actions/body_rehab_action.dart';
+import '../../features/account/app_session.dart';
 import '../../features/plan/plan_repository.dart';
 
 // 🖥️ 電視投放新增
@@ -574,7 +575,13 @@ class _TrainingScreenState extends State<TrainingScreen>
     ));
 
     // ✅ 新增:順便檢查今天計畫裡有沒有這個動作,有就標記完成
-    await markPlanItemDoneByActionName(widget.action.name);
+    final patientId = AppSession.userId?.trim();
+    if (patientId != null && patientId.isNotEmpty) {
+      await markPlanItemDoneByActionName(
+        patientId: patientId,
+        actionName: widget.action.name,
+      );
+    }
 
     if (!mounted || result == null) return;
 
@@ -702,7 +709,13 @@ class _TrainingScreenState extends State<TrainingScreen>
     ));
 
     // ✅ 新增:順便檢查今天計畫裡有沒有這個動作,有就標記完成
-    await markPlanItemDoneByActionName(widget.action.name);
+    final patientId = AppSession.userId?.trim();
+    if (patientId != null && patientId.isNotEmpty) {
+      await markPlanItemDoneByActionName(
+        patientId: patientId,
+        actionName: widget.action.name,
+      );
+    }
 
     if (!mounted || result == null) return;
 

@@ -33,6 +33,7 @@ class PlanItem {
 }
 
 class RehabPlan {
+  final String patientId;
   final String planId;
   final String createdBy; // "therapist" or "self"
   final DateTime date;
@@ -40,6 +41,7 @@ class RehabPlan {
   final PatientCondition condition;
 
   RehabPlan({
+    required this.patientId,
     required this.planId,
     required this.createdBy,
     required this.date,
@@ -48,6 +50,7 @@ class RehabPlan {
   });
 
   Map<String, dynamic> toJson() => {
+        'patientId': patientId,
         'planId': planId,
         'createdBy': createdBy,
         'date': date.toIso8601String(),
@@ -56,12 +59,19 @@ class RehabPlan {
       };
 
   factory RehabPlan.fromJson(Map<String, dynamic> json) => RehabPlan(
+        patientId: _requiredPatientId(json['patientId']),
         planId: json['planId'],
         createdBy: json['createdBy'],
         date: DateTime.parse(json['date']),
-        items: (json['items'] as List)
-            .map((i) => PlanItem.fromJson(i))
-            .toList(),
+        items:
+            (json['items'] as List).map((i) => PlanItem.fromJson(i)).toList(),
         condition: PatientCondition.values.byName(json['condition']),
       );
+}
+
+String _requiredPatientId(Object? value) {
+  if (value == null || value.toString().trim().isEmpty) {
+    throw const FormatException('復健計畫缺少 patientId');
+  }
+  return value.toString();
 }

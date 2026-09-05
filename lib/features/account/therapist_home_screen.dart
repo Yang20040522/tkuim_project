@@ -8,6 +8,7 @@ import '../custom_exercise/unified_exercise_assignment_page.dart';
 import '../custom_exercise/repositories/custom_exercise_assignment_repository_selection.dart';
 import '../custom_exercise/repositories/custom_exercise_repository.dart';
 import '../custom_exercise/repositories/custom_exercise_repository_selection.dart';
+import '../plan/therapist_plan_management_page.dart';
 import '../../models/custom_rehab_exercise.dart';
 import 'app_session.dart';
 import 'patient_management_page.dart';
@@ -61,6 +62,14 @@ class TherapistHomeScreen extends StatelessWidget {
   void _openPatientManagement(BuildContext context) {
     Navigator.of(context).push(
       MaterialPageRoute(builder: (_) => const PatientManagementPage()),
+    );
+  }
+
+  void _openRehabPlanManagement(BuildContext context) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => const TherapistPlanManagementPage(),
+      ),
     );
   }
 
@@ -148,6 +157,14 @@ class TherapistHomeScreen extends StatelessWidget {
               title: '指派復健動作',
               subtitle: '統一指派預設與自訂復健動作',
               onTap: () => _openUnifiedAssignment(context),
+            ),
+            const SizedBox(height: 12),
+            _TherapistFeatureCard(
+              key: const Key('open-rehab-plan-management'),
+              icon: Icons.calendar_month_outlined,
+              title: '制定復健計畫',
+              subtitle: '選擇患者並安排每日復健動作、組數與次數',
+              onTap: () => _openRehabPlanManagement(context),
             ),
             const SizedBox(height: 28),
             const Text(

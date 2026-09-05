@@ -32,9 +32,14 @@ class PlanApiRepository implements PlanRepository {
   /// 對應後端: GET /api/plans?date=yyyy-MM-dd
   /// 找不到該日期的計畫時,後端應回傳 404,這裡會轉換成 null(代表這天還沒有計畫)
   @override
-  Future<RehabPlan?> getPlanByDate(DateTime date) async {
-    final uri = Uri.parse('$_baseUrl/api/plans')
-        .replace(queryParameters: {'date': _dateKey(date)});
+  Future<RehabPlan?> getPlanByDate({
+    required String patientId,
+    required DateTime date,
+  }) async {
+    final uri = Uri.parse('$_baseUrl/api/plans').replace(queryParameters: {
+      'patientId': patientId,
+      'date': _dateKey(date),
+    });
 
     final response = await http.get(uri).timeout(const Duration(seconds: 10));
 
@@ -72,10 +77,14 @@ class PlanApiRepository implements PlanRepository {
   /// 更新單一動作項目(例如訓練完成後標記 done)。
   /// 對應後端: PATCH /api/plans/{planId}/items/{exerciseId}
   @override
-  Future<void> updatePlanItem(String planId, PlanItem item) async {
+  Future<void> updatePlanItem({
+    required String patientId,
+    required String planId,
+    required PlanItem item,
+  }) async {
     final uri = Uri.parse(
       '$_baseUrl/api/plans/$planId/items/${item.exerciseId}',
-    );
+    ).replace(queryParameters: {'patientId': patientId});
 
     final response = await http
         .patch(
@@ -94,8 +103,13 @@ class PlanApiRepository implements PlanRepository {
   // 骨折範本、可勾選動作庫都是前端固定資料,不需要打 API
 
   @override
-  RehabPlan buildFractureTemplate(String planId, DateTime date) {
+  RehabPlan buildFractureTemplate(
+    String patientId,
+    String planId,
+    DateTime date,
+  ) {
     return RehabPlan(
+      patientId: patientId,
       planId: planId,
       createdBy: 'therapist',
       date: date,

@@ -6,8 +6,13 @@ import 'rehab_plan.dart';
 /// 骨折套用範本後可以來這裡微調；中風則直接從這裡從零開始安排
 class PlanBuilderScreen extends StatefulWidget {
   final RehabPlan existingPlan;
+  final String? patientName;
 
-  const PlanBuilderScreen({super.key, required this.existingPlan});
+  const PlanBuilderScreen({
+    super.key,
+    required this.existingPlan,
+    this.patientName,
+  });
 
   @override
   State<PlanBuilderScreen> createState() => _PlanBuilderScreenState();
@@ -79,6 +84,7 @@ class _PlanBuilderScreenState extends State<PlanBuilderScreen> {
 
   void _save() {
     final newPlan = RehabPlan(
+      patientId: widget.existingPlan.patientId,
       planId: widget.existingPlan.planId,
       createdBy: widget.existingPlan.createdBy,
       date: widget.existingPlan.date,
@@ -141,10 +147,12 @@ class _PlanBuilderScreenState extends State<PlanBuilderScreen> {
             ),
           ),
           const SizedBox(width: 12),
-          const Expanded(
+          Expanded(
             child: Text(
-              '安排訓練動作',
-              style: TextStyle(color: Color(0xFF1A1D2E), fontSize: 18, fontWeight: FontWeight.w800),
+              widget.patientName == null
+                  ? '安排訓練動作'
+                  : '為 ${widget.patientName} 安排訓練動作',
+              style: const TextStyle(color: Color(0xFF1A1D2E), fontSize: 18, fontWeight: FontWeight.w800),
             ),
           ),
           GestureDetector(

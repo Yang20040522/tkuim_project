@@ -64,6 +64,7 @@ import '../../actions/raise_both_arms_action.dart';
 import '../../actions/elbow_forward_action.dart';
 import '../../actions/sit_to_stand_action.dart';
 import '../../actions/lateral_step_action.dart';
+import '../../features/account/app_session.dart';
 import '../../features/plan/plan_repository.dart';
 
 // 🖥️ 電視投放新增
@@ -606,7 +607,13 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
     }
 
     // ✅ 新增
-    await markPlanItemDoneByActionName(widget.trainingActionMeta?.name ?? widget.action.title);
+    final patientId = AppSession.userId?.trim();
+    if (patientId != null && patientId.isNotEmpty) {
+      await markPlanItemDoneByActionName(
+        patientId: patientId,
+        actionName: widget.trainingActionMeta?.name ?? widget.action.title,
+      );
+    }
 
     final durationSeconds =
         DateTime.now().difference(_sessionStart).inSeconds;

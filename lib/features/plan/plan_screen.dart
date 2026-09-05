@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'exercise.dart';
 import 'rehab_plan.dart';
 import 'plan_repository.dart';
-import 'plan_builder_screen.dart';
+import '../account/app_session.dart';
 
 // ✅ 新增這幾行
 import '../../models/training_action.dart';
@@ -20,31 +20,68 @@ import '../../actions/body_rehab_action.dart';
 import '../training/training_preview_screen.dart';
 
 class PlanScreen extends StatefulWidget {
-  const PlanScreen({super.key});
+  final PlanRepository? repository;
+
+  const PlanScreen({super.key, this.repository});
 
   @override
   State<PlanScreen> createState() => _PlanScreenState();
 }
 
 class _PlanScreenState extends State<PlanScreen> {
+  late final PlanRepository _repository;
   RehabPlan? currentPlan;
   bool isLoading = true;
+  String? loadError;
   DateTime selectedDate = DateTime.now();
 
   @override
   void initState() {
     super.initState();
+    _repository = widget.repository ?? planRepository;
     _loadPlan(selectedDate);
   }
 
   Future<void> _loadPlan(DateTime date) async {
-    setState(() => isLoading = true);
-    final plan = await planRepository.getPlanByDate(date);
-    if (!mounted) return;
+    final patientId = AppSession.userId?.trim();
     setState(() {
-      currentPlan = plan;
-      isLoading = false;
+      isLoading = true;
+      loadError = null;
+      currentPlan = null;
     });
+    if (patientId == null || patientId.isEmpty) {
+      setState(() {
+        isLoading = false;
+        loadError = '找不到登入患者，請重新登入';
+      });
+      return;
+    }
+
+    try {
+      final plan = await _repository.getPlanByDate(
+        patientId: patientId,
+        date: date,
+      );
+      if (!mounted ||
+          AppSession.userId?.trim() != patientId ||
+          !_isSameDay(selectedDate, date)) {
+        return;
+      }
+      setState(() {
+        currentPlan = plan;
+        isLoading = false;
+      });
+    } on Object catch (error) {
+      if (!mounted ||
+          AppSession.userId?.trim() != patientId ||
+          !_isSameDay(selectedDate, date)) {
+        return;
+      }
+      setState(() {
+        isLoading = false;
+        loadError = '讀取復健計畫失敗\n$error';
+      });
+    }
   }
 
   void _onSelectDay(DateTime date) {
@@ -52,19 +89,16 @@ class _PlanScreenState extends State<PlanScreen> {
     _loadPlan(date);
   }
 
-  // ── 日期狀態判斷 ─────────────────────────────────────────
-  // 過去 → 唯讀；今天 → 可編輯 + 可訓練；未來 → 可編輯（排計畫）但不能訓練
+  // 病患在所有日期都只能查看；只有今天尚未完成的動作可以開始訓練。
   bool get _isReadOnly {
     final now = DateTime.now();
-    final sel = DateTime(selectedDate.year, selectedDate.month, selectedDate.day);
+    final sel =
+        DateTime(selectedDate.year, selectedDate.month, selectedDate.day);
     final today = DateTime(now.year, now.month, now.day);
     return sel.isBefore(today);
   }
 
   bool get _isToday => _isSameDay(selectedDate, DateTime.now());
-
-  String _planIdForDate(DateTime d) =>
-      'plan_${d.year}${d.month.toString().padLeft(2, '0')}${d.day.toString().padLeft(2, '0')}';
 
   String _planSectionTitle() {
     if (_isToday) return '今日計畫';
@@ -73,7 +107,8 @@ class _PlanScreenState extends State<PlanScreen> {
   }
 
   // 點今日計畫項目 → 導去實際辨識頁面，做完才算完成
-  Future<void> _startExercise(Exercise exercise, PlanItem item, int realIndex) async {
+  Future<void> _startExercise(
+      Exercise exercise, PlanItem item, int realIndex) async {
     final action = kTrainingActions.firstWhere(
       (a) => a.name == exercise.name,
       orElse: () => kTrainingActions.first,
@@ -88,43 +123,50 @@ class _PlanScreenState extends State<PlanScreen> {
       switch (action.type) {
         case ActionType.wipeBody:
           screen = BodyTrainingScreen(
-            action: StandingKneeRaiseAction(difficulty: diff, targetCount: difficulty.targetReps),
+            action: StandingKneeRaiseAction(
+                difficulty: diff, targetCount: difficulty.targetReps),
             trainingActionMeta: action,
             difficultyMeta: difficulty,
           );
         case ActionType.drawCircle:
           screen = BodyTrainingScreen(
-            action: DrawCircleAction(difficulty: diff, targetCount: difficulty.targetReps),
+            action: DrawCircleAction(
+                difficulty: diff, targetCount: difficulty.targetReps),
             trainingActionMeta: action,
             difficultyMeta: difficulty,
           );
         case ActionType.reach:
           screen = BodyTrainingScreen(
-            action: ReachAction(difficulty: diff, targetCount: difficulty.targetReps),
+            action: ReachAction(
+                difficulty: diff, targetCount: difficulty.targetReps),
             trainingActionMeta: action,
             difficultyMeta: difficulty,
           );
         case ActionType.raiseBothArms:
           screen = BodyTrainingScreen(
-            action: RaiseBothArmsAction(difficulty: diff, targetCount: difficulty.targetReps),
+            action: RaiseBothArmsAction(
+                difficulty: diff, targetCount: difficulty.targetReps),
             trainingActionMeta: action,
             difficultyMeta: difficulty,
           );
         case ActionType.elbowForward:
           screen = BodyTrainingScreen(
-            action: ElbowForwardAction(difficulty: diff, targetCount: difficulty.targetReps),
+            action: ElbowForwardAction(
+                difficulty: diff, targetCount: difficulty.targetReps),
             trainingActionMeta: action,
             difficultyMeta: difficulty,
           );
         case ActionType.sitToStand:
           screen = BodyTrainingScreen(
-            action: SitToStandAction(difficulty: diff, targetCount: difficulty.targetReps),
+            action: SitToStandAction(
+                difficulty: diff, targetCount: difficulty.targetReps),
             trainingActionMeta: action,
             difficultyMeta: difficulty,
           );
         case ActionType.lateralStep:
           screen = BodyTrainingScreen(
-            action: LateralStepAction(difficulty: diff, targetCount: difficulty.targetReps),
+            action: LateralStepAction(
+                difficulty: diff, targetCount: difficulty.targetReps),
             trainingActionMeta: action,
             difficultyMeta: difficulty,
           );
@@ -139,9 +181,9 @@ class _PlanScreenState extends State<PlanScreen> {
             actionType: action.type,
             actionName: action.name,
             targetScreen: screen,
-            difficultyLabel: difficulty.label,     // ← 新增
-            targetReps: difficulty.targetReps,     // ← 新增
-            description: action.description,        // ← 新增
+            difficultyLabel: difficulty.label, // ← 新增
+            targetReps: difficulty.targetReps, // ← 新增
+            description: action.description, // ← 新增
           )
         : screen;
 
@@ -163,75 +205,6 @@ class _PlanScreenState extends State<PlanScreen> {
     }
   }
 
-  // 新增計畫：先選病患類型（骨折/中風），再依類型建立
-  Future<void> _createPlan() async {
-    if (_isReadOnly) return;
-
-    final condition = await showModalBottomSheet<PatientCondition>(
-      context: context,
-      backgroundColor: Colors.white,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (ctx) => _buildConditionSheet(ctx),
-    );
-    if (condition == null) return;
-
-    final planId = _planIdForDate(selectedDate);
-
-    if (condition == PatientCondition.fracture) {
-      // 骨折 → 直接套系統標準範本
-      final template = planRepository.buildFractureTemplate(planId, selectedDate);
-      await planRepository.savePlan(template);
-      await _loadPlan(selectedDate);
-    } else {
-      // 中風 → 開空白計畫進手動安排頁，存檔才寫入（取消就不建立）
-      final emptyPlan = RehabPlan(
-        planId: planId,
-        createdBy: 'therapist',
-        date: selectedDate,
-        condition: PatientCondition.stroke,
-        items: const <PlanItem>[],
-      );
-      if (!mounted) return;
-      final updatedPlan = await Navigator.push<RehabPlan>(
-        context,
-        MaterialPageRoute(
-          builder: (_) => PlanBuilderScreen(existingPlan: emptyPlan),
-        ),
-      );
-      if (updatedPlan != null) {
-        await planRepository.savePlan(updatedPlan);
-      }
-      await _loadPlan(selectedDate);
-    }
-  }
-
-  // 骨折：套用系統固定範本
-  Future<void> _applyFractureTemplate() async {
-    if (_isReadOnly) return;
-    if (currentPlan == null) return;
-    final template = planRepository.buildFractureTemplate(currentPlan!.planId, selectedDate);
-    await planRepository.savePlan(template);
-    await _loadPlan(selectedDate);
-  }
-
-  // 中風：導去手動勾選頁面，治療師自己排
-  Future<void> _openManualBuilder() async {
-    if (_isReadOnly) return;
-    if (currentPlan == null) return;
-    final updatedPlan = await Navigator.push<RehabPlan>(
-      context,
-      MaterialPageRoute(
-        builder: (_) => PlanBuilderScreen(existingPlan: currentPlan!),
-      ),
-    );
-    if (updatedPlan != null) {
-      await planRepository.savePlan(updatedPlan);
-      await _loadPlan(selectedDate);
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -240,7 +213,7 @@ class _PlanScreenState extends State<PlanScreen> {
         bottom: false,
         child: Column(
           children: [
-            _buildTopBar(context),
+            _buildTopBar(),
             Expanded(
               child: isLoading
                   ? const Center(child: CircularProgressIndicator())
@@ -251,15 +224,17 @@ class _PlanScreenState extends State<PlanScreen> {
                         children: [
                           _buildWeekRow(),
                           const SizedBox(height: 24),
-                          _buildSectionTitle(_planSectionTitle()),
-                          const SizedBox(height: 12),
-                          _buildTodayPlan(),
-                          const SizedBox(height: 24),
-                          _buildSectionTitle('本週進度'),
-                          const SizedBox(height: 12),
-                          _buildWeekProgress(),
-                          const SizedBox(height: 24),
-                          _buildActionArea(),
+                          if (loadError != null)
+                            _buildLoadError()
+                          else ...[
+                            _buildSectionTitle(_planSectionTitle()),
+                            const SizedBox(height: 12),
+                            _buildTodayPlan(),
+                            const SizedBox(height: 24),
+                            _buildSectionTitle('本週進度'),
+                            const SizedBox(height: 12),
+                            _buildWeekProgress(),
+                          ],
                         ],
                       ),
                     ),
@@ -270,41 +245,32 @@ class _PlanScreenState extends State<PlanScreen> {
     );
   }
 
-  Widget _buildTopBar(BuildContext context) {
-    final locked = _isReadOnly;
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
-      child: Row(
-        children: [
-          const Expanded(
-            child: Text(
-              '復健計畫',
-              style: TextStyle(
-                color: Color(0xFF1A1D2E),
-                fontSize: 18,
-                fontWeight: FontWeight.w800,
-              ),
-            ),
-          ),
-          GestureDetector(
-            // 唯讀（過去）→ 鎖住；沒計畫 → 新增；有計畫 → 修改
-            onTap: locked
-                ? null
-                : (currentPlan == null ? _createPlan : _openManualBuilder),
-            child: Container(
-              width: 40, height: 40,
-              decoration: BoxDecoration(
-                color: locked ? const Color(0xFFDDE0F0) : const Color(0xFF4A65FF),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Icon(
-                locked ? Icons.lock_outline : Icons.add,
-                color: locked ? const Color(0xFF9CA3AF) : Colors.white,
-                size: 20,
-              ),
-            ),
-          ),
-        ],
+  Widget _buildTopBar() {
+    return const Padding(
+      padding: EdgeInsets.fromLTRB(20, 16, 20, 8),
+      child: Text(
+        '復健計畫',
+        style: TextStyle(
+          color: Color(0xFF1A1D2E),
+          fontSize: 18,
+          fontWeight: FontWeight.w800,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildLoadError() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFFDDE0F0)),
+      ),
+      child: Text(
+        loadError!,
+        style: const TextStyle(color: Color(0xFFE24B4A), fontSize: 13),
       ),
     );
   }
@@ -326,7 +292,7 @@ class _PlanScreenState extends State<PlanScreen> {
         children: List.generate(7, (i) {
           final thisDate = mondayOfWeek.add(Duration(days: i));
           final isSelected = _isSameDay(thisDate, selectedDate);
-          final hasPlan = [0, 2, 4].contains(i);
+          final hasPlan = isSelected && currentPlan != null;
 
           // 過去的日期：日期數字用淡色，讓使用者一眼看出是唯讀
           final dayOnly = DateTime(thisDate.year, thisDate.month, thisDate.day);
@@ -341,16 +307,21 @@ class _PlanScreenState extends State<PlanScreen> {
                 Text(
                   days[i],
                   style: TextStyle(
-                    color: isSelected ? const Color(0xFF4A65FF) : const Color(0xFF9CA3AF),
+                    color: isSelected
+                        ? const Color(0xFF4A65FF)
+                        : const Color(0xFF9CA3AF),
                     fontSize: 12,
                     fontWeight: isSelected ? FontWeight.w800 : FontWeight.w500,
                   ),
                 ),
                 const SizedBox(height: 6),
                 Container(
-                  width: 32, height: 32,
+                  width: 32,
+                  height: 32,
                   decoration: BoxDecoration(
-                    color: isSelected ? const Color(0xFF4A65FF) : Colors.transparent,
+                    color: isSelected
+                        ? const Color(0xFF4A65FF)
+                        : Colors.transparent,
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Center(
@@ -359,7 +330,9 @@ class _PlanScreenState extends State<PlanScreen> {
                       style: TextStyle(
                         color: isSelected
                             ? Colors.white
-                            : (isPast ? const Color(0xFFB5BAC6) : const Color(0xFF374151)),
+                            : (isPast
+                                ? const Color(0xFFB5BAC6)
+                                : const Color(0xFF374151)),
                         fontSize: 13,
                         fontWeight: FontWeight.w700,
                       ),
@@ -368,9 +341,12 @@ class _PlanScreenState extends State<PlanScreen> {
                 ),
                 const SizedBox(height: 4),
                 Container(
-                  width: 5, height: 5,
+                  width: 5,
+                  height: 5,
                   decoration: BoxDecoration(
-                    color: hasPlan ? const Color(0xFF4A65FF).withValues(alpha: 0.5) : Colors.transparent,
+                    color: hasPlan
+                        ? const Color(0xFF4A65FF).withValues(alpha: 0.5)
+                        : Colors.transparent,
                     shape: BoxShape.circle,
                   ),
                 ),
@@ -406,14 +382,15 @@ class _PlanScreenState extends State<PlanScreen> {
           border: Border.all(color: const Color(0xFFDDE0F0)),
         ),
         child: const Text(
-          '這一天尚無計畫',
+          '治療師尚未安排這一天的復健計畫',
           style: TextStyle(color: Color(0xFF9CA3AF), fontSize: 13),
         ),
       );
     }
 
     final canTrain = _isToday; // 只有今天能實際開始訓練
-    final sortedItems = [...currentPlan!.items]..sort((a, b) => a.order.compareTo(b.order));
+    final sortedItems = [...currentPlan!.items]
+      ..sort((a, b) => a.order.compareTo(b.order));
 
     return Column(
       children: sortedItems.map((item) {
@@ -447,9 +424,12 @@ class _PlanScreenState extends State<PlanScreen> {
         child: Row(
           children: [
             Container(
-              width: 28, height: 28,
+              width: 28,
+              height: 28,
               decoration: BoxDecoration(
-                color: item.done ? const Color(0xFF4A65FF) : const Color(0xFFF5F6FA),
+                color: item.done
+                    ? const Color(0xFF4A65FF)
+                    : const Color(0xFFF5F6FA),
                 shape: BoxShape.circle,
               ),
               child: Icon(
@@ -458,7 +438,9 @@ class _PlanScreenState extends State<PlanScreen> {
                     : (tappable ? Icons.play_arrow : Icons.remove),
                 color: item.done
                     ? Colors.white
-                    : (tappable ? const Color(0xFF4A65FF) : const Color(0xFF9CA3AF)),
+                    : (tappable
+                        ? const Color(0xFF4A65FF)
+                        : const Color(0xFF9CA3AF)),
                 size: 16,
               ),
             ),
@@ -472,7 +454,9 @@ class _PlanScreenState extends State<PlanScreen> {
                   Text(
                     exercise.name,
                     style: TextStyle(
-                      color: item.done ? const Color(0xFF9CA3AF) : const Color(0xFF1A1D2E),
+                      color: item.done
+                          ? const Color(0xFF9CA3AF)
+                          : const Color(0xFF1A1D2E),
                       fontSize: 14,
                       fontWeight: FontWeight.w700,
                       decoration: item.done ? TextDecoration.lineThrough : null,
@@ -481,7 +465,8 @@ class _PlanScreenState extends State<PlanScreen> {
                   const SizedBox(height: 2),
                   Text(
                     '${item.sets} 組 × ${item.repsPerSet} 下',
-                    style: const TextStyle(color: Color(0xFF9CA3AF), fontSize: 12),
+                    style:
+                        const TextStyle(color: Color(0xFF9CA3AF), fontSize: 12),
                   ),
                 ],
               ),
@@ -489,7 +474,8 @@ class _PlanScreenState extends State<PlanScreen> {
             // 完成 → 不用額外標示；可訓練(今天,未完成) → 箭頭；
             // 其餘(過去/未來,未完成) → 文字狀態
             if (!item.done && tappable)
-              const Icon(Icons.chevron_right, color: Color(0xFF9CA3AF), size: 18)
+              const Icon(Icons.chevron_right,
+                  color: Color(0xFF9CA3AF), size: 18)
             else if (!item.done && !tappable)
               Text(
                 _isReadOnly ? '未完成' : '尚未開始',
@@ -505,8 +491,8 @@ class _PlanScreenState extends State<PlanScreen> {
     final total = currentPlan?.items.length ?? 0;
     final done = currentPlan?.items.where((i) => i.done).length ?? 0;
     final ratio = total == 0 ? 0.0 : done / total;
-    final totalMinutes = currentPlan?.items.fold<int>(
-            0, (sum, i) => sum + findExerciseById(i.exerciseId).defaultMinutes) ??
+    final totalMinutes = currentPlan?.items.fold<int>(0,
+            (sum, i) => sum + findExerciseById(i.exerciseId).defaultMinutes) ??
         0;
 
     return Container(
@@ -542,7 +528,8 @@ class _PlanScreenState extends State<PlanScreen> {
           const SizedBox(height: 6),
           Text(
             total == 0 ? '這一天尚無計畫' : '完成 ${(ratio * 100).round()}%，繼續加油！',
-            style: TextStyle(color: Colors.white.withValues(alpha: 0.85), fontSize: 11),
+            style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.85), fontSize: 11),
           ),
         ],
       ),
@@ -553,183 +540,15 @@ class _PlanScreenState extends State<PlanScreen> {
     return Column(
       children: [
         Text(value,
-            style: const TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.w900)),
+            style: const TextStyle(
+                color: Colors.white,
+                fontSize: 22,
+                fontWeight: FontWeight.w900)),
         const SizedBox(height: 4),
-        Text(label, style: TextStyle(color: Colors.white.withValues(alpha: 0.8), fontSize: 11)),
+        Text(label,
+            style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.8), fontSize: 11)),
       ],
-    );
-  }
-
-  // ── 依日期(唯讀/新增/編輯)決定底部區塊 ─────────────────────
-  Widget _buildActionArea() {
-    // 過去 → 只給唯讀提示
-    if (_isReadOnly) return _readOnlyNotice();
-
-    // 可編輯但今天/未來這天還沒計畫 → 新增計畫
-    if (currentPlan == null) return _createPlanArea();
-
-    if (currentPlan!.condition == PatientCondition.fracture) {
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _buildSectionTitle('骨折標準範本'),
-          const SizedBox(height: 8),
-          const Text(
-            '骨折復健時程相對固定，可套用系統預設範本，之後再依需要調整。',
-            style: TextStyle(color: Color(0xFF9CA3AF), fontSize: 12),
-          ),
-          const SizedBox(height: 12),
-          SizedBox(
-            width: double.infinity,
-            child: ElevatedButton(
-              onPressed: _applyFractureTemplate,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF4A65FF),
-                padding: const EdgeInsets.symmetric(vertical: 14),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-              ),
-              child: const Text('套用標準範本', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
-            ),
-          ),
-        ],
-      );
-    } else {
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _buildSectionTitle('個別化安排'),
-          const SizedBox(height: 8),
-          const Text(
-            '中風患者個別差異大，無固定範本，請依病患實際狀況手動安排訓練動作。',
-            style: TextStyle(color: Color(0xFF9CA3AF), fontSize: 12),
-          ),
-          const SizedBox(height: 12),
-          SizedBox(
-            width: double.infinity,
-            child: OutlinedButton(
-              onPressed: _openManualBuilder,
-              style: OutlinedButton.styleFrom(
-                side: const BorderSide(color: Color(0xFF4A65FF)),
-                padding: const EdgeInsets.symmetric(vertical: 14),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-              ),
-              child: const Text('依病患狀況安排動作',
-                  style: TextStyle(color: Color(0xFF4A65FF), fontWeight: FontWeight.w700)),
-            ),
-          ),
-        ],
-      );
-    }
-  }
-
-  // 過去日期的唯讀提示
-  Widget _readOnlyNotice() {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: const Color(0xFFF0F1F5),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: const Color(0xFFDDE0F0)),
-      ),
-      child: const Row(
-        children: [
-          Icon(Icons.lock_outline, size: 18, color: Color(0xFF9CA3AF)),
-          SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              '這是過去的紀錄，僅供查看，無法修改。',
-              style: TextStyle(color: Color(0xFF9CA3AF), fontSize: 13),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // 空白日期(可編輯) → 新增計畫入口
-  Widget _createPlanArea() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _buildSectionTitle('新增計畫'),
-        const SizedBox(height: 8),
-        const Text(
-          '這一天還沒有計畫，選擇病患類型後即可建立。',
-          style: TextStyle(color: Color(0xFF9CA3AF), fontSize: 12),
-        ),
-        const SizedBox(height: 12),
-        SizedBox(
-          width: double.infinity,
-          child: ElevatedButton(
-            onPressed: _createPlan,
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF4A65FF),
-              padding: const EdgeInsets.symmetric(vertical: 14),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-            ),
-            child: const Text('新增計畫', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
-          ),
-        ),
-      ],
-    );
-  }
-
-  // 新增計畫時選病患類型的底部彈窗
-  Widget _buildConditionSheet(BuildContext ctx) {
-    return SafeArea(
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text('新增計畫',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: Color(0xFF1A1D2E))),
-            const SizedBox(height: 4),
-            Text('${selectedDate.month}/${selectedDate.day} · 選擇病患類型',
-                style: const TextStyle(fontSize: 12, color: Color(0xFF9CA3AF))),
-            const SizedBox(height: 16),
-            _conditionOption(ctx, PatientCondition.fracture, '🦴', '骨折', '套用系統標準範本，之後可微調'),
-            const SizedBox(height: 10),
-            _conditionOption(ctx, PatientCondition.stroke, '🧠', '中風', '無固定範本，手動安排訓練動作'),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _conditionOption(
-      BuildContext ctx, PatientCondition condition, String emoji, String title, String subtitle) {
-    return GestureDetector(
-      onTap: () => Navigator.pop(ctx, condition),
-      child: Container(
-        padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: const Color(0xFFDDE0F0)),
-        ),
-        child: Row(
-          children: [
-            Text(emoji, style: const TextStyle(fontSize: 24)),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(title,
-                      style: const TextStyle(
-                          fontSize: 15, fontWeight: FontWeight.w800, color: Color(0xFF1A1D2E))),
-                  const SizedBox(height: 2),
-                  Text(subtitle, style: const TextStyle(fontSize: 12, color: Color(0xFF9CA3AF))),
-                ],
-              ),
-            ),
-            const Icon(Icons.chevron_right, color: Color(0xFF9CA3AF), size: 20),
-          ],
-        ),
-      ),
     );
   }
 }
