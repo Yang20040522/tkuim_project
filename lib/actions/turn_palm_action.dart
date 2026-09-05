@@ -25,6 +25,10 @@
 //    現在改成「只在剛進入歪斜狀態的那一刻播一次」，角度重新合格後
 //    才會重置旗標、允許下次再播放。onFeedbackChanged 這種純文字
 //    更新维持不變（不呼叫原生 API，成本低很多）。
+// 6. 🧹 清掉沒有被讀取、純粹死掉的 `_isCountingDown` 欄位（原本只有
+//    賦值、沒有任何地方拿它做判斷，實際邏輯都是靠 `_isCurrentlyStable`
+//    跟 Timer 裡的 `elapsedMs` 在跑）。行為完全不變，只是去掉死程式碼
+//    跟對應的 `unused_field` 警告。
 
 import 'dart:async';
 import '../services/mediapipe_service.dart';
@@ -56,7 +60,6 @@ class TurnPalmAction extends BaseRehabAction implements LevelUpControllable {
   bool _hasSpokenTilted = false;
 
   // 倒數
-  bool _isCountingDown = false;
   bool _countdownDone = false;
   int _countdownSeconds = 5;
   Timer? _countdownTimer;
@@ -80,7 +83,7 @@ class TurnPalmAction extends BaseRehabAction implements LevelUpControllable {
   DateTime _sessionStartTime = DateTime.now();
 
   // 倒數轉場
-// ignore: unused_field
+  // ignore: unused_field
   bool _isTransitioning = false;
   DateTime _transitionStartTime = DateTime.now();
   int _lastCountdownSec = -1;
@@ -208,7 +211,6 @@ class TurnPalmAction extends BaseRehabAction implements LevelUpControllable {
 
   void _startCountdown() {
     _countdownTimer?.cancel();
-    _isCountingDown = true;
     _countdownSeconds = 5;
 
     callback.onCountdownChanged(
@@ -235,7 +237,6 @@ class TurnPalmAction extends BaseRehabAction implements LevelUpControllable {
 
       if (elapsedMs >= 5000) {
         timer.cancel();
-        _isCountingDown = false;
         _isCurrentlyStable = false;
         _badStartTime = null;
 
@@ -251,7 +252,6 @@ class TurnPalmAction extends BaseRehabAction implements LevelUpControllable {
 
   void _resetCountdown() {
     _countdownTimer?.cancel();
-    _isCountingDown = false;
     _countdownSeconds = 5;
     _badStartTime = null;
     // 🆕 重置時也重置語音旗標，避免下一輪卡在「已播過」的狀態
