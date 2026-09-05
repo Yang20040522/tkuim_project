@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../models/assignable_exercise.dart';
 import '../../models/custom_rehab_exercise.dart';
+import '../pose_measurement/pose_training_page.dart';
 import 'assigned_default_exercise_page.dart';
 import 'custom_exercise_playback_page.dart';
 import 'repositories/unified_exercise_assignment_repository.dart';
@@ -18,16 +19,20 @@ class PatientAssignedExerciseListPage extends StatefulWidget {
   final UnifiedExerciseAssignmentRepository? repository;
   final AssignedDefaultExerciseBuilder defaultExerciseBuilder;
   final AssignedCustomExerciseBuilder customExerciseBuilder;
+  final AssignedDefaultExerciseBuilder poseMeasurementBuilder;
 
   PatientAssignedExerciseListPage({
     super.key,
     this.repository,
     AssignedDefaultExerciseBuilder? defaultExerciseBuilder,
     AssignedCustomExerciseBuilder? customExerciseBuilder,
+    AssignedDefaultExerciseBuilder? poseMeasurementBuilder,
   })  : defaultExerciseBuilder = defaultExerciseBuilder ??
             ((exercise) => AssignedDefaultExercisePage(exercise: exercise)),
         customExerciseBuilder = customExerciseBuilder ??
-            ((exercise) => CustomExercisePlaybackPage(exercise: exercise));
+            ((exercise) => CustomExercisePlaybackPage(exercise: exercise)),
+        poseMeasurementBuilder = poseMeasurementBuilder ??
+            ((exercise) => PoseTrainingPage(exercise: exercise));
 
   @override
   State<PatientAssignedExerciseListPage> createState() =>
@@ -39,6 +44,7 @@ class _PatientAssignedExerciseListPageState
   late final UnifiedExerciseAssignmentRepository _repository;
   late Future<List<AssignableExercise>> _exercises;
   String? _openingExerciseKey;
+  bool _openingPosePage = false;
 
   @override
   void initState() {
@@ -54,7 +60,7 @@ class _PatientAssignedExerciseListPageState
   void _retry() => setState(_reload);
 
   Future<void> _openExercise(AssignableExercise exercise) async {
-    if (_openingExerciseKey != null) return;
+    if (_openingExerciseKey != null || _openingPosePage) return;
     if (exercise.type == AssignableExerciseType.defaultExercise) {
       await Navigator.of(context).push(
         MaterialPageRoute(
@@ -84,6 +90,20 @@ class _PatientAssignedExerciseListPageState
       );
     } finally {
       if (mounted) setState(() => _openingExerciseKey = null);
+    }
+  }
+
+  Future<void> _openPoseMeasurement(AssignableExercise exercise) async {
+    if (_openingExerciseKey != null || _openingPosePage) return;
+    setState(() => _openingPosePage = true);
+    try {
+      await Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => widget.poseMeasurementBuilder(exercise),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _openingPosePage = false);
     }
   }
 
@@ -135,55 +155,75 @@ class _PatientAssignedExerciseListPageState
       key: Key('patient-assigned-exercise-${exercise.identityKey}'),
       margin: EdgeInsets.zero,
       color: Colors.white,
-      child: ListTile(
-        contentPadding: const EdgeInsets.all(16),
-        leading: CircleAvatar(
-          backgroundColor:
-              isDefault ? const Color(0xFFE8F5E9) : const Color(0xFFEFF1FF),
-          child: Icon(
-            isDefault ? Icons.fitness_center : Icons.accessibility_new,
-            color:
-                isDefault ? const Color(0xFF2E7D32) : const Color(0xFF4A65FF),
-          ),
-        ),
-        title: Row(
-          children: [
-            Expanded(
-              child: Text(
-                exercise.name,
-                style: const TextStyle(fontWeight: FontWeight.w800),
-              ),
-            ),
-            Text(
-              isDefault ? '預設' : '自訂',
-              style: TextStyle(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          ListTile(
+            contentPadding: const EdgeInsets.all(16),
+            leading: CircleAvatar(
+              backgroundColor:
+                  isDefault ? const Color(0xFFE8F5E9) : const Color(0xFFEFF1FF),
+              child: Icon(
+                isDefault ? Icons.fitness_center : Icons.accessibility_new,
                 color: isDefault
                     ? const Color(0xFF2E7D32)
                     : const Color(0xFF4A65FF),
-                fontSize: 11,
-                fontWeight: FontWeight.w800,
               ),
             ),
-          ],
-        ),
-        subtitle: exercise.description.isEmpty
-            ? null
-            : Padding(
-                padding: const EdgeInsets.only(top: 5),
-                child: Text(
-                  exercise.description,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
+            title: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    exercise.name,
+                    style: const TextStyle(fontWeight: FontWeight.w800),
+                  ),
                 ),
+                Text(
+                  isDefault ? '預設' : '自訂',
+                  style: TextStyle(
+                    color: isDefault
+                        ? const Color(0xFF2E7D32)
+                        : const Color(0xFF4A65FF),
+                    fontSize: 11,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ],
+            ),
+            subtitle: exercise.description.isEmpty
+                ? null
+                : Padding(
+                    padding: const EdgeInsets.only(top: 5),
+                    child: Text(
+                      exercise.description,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+            trailing: opening
+                ? const SizedBox(
+                    width: 22,
+                    height: 22,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.arrow_forward_ios, size: 15),
+            onTap: opening ? null : () => _openExercise(exercise),
+          ),
+          Align(
+            alignment: Alignment.centerRight,
+            child: Padding(
+              padding: const EdgeInsets.only(right: 12, bottom: 8),
+              child: TextButton.icon(
+                key: Key('patient-pose-measurement-${exercise.identityKey}'),
+                onPressed: _openingExerciseKey != null || _openingPosePage
+                    ? null
+                    : () => _openPoseMeasurement(exercise),
+                icon: const Icon(Icons.accessibility_new),
+                label: const Text('姿勢量測'),
               ),
-        trailing: opening
-            ? const SizedBox(
-                width: 22,
-                height: 22,
-                child: CircularProgressIndicator(strokeWidth: 2),
-              )
-            : const Icon(Icons.arrow_forward_ios, size: 15),
-        onTap: opening ? null : () => _openExercise(exercise),
+            ),
+          ),
+        ],
       ),
     );
   }

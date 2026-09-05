@@ -16,6 +16,7 @@ import io.flutter.plugin.common.MethodChannel
 import io.flutter.plugin.common.StandardMessageCodec
 import io.flutter.plugin.platform.PlatformViewFactory
 import io.flutter.plugin.platform.PlatformView
+import com.example.flutter_body.pose.PoseCameraPreviewFactory
 
 class MainActivity : FlutterActivity() {
 
@@ -38,6 +39,11 @@ class MainActivity : FlutterActivity() {
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+
+        flutterEngine.platformViewsController.registry.registerViewFactory(
+            "com.rehabassist/pose_measurement/preview",
+            PoseCameraPreviewFactory(this, flutterEngine.dartExecutor.binaryMessenger)
+        )
 
         flutterEngine.platformViewsController.registry.registerViewFactory(
             "com.rehabassist/camera_preview",
