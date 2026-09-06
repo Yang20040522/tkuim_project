@@ -101,10 +101,19 @@ class LocalUserAvatarRepository implements UserAvatarRepository {
     await avatarDirectory.create(recursive: true);
     final encodedOwner =
         base64Url.encode(utf8.encode(ownerKey)).replaceAll('=', '');
-    final destination = File(
+    final extension = _safeExtension(source.path);
+    var uniqueSuffix = DateTime.now().microsecondsSinceEpoch;
+    var destination = File(
       '${avatarDirectory.path}${Platform.pathSeparator}'
-      'avatar_$encodedOwner${_safeExtension(source.path)}',
+      'avatar_${encodedOwner}_$uniqueSuffix$extension',
     );
+    while (await destination.exists()) {
+      uniqueSuffix++;
+      destination = File(
+        '${avatarDirectory.path}${Platform.pathSeparator}'
+        'avatar_${encodedOwner}_$uniqueSuffix$extension',
+      );
+    }
     if (source.absolute.path != destination.absolute.path) {
       await source.copy(destination.path);
     }

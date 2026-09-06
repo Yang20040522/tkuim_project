@@ -1,7 +1,10 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import 'auth_service.dart';
 import 'google_auth_service.dart';
+import 'remote_user_avatar_repository.dart';
 import 'user_avatar_repository.dart';
 
 typedef PatientGoogleAuthenticated = Future<void> Function(LoginResult result);
@@ -13,12 +16,14 @@ class PatientGoogleAuthButton extends StatefulWidget {
     required this.onAuthenticated,
     this.coordinator,
     this.avatarRepository,
+    this.remoteAvatarRepository,
   });
 
   final String label;
   final PatientGoogleAuthenticated onAuthenticated;
   final PatientGoogleAuthCoordinator? coordinator;
   final UserAvatarRepository? avatarRepository;
+  final RemoteUserAvatarRepository? remoteAvatarRepository;
 
   @override
   State<PatientGoogleAuthButton> createState() =>
@@ -28,6 +33,7 @@ class PatientGoogleAuthButton extends StatefulWidget {
 class _PatientGoogleAuthButtonState extends State<PatientGoogleAuthButton> {
   late final PatientGoogleAuthCoordinator _coordinator;
   late final UserAvatarRepository _avatarRepository;
+  late final RemoteUserAvatarRepository _remoteAvatarRepository;
   bool _isLoading = false;
 
   @override
@@ -35,6 +41,8 @@ class _PatientGoogleAuthButtonState extends State<PatientGoogleAuthButton> {
     super.initState();
     _coordinator = widget.coordinator ?? PatientGoogleAuthCoordinator();
     _avatarRepository = widget.avatarRepository ?? LocalUserAvatarRepository();
+    _remoteAvatarRepository =
+        widget.remoteAvatarRepository ?? RestRemoteUserAvatarRepository();
   }
 
   Future<void> _authenticate() async {
@@ -47,11 +55,13 @@ class _PatientGoogleAuthButtonState extends State<PatientGoogleAuthButton> {
     if (result.status == PatientGoogleAuthStatus.success) {
       await _rememberGooglePhoto(result);
       await widget.onAuthenticated(result.loginResult!);
+      unawaited(_syncGooglePhoto(result.googlePhotoUrl));
     } else if (result.status == PatientGoogleAuthStatus.linkRequired) {
       final linkedResult = await _showLinkDialog();
       if (linkedResult != null && mounted) {
         await _rememberGooglePhoto(linkedResult);
         await widget.onAuthenticated(linkedResult.loginResult!);
+        unawaited(_syncGooglePhoto(linkedResult.googlePhotoUrl));
       }
     } else {
       _showMessage(result.message ?? 'Google 登入失敗，請稍後再試');
@@ -80,6 +90,16 @@ class _PatientGoogleAuthButtonState extends State<PatientGoogleAuthButton> {
       );
     } catch (_) {
       // Avatar persistence must never block an otherwise valid login.
+    }
+  }
+
+  Future<void> _syncGooglePhoto(String? photoUrl) async {
+    final normalizedUrl = photoUrl?.trim();
+    if (normalizedUrl == null || normalizedUrl.isEmpty) return;
+    try {
+      await _remoteAvatarRepository.syncGoogleAvatar(normalizedUrl);
+    } catch (_) {
+      // Cloud avatar sync is best-effort and must never block Google login.
     }
   }
 

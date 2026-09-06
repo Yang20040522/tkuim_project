@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../../core/ui/app_colors.dart';
@@ -10,6 +12,7 @@ import 'api_service.dart';
 import 'app_session.dart';
 import 'google_auth_service.dart';
 import 'role_select_screen.dart';
+import 'remote_user_avatar_repository.dart';
 import 'user_avatar_repository.dart';
 import 'user_role.dart';
 
@@ -19,11 +22,13 @@ class AccountInfoScreen extends StatefulWidget {
     this.accountService,
     this.googleCredentialProvider,
     this.avatarRepository,
+    this.remoteAvatarRepository,
   });
 
   final AccountProfileService? accountService;
   final PatientGoogleCredentialProvider? googleCredentialProvider;
   final UserAvatarRepository? avatarRepository;
+  final RemoteUserAvatarRepository? remoteAvatarRepository;
 
   @override
   State<AccountInfoScreen> createState() => _AccountInfoScreenState();
@@ -33,6 +38,7 @@ class _AccountInfoScreenState extends State<AccountInfoScreen> {
   late final AccountProfileService _service;
   late final PatientGoogleCredentialProvider _googleCredentialProvider;
   late final UserAvatarRepository _avatarRepository;
+  late final RemoteUserAvatarRepository _remoteAvatarRepository;
   final _clientService = SocketClientService();
 
   bool _loading = true;
@@ -50,6 +56,8 @@ class _AccountInfoScreenState extends State<AccountInfoScreen> {
     _googleCredentialProvider =
         widget.googleCredentialProvider ?? GoogleSignInCredentialProvider();
     _avatarRepository = widget.avatarRepository ?? LocalUserAvatarRepository();
+    _remoteAvatarRepository =
+        widget.remoteAvatarRepository ?? RestRemoteUserAvatarRepository();
     _load();
   }
 
@@ -367,11 +375,23 @@ class _AccountInfoScreenState extends State<AccountInfoScreen> {
         friendCode: result.friendCode,
         customExerciseToken: result.customExerciseToken,
       );
+      final googlePhotoUrl = credential.photoUrl?.trim();
+      if (googlePhotoUrl != null && googlePhotoUrl.isNotEmpty) {
+        unawaited(_syncGoogleAvatar(googlePhotoUrl));
+      }
       final refreshed = await _service.getAccountInfo();
       if (!mounted) return;
       setState(() => _account = refreshed);
       _showMessage('Google 帳號已綁定');
     });
+  }
+
+  Future<void> _syncGoogleAvatar(String photoUrl) async {
+    try {
+      await _remoteAvatarRepository.syncGoogleAvatar(photoUrl);
+    } catch (_) {
+      // Account linking stays successful when optional avatar sync fails.
+    }
   }
 
   Future<void> _deleteAccount() async {

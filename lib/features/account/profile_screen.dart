@@ -10,15 +10,18 @@ import '../notification/notification_settings_screen.dart';
 import 'app_session.dart';
 import 'role_select_screen.dart';
 import 'account_info_screen.dart';
+import 'remote_user_avatar_repository.dart';
 import 'user_avatar_repository.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({
     super.key,
     this.avatarRepository,
+    this.remoteAvatarRepository,
   });
 
   final UserAvatarRepository? avatarRepository;
+  final RemoteUserAvatarRepository? remoteAvatarRepository;
 
   @override
   State<ProfileScreen> createState() => _ProfileScreenState();
@@ -27,6 +30,7 @@ class ProfileScreen extends StatefulWidget {
 class _ProfileScreenState extends State<ProfileScreen> {
   final HistoryService _historyService = HistoryService();
   late final UserAvatarRepository _avatarRepository;
+  late final RemoteUserAvatarRepository _remoteAvatarRepository;
 
   String _userName = '使用者';
   String _userPhone = '尚未設定';
@@ -41,6 +45,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
   void initState() {
     super.initState();
     _avatarRepository = widget.avatarRepository ?? LocalUserAvatarRepository();
+    _remoteAvatarRepository =
+        widget.remoteAvatarRepository ?? RestRemoteUserAvatarRepository();
     if (AppSession.name != null && AppSession.name!.isNotEmpty) {
       _userName = AppSession.name!;
     }
@@ -75,6 +81,16 @@ class _ProfileScreenState extends State<ProfileScreen> {
       final path = await _avatarRepository.pickAndSaveCustomAvatar(ownerKey);
       if (!mounted || path == null) return;
       setState(() => _customAvatarPath = path);
+      try {
+        await _remoteAvatarRepository.uploadCurrentUserAvatar(path);
+      } catch (_) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('頭像已儲存在本機，但雲端同步失敗，請稍後再試'),
+          ),
+        );
+      }
     } catch (_) {
       if (mounted) _showAvatarError();
     }
