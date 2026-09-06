@@ -20,7 +20,8 @@ class ChatApiException implements Exception {
   String toString() => message;
 }
 
-/// REST + short polling implementation of the human-chat abstraction.
+/// REST implementation refreshed on subscription and explicit user/lifecycle
+/// events. It intentionally has no continuous polling timer.
 class RestChatBackend implements ChatBackend {
   RestChatBackend({
     String baseUrl = ApiConfig.baseUrl,
@@ -54,11 +55,13 @@ class RestChatBackend implements ChatBackend {
   final Duration messagePollInterval;
   final Duration unreadPollInterval;
 
-  final Map<String, _PollingChannel<List<RemoteConversation>>>
+  // Interval values remain source-compatible with existing construction sites,
+  // but no channel schedules a periodic timer.
+  final Map<String, _RefreshChannel<List<RemoteConversation>>>
       _conversationChannels = {};
-  final Map<String, _PollingChannel<List<RemoteChatMessage>>> _messageChannels =
+  final Map<String, _RefreshChannel<List<RemoteChatMessage>>> _messageChannels =
       {};
-  final Map<String, _PollingChannel<List<UnreadCount>>> _unreadChannels = {};
+  final Map<String, _RefreshChannel<List<UnreadCount>>> _unreadChannels = {};
   bool _disposed = false;
 
   @override
@@ -101,8 +104,7 @@ class RestChatBackend implements ChatBackend {
     return _conversationChannels
         .putIfAbsent(
           myUserId,
-          () => _PollingChannel(
-            interval: conversationPollInterval,
+          () => _RefreshChannel(
             fetch: () => _fetchConversations(myUserId),
           ),
         )
@@ -115,8 +117,7 @@ class RestChatBackend implements ChatBackend {
     return _messageChannels
         .putIfAbsent(
           conversationId,
-          () => _PollingChannel(
-            interval: messagePollInterval,
+          () => _RefreshChannel(
             fetch: () => _fetchMessages(conversationId),
           ),
         )
@@ -169,8 +170,7 @@ class RestChatBackend implements ChatBackend {
     return _unreadChannels
         .putIfAbsent(
           myUserId,
-          () => _PollingChannel(
-            interval: unreadPollInterval,
+          () => _RefreshChannel(
             fetch: () => _fetchUnreadCounts(myUserId),
           ),
         )
@@ -347,21 +347,15 @@ class RestChatBackend implements ChatBackend {
   }
 }
 
-class _PollingChannel<T> {
-  _PollingChannel({
-    required this.interval,
-    required this.fetch,
-  }) {
+class _RefreshChannel<T> {
+  _RefreshChannel({required this.fetch}) {
     _controller = StreamController<T>.broadcast(
       onListen: _start,
-      onCancel: _stop,
     );
   }
 
-  final Duration interval;
   final Future<T> Function() fetch;
   late final StreamController<T> _controller;
-  Timer? _timer;
   bool _fetching = false;
   bool _closed = false;
 
@@ -370,12 +364,6 @@ class _PollingChannel<T> {
   void _start() {
     if (_closed) return;
     refresh();
-    _timer ??= Timer.periodic(interval, (_) => refresh());
-  }
-
-  void _stop() {
-    _timer?.cancel();
-    _timer = null;
   }
 
   void refresh() {
@@ -397,7 +385,6 @@ class _PollingChannel<T> {
   Future<void> close() async {
     if (_closed) return;
     _closed = true;
-    _stop();
     await _controller.close();
   }
 }

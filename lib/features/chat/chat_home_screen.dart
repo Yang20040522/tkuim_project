@@ -37,7 +37,8 @@ class ChatHomeScreen extends StatefulWidget {
   State<ChatHomeScreen> createState() => _ChatHomeScreenState();
 }
 
-class _ChatHomeScreenState extends State<ChatHomeScreen> {
+class _ChatHomeScreenState extends State<ChatHomeScreen>
+    with WidgetsBindingObserver {
   late final ChatBackend _backend;
   StreamSubscription<List<RemoteConversation>>? _conversationSubscription;
   StreamSubscription<List<UnreadCount>>? _unreadSubscription;
@@ -46,6 +47,7 @@ class _ChatHomeScreenState extends State<ChatHomeScreen> {
   List<RemoteConversation> _conversations = const [];
   Map<String, int> _unreadByConversation = const {};
   bool _loadingContacts = true;
+  bool _appIsActive = true;
   String? _error;
   String? _openingContactId;
 
@@ -67,6 +69,7 @@ class _ChatHomeScreenState extends State<ChatHomeScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _backend = widget.backend ?? RestChatBackend();
     final userId = _myUserId;
     if (userId == null) {
@@ -109,6 +112,18 @@ class _ChatHomeScreenState extends State<ChatHomeScreen> {
   Future<void> _refreshAll() async {
     _backend.refresh();
     await _loadContacts();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      if (!_appIsActive && (ModalRoute.of(context)?.isCurrent ?? true)) {
+        _appIsActive = true;
+        unawaited(_refreshAll());
+      }
+      return;
+    }
+    _appIsActive = false;
   }
 
   Future<void> _openFriendManagement() async {
@@ -170,6 +185,7 @@ class _ChatHomeScreenState extends State<ChatHomeScreen> {
           ),
         ),
       );
+      if (mounted) await _refreshAll();
     } on Object catch (error) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -184,6 +200,7 @@ class _ChatHomeScreenState extends State<ChatHomeScreen> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     unawaited(_conversationSubscription?.cancel());
     unawaited(_unreadSubscription?.cancel());
     _backend.dispose();

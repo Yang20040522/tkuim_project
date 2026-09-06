@@ -69,7 +69,7 @@ void main() {
   });
 
   testWidgets(
-      'read receipt only appears for my messages and updates by polling',
+      'read receipt only appears for my messages and updates after refresh',
       (tester) async {
     final backend = FakeChatBackend();
     await tester.pumpWidget(
@@ -179,6 +179,49 @@ void main() {
     backend.dispose();
   });
 
+  testWidgets('RemoteChat manual and lifecycle refresh never duplicate',
+      (tester) async {
+    final backend = FakeChatBackend();
+    await tester.pumpWidget(
+      MaterialApp(
+        home: RemoteChatScreen(
+          backend: backend,
+          conversationId: '123',
+          otherUserId: '25',
+          otherUserName: '病友 B',
+          conversationType: ConversationType.peer,
+        ),
+      ),
+    );
+    await tester.pump();
+
+    await tester.tap(find.byKey(const ValueKey('remote-chat-refresh')));
+    await tester.pump();
+    expect(backend.refreshCalls, 1);
+
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.hidden);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+    await tester.pump();
+    expect(backend.refreshCalls, 1);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.hidden);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    await tester.pump();
+    expect(backend.refreshCalls, 2);
+
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    await tester.pump();
+    expect(backend.refreshCalls, 2);
+
+    await tester.pumpWidget(const SizedBox());
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    await tester.pump();
+    expect(backend.refreshCalls, 2);
+    backend.dispose();
+  });
+
   testWidgets('ChatHome renders backend contacts instead of mock contacts',
       (tester) async {
     final backend = FakeChatBackend(
@@ -199,6 +242,29 @@ void main() {
 
     expect(find.text('真實好友'), findsOneWidget);
     expect(backend.contactsCalls, 1);
+  });
+
+  testWidgets('ChatHome refreshes once after app resume', (tester) async {
+    final backend = FakeChatBackend();
+    await tester.pumpWidget(
+      MaterialApp(home: ChatHomeScreen(backend: backend)),
+    );
+    await tester.pump();
+
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+    await tester.pump();
+    expect(backend.refreshCalls, 0);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    await tester.pump();
+    expect(backend.refreshCalls, 1);
+    expect(backend.contactsCalls, 2);
+
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    await tester.pump();
+    expect(backend.refreshCalls, 1);
+    expect(backend.contactsCalls, 2);
+    await tester.pumpWidget(const SizedBox());
+    backend.dispose();
   });
 
   testWidgets('ChatHome does not call backend without AppSession user id',

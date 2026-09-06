@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -67,7 +66,7 @@ void main() {
     backend.dispose();
   });
 
-  test('message polling maps message ids and sender ids', () async {
+  test('initial message refresh maps message ids and sender ids', () async {
     final backend = _backend(
       MockClient((request) async {
         expect(request.url.path, '/api/chat/conversations/123/messages');
@@ -92,7 +91,7 @@ void main() {
     backend.dispose();
   });
 
-  test('unread polling maps numeric values', () async {
+  test('initial unread refresh maps numeric values', () async {
     final backend = _backend(
       MockClient((request) async {
         expect(request.url.path, '/api/chat/unread-counts');
@@ -136,22 +135,13 @@ void main() {
     backend.dispose();
   });
 
-  test('slow polling never overlaps the same request', () async {
-    var activeRequests = 0;
-    var maxActiveRequests = 0;
+  test('chat streams fetch once and never refresh periodically', () async {
     var requestCount = 0;
-    final firstResponse = Completer<http.Response>();
     final backend = RestChatBackend(
       baseUrl: 'https://example.test',
       httpClient: MockClient((request) async {
         requestCount++;
-        activeRequests++;
-        if (activeRequests > maxActiveRequests) {
-          maxActiveRequests = activeRequests;
-        }
-        final response = await firstResponse.future;
-        activeRequests--;
-        return response;
+        return _jsonResponse(200, []);
       }),
       userIdProvider: () => '15',
       identityTokenProvider: () => 'signed-token',
@@ -161,11 +151,14 @@ void main() {
 
     await Future<void>.delayed(const Duration(milliseconds: 1150));
     expect(requestCount, 1);
-    expect(maxActiveRequests, 1);
 
-    firstResponse.complete(_jsonResponse(200, []));
-    await Future<void>.delayed(Duration.zero);
+    backend.refresh();
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+    expect(requestCount, 2);
+
     await subscription.cancel();
+    await Future<void>.delayed(const Duration(milliseconds: 1050));
+    expect(requestCount, 2);
     backend.dispose();
   });
 }

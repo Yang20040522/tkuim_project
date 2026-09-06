@@ -26,7 +26,8 @@ class RemoteChatScreen extends StatefulWidget {
   State<RemoteChatScreen> createState() => _RemoteChatScreenState();
 }
 
-class _RemoteChatScreenState extends State<RemoteChatScreen> {
+class _RemoteChatScreenState extends State<RemoteChatScreen>
+    with WidgetsBindingObserver {
   final TextEditingController _textController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
   StreamSubscription<List<RemoteChatMessage>>? _messageSubscription;
@@ -35,6 +36,7 @@ class _RemoteChatScreenState extends State<RemoteChatScreen> {
   bool _loading = true;
   bool _sending = false;
   bool _markingRead = false;
+  bool _appIsActive = true;
   String? _error;
 
   String? get _myUserId {
@@ -45,6 +47,7 @@ class _RemoteChatScreenState extends State<RemoteChatScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     final userId = _myUserId;
     if (userId == null) {
       _loading = false;
@@ -95,10 +98,28 @@ class _RemoteChatScreenState extends State<RemoteChatScreen> {
         myUserId: userId,
       );
     } on Object {
-      // Polling remains active; a later incoming update retries the read marker.
+      // A later explicit, lifecycle, or post-send refresh can retry this.
     } finally {
       _markingRead = false;
     }
+  }
+
+  void _refreshMessages() {
+    if (_myUserId == null) return;
+    widget.backend.refresh();
+    unawaited(_markAsRead());
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      if (!_appIsActive && (ModalRoute.of(context)?.isCurrent ?? true)) {
+        _appIsActive = true;
+        _refreshMessages();
+      }
+      return;
+    }
+    _appIsActive = false;
   }
 
   Future<void> _send() async {
@@ -139,6 +160,7 @@ class _RemoteChatScreenState extends State<RemoteChatScreen> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     unawaited(_messageSubscription?.cancel());
     _textController.dispose();
     _scrollController.dispose();
@@ -162,6 +184,14 @@ class _RemoteChatScreenState extends State<RemoteChatScreen> {
             ),
           ],
         ),
+        actions: [
+          IconButton(
+            key: const ValueKey('remote-chat-refresh'),
+            tooltip: '重新整理訊息',
+            onPressed: _myUserId == null ? null : _refreshMessages,
+            icon: const Icon(Icons.refresh_rounded),
+          ),
+        ],
       ),
       body: Column(
         children: [
