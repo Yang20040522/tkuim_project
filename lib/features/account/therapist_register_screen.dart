@@ -1,8 +1,6 @@
 // lib/features/account/therapist_register_screen.dart
 //
-// 治療端專用註冊頁(空殼,尚未接後端)。
-// UI 比照病人端 register_screen.dart,但呼叫 TherapistAccountService
-// (本機儲存),完全獨立於病人端帳號系統。
+// 治療端專用註冊頁。角色由後端在驗證治療師註冊碼後固定設定。
 
 import 'package:flutter/material.dart';
 
@@ -10,11 +8,13 @@ import '../../core/ui/app_colors.dart';
 
 import 'app_session.dart';
 import 'home_router.dart';
-import 'therapist_account_service.dart';
+import 'therapist_registration_service.dart';
 import 'user_role.dart';
 
 class TherapistRegisterScreen extends StatefulWidget {
-  const TherapistRegisterScreen({super.key});
+  const TherapistRegisterScreen({super.key, this.gateway});
+
+  final TherapistRegistrationGateway? gateway;
 
   @override
   State<TherapistRegisterScreen> createState() =>
@@ -27,11 +27,19 @@ class _TherapistRegisterScreenState extends State<TherapistRegisterScreen> {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   final _confirmPasswordController = TextEditingController();
-  final _service = TherapistAccountService();
+  final _inviteCodeController = TextEditingController();
+  late final TherapistRegistrationGateway _gateway;
 
   bool _obscurePassword = true;
   bool _obscureConfirmPassword = true;
+  bool _obscureInviteCode = true;
   bool _isLoading = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _gateway = widget.gateway ?? const TherapistRegistrationService();
+  }
 
   @override
   void dispose() {
@@ -39,6 +47,7 @@ class _TherapistRegisterScreenState extends State<TherapistRegisterScreen> {
     _emailController.dispose();
     _passwordController.dispose();
     _confirmPasswordController.dispose();
+    _inviteCodeController.dispose();
     super.dispose();
   }
 
@@ -64,29 +73,45 @@ class _TherapistRegisterScreenState extends State<TherapistRegisterScreen> {
     return null;
   }
 
+  String? _validateInviteCode(String? value) =>
+      value == null || value.isEmpty ? '請輸入治療師註冊碼' : null;
+
   Future<void> _handleRegister() async {
     if (!_formKey.currentState!.validate()) return;
     setState(() => _isLoading = true);
 
-    final error = await _service.register(
+    final result = await _gateway.register(
       name: _nameController.text.trim(),
       email: _emailController.text.trim(),
       password: _passwordController.text,
+      inviteCode: _inviteCodeController.text,
     );
 
     if (!mounted) return;
     setState(() => _isLoading = false);
 
-    if (error != null) {
-      _showError(error);
+    if (!result.success) {
+      _showError(result.message ?? '治療師註冊資訊無效');
+      return;
+    }
+    if (result.backendRole?.toUpperCase() != 'THERAPIST') {
+      _showError('治療師註冊資訊無效');
+      return;
+    }
+    final token = result.customExerciseToken?.trim();
+    if (token == null || token.isEmpty) {
+      _showError('伺服器登入資料不完整，請稍後再試');
       return;
     }
 
     await AppSession.save(
       role: UserRole.therapist,
-      userId: 'local-${_emailController.text.trim().hashCode}',
-      name: _nameController.text.trim(),
-      email: _emailController.text.trim(),
+      userId: result.userId,
+      name: result.name,
+      email: result.email,
+      accountId: result.accountId,
+      bindingCode: result.bindingCode,
+      customExerciseToken: token,
     );
 
     if (!mounted) return;
@@ -138,7 +163,7 @@ class _TherapistRegisterScreenState extends State<TherapistRegisterScreen> {
                 ),
                 const SizedBox(height: 8),
                 const Text(
-                  '目前為本機測試帳號,尚未串接雲端後端',
+                  '請輸入治療師資料與註冊碼',
                   style: TextStyle(
                     color: AppColors.secondaryText,
                     fontSize: 13,
@@ -148,6 +173,7 @@ class _TherapistRegisterScreenState extends State<TherapistRegisterScreen> {
                 _label('姓名'),
                 const SizedBox(height: 8),
                 TextFormField(
+                  key: const Key('therapist-register-name'),
                   controller: _nameController,
                   decoration: _decoration('你的姓名', Icons.person_outline),
                   validator: _validateName,
@@ -156,6 +182,7 @@ class _TherapistRegisterScreenState extends State<TherapistRegisterScreen> {
                 _label('電子郵件'),
                 const SizedBox(height: 8),
                 TextFormField(
+                  key: const Key('therapist-register-email'),
                   controller: _emailController,
                   keyboardType: TextInputType.emailAddress,
                   decoration:
@@ -166,6 +193,7 @@ class _TherapistRegisterScreenState extends State<TherapistRegisterScreen> {
                 _label('密碼'),
                 const SizedBox(height: 8),
                 TextFormField(
+                  key: const Key('therapist-register-password'),
                   controller: _passwordController,
                   obscureText: _obscurePassword,
                   decoration: _decoration(
@@ -185,6 +213,7 @@ class _TherapistRegisterScreenState extends State<TherapistRegisterScreen> {
                 _label('確認密碼'),
                 const SizedBox(height: 8),
                 TextFormField(
+                  key: const Key('therapist-register-confirm-password'),
                   controller: _confirmPasswordController,
                   obscureText: _obscureConfirmPassword,
                   decoration: _decoration(
@@ -201,11 +230,36 @@ class _TherapistRegisterScreenState extends State<TherapistRegisterScreen> {
                   validator: _validateConfirmPassword,
                   onFieldSubmitted: (_) => _handleRegister(),
                 ),
+                const SizedBox(height: 20),
+                _label('治療師註冊碼'),
+                const SizedBox(height: 8),
+                TextFormField(
+                  key: const Key('therapist-invite-code'),
+                  controller: _inviteCodeController,
+                  obscureText: _obscureInviteCode,
+                  decoration: _decoration(
+                    '請輸入治療師註冊碼',
+                    Icons.admin_panel_settings_outlined,
+                    suffix: IconButton(
+                      icon: Icon(
+                        _obscureInviteCode
+                            ? Icons.visibility_outlined
+                            : Icons.visibility_off_outlined,
+                      ),
+                      onPressed: () => setState(
+                        () => _obscureInviteCode = !_obscureInviteCode,
+                      ),
+                    ),
+                  ),
+                  validator: _validateInviteCode,
+                  onFieldSubmitted: (_) => _handleRegister(),
+                ),
                 const SizedBox(height: 24),
                 SizedBox(
                   width: double.infinity,
                   height: 52,
                   child: ElevatedButton(
+                    key: const Key('therapist-register-submit'),
                     onPressed: _isLoading ? null : _handleRegister,
                     style: ElevatedButton.styleFrom(
                       backgroundColor: const Color(0xFF4A65FF),

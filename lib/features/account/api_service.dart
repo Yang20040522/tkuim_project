@@ -46,6 +46,38 @@ class ApiService {
       currentPassword: currentPassword,
     );
   }
+
+  static Future<Map<String, dynamic>> forgotPassword({
+    required String identifier,
+  }) {
+    return _client.forgotPassword(identifier: identifier);
+  }
+
+  static Future<Map<String, dynamic>> resetPassword({
+    required String identifier,
+    required String code,
+    required String newPassword,
+  }) {
+    return _client.resetPassword(
+      identifier: identifier,
+      code: code,
+      newPassword: newPassword,
+    );
+  }
+
+  static Future<Map<String, dynamic>> registerTherapist({
+    required String name,
+    required String email,
+    required String password,
+    required String inviteCode,
+  }) {
+    return _client.registerTherapist(
+      name: name,
+      email: email,
+      password: password,
+      inviteCode: inviteCode,
+    );
+  }
 }
 
 class AuthApiClient {
@@ -120,6 +152,45 @@ class AuthApiClient {
     return _postAuth(
       '/api/auth/google/link',
       {'idToken': idToken, 'currentPassword': currentPassword},
+    );
+  }
+
+  Future<Map<String, dynamic>> forgotPassword({required String identifier}) {
+    return _postAuth(
+      '/api/auth/password/forgot',
+      {'identifier': identifier},
+    );
+  }
+
+  Future<Map<String, dynamic>> resetPassword({
+    required String identifier,
+    required String code,
+    required String newPassword,
+  }) {
+    return _postAuth(
+      '/api/auth/password/reset',
+      {
+        'identifier': identifier,
+        'code': code,
+        'newPassword': newPassword,
+      },
+    );
+  }
+
+  Future<Map<String, dynamic>> registerTherapist({
+    required String name,
+    required String email,
+    required String password,
+    required String inviteCode,
+  }) {
+    return _postAuth(
+      '/api/auth/therapist/register',
+      {
+        'name': name,
+        'email': email,
+        'password': password,
+        'inviteCode': inviteCode,
+      },
     );
   }
 

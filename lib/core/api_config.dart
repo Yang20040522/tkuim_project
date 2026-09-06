@@ -13,7 +13,7 @@
 //     'http://組員電腦的區網IP:8080'(在對方電腦上用 ipconfig 查詢 IPv4 位址)
 // ============================================================
 class ApiConfig {
-  static const String baseUrl = 'https://trianing-system.onrender.com';
+  static const String baseUrl = 'https://trianing-system-1.onrender.com';
 
   // Public Web OAuth client ID. Supply with
   // --dart-define=GOOGLE_SERVER_CLIENT_ID=... at run/build time.

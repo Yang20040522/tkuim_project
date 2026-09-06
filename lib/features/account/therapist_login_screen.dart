@@ -9,6 +9,7 @@ import '../../core/ui/app_colors.dart';
 import 'app_session.dart';
 import 'auth_service.dart';
 import 'home_router.dart';
+import 'therapist_register_screen.dart';
 import 'user_role.dart';
 
 class TherapistLoginScreen extends StatefulWidget {
@@ -187,6 +188,18 @@ class _TherapistLoginScreenState extends State<TherapistLoginScreen> {
                         : const Text('登入',
                             style: TextStyle(
                                 fontSize: 15, fontWeight: FontWeight.w800)),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Center(
+                  child: TextButton(
+                    key: const Key('therapist-registration-entry'),
+                    onPressed: () => Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) => const TherapistRegisterScreen(),
+                      ),
+                    ),
+                    child: const Text('註冊治療師帳號'),
                   ),
                 ),
               ],

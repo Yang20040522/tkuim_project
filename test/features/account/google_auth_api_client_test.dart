@@ -159,6 +159,81 @@ void main() {
       '註冊成功',
     );
   });
+
+  test('forgot password sends only identifier and parses generic response',
+      () async {
+    final client = AuthApiClient(
+      baseUrl: baseUrl,
+      client: MockClient((request) async {
+        expect(request.url.toString(), '$baseUrl/api/auth/password/forgot');
+        expect(jsonDecode(request.body), {
+          'identifier': 'Rehab123',
+        });
+        return jsonResponse(200, {
+          'message': '如果帳號存在，我們已將驗證碼寄送至帳號綁定的 Email。',
+        });
+      }),
+    );
+
+    final result = await client.forgotPassword(identifier: 'Rehab123');
+    expect(result['message'], contains('如果帳號存在'));
+  });
+
+  test('password reset sends identifier code and new password', () async {
+    final client = AuthApiClient(
+      baseUrl: baseUrl,
+      client: MockClient((request) async {
+        expect(request.url.toString(), '$baseUrl/api/auth/password/reset');
+        expect(jsonDecode(request.body), {
+          'identifier': 'patient@example.com',
+          'code': '123456',
+          'newPassword': 'new-password',
+        });
+        return jsonResponse(200, {
+          'message': '密碼已更新，請使用新密碼登入',
+        });
+      }),
+    );
+
+    final result = await client.resetPassword(
+      identifier: 'patient@example.com',
+      code: '123456',
+      newPassword: 'new-password',
+    );
+    expect(result['message'], '密碼已更新，請使用新密碼登入');
+  });
+
+  test('therapist registration never sends a client-controlled role', () async {
+    final client = AuthApiClient(
+      baseUrl: baseUrl,
+      client: MockClient((request) async {
+        expect(request.url.toString(), '$baseUrl/api/auth/therapist/register');
+        final body = Map<String, dynamic>.from(jsonDecode(request.body) as Map);
+        expect(body, {
+          'name': '林治療師',
+          'email': 'therapist@example.com',
+          'password': 'password',
+          'inviteCode': 'invite-code',
+        });
+        expect(body, isNot(contains('role')));
+        return jsonResponse(200, {
+          'userId': 21,
+          'name': '林治療師',
+          'email': 'therapist@example.com',
+          'role': 'THERAPIST',
+          'customExerciseToken': 'hmac-token',
+        });
+      }),
+    );
+
+    final result = await client.registerTherapist(
+      name: '林治療師',
+      email: 'therapist@example.com',
+      password: 'password',
+      inviteCode: 'invite-code',
+    );
+    expect(result['role'], 'THERAPIST');
+  });
 }
 
 http.Response jsonResponse(int statusCode, Map<String, dynamic> body) {

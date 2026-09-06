@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import '../../core/ui/app_colors.dart';
 
 import 'auth_service.dart';
+import 'forgot_password_page.dart';
 import 'google_auth_service.dart';
 import 'home_router.dart';
 import 'patient_google_auth_button.dart';
@@ -170,12 +171,21 @@ class _LoginScreenState extends State<LoginScreen> {
                 Align(
                   alignment: Alignment.centerRight,
                   child: TextButton(
-                    onPressed: () {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text('忘記密碼功能即將開放'),
+                    key: const Key('forgot-password-entry'),
+                    onPressed: () async {
+                      final messenger = ScaffoldMessenger.of(context);
+                      final message = await Navigator.of(context).push<String>(
+                        MaterialPageRoute(
+                          builder: (_) => ForgotPasswordPage(
+                            initialIdentifier: _emailController.text.trim(),
+                          ),
+                        ),
+                      );
+                      if (!mounted || message == null) return;
+                      messenger.showSnackBar(
+                        SnackBar(
+                          content: Text(message),
                           behavior: SnackBarBehavior.floating,
-                          backgroundColor: Color(0xFF1A1D2E),
                         ),
                       );
                     },

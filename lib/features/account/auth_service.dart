@@ -77,6 +77,27 @@ class AuthService {
     }
   }
 
+  static Future<LoginResult> registerTherapist({
+    required String name,
+    required String email,
+    required String password,
+    required String inviteCode,
+  }) async {
+    try {
+      final data = await ApiService.registerTherapist(
+        name: name,
+        email: email,
+        password: password,
+        inviteCode: inviteCode,
+      );
+      return LoginResult.fromResponse(data, fallbackEmail: email);
+    } on AuthApiFailure catch (error) {
+      return LoginResult.failure(error.message, errorCode: error.code);
+    } catch (_) {
+      return LoginResult.failure('無法連線到伺服器，請稍後再試');
+    }
+  }
+
   /// 呼叫後端註冊 API。
   static Future<LoginResult> register({
     required String name,
