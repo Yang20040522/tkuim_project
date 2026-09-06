@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../core/ui/app_colors.dart';
 import '../../models/therapist_patient.dart';
 import '../history/training_result_history_page.dart';
 import '../custom_exercise/services/custom_exercise_api_client.dart';
@@ -217,6 +218,7 @@ class _PatientManagementPageState extends State<PatientManagementPage> {
                   Text(
                     patient.patientName,
                     style: const TextStyle(
+                      color: AppColors.primaryText,
                       fontSize: 16,
                       fontWeight: FontWeight.w800,
                     ),
@@ -224,7 +226,7 @@ class _PatientManagementPageState extends State<PatientManagementPage> {
                   const SizedBox(height: 3),
                   Text(
                     patient.patientEmail,
-                    style: const TextStyle(color: Color(0xFF6B7280)),
+                    style: const TextStyle(color: AppColors.secondaryText),
                   ),
                   const SizedBox(height: 7),
                   Wrap(
@@ -242,7 +244,7 @@ class _PatientManagementPageState extends State<PatientManagementPage> {
                       Text(
                         '綁定時間 ${_formatDate(patient.boundAt)}',
                         style: const TextStyle(
-                          color: Color(0xFF9CA3AF),
+                          color: AppColors.secondaryText,
                           fontSize: 12,
                         ),
                       ),

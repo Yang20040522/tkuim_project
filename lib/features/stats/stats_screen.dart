@@ -6,6 +6,8 @@
 // 目前全部是佔位,等資料層接上再填。
 
 import 'package:flutter/material.dart';
+
+import '../../core/ui/app_colors.dart';
 import 'radar_chart_card.dart';
 import 'personal_records_card.dart';
 import 'week_summary_card.dart';
@@ -66,7 +68,7 @@ class StatsScreen extends StatelessWidget {
         SizedBox(height: 4),
         Text(
           '你的復健表現一目了然',
-          style: TextStyle(color: Color(0xFF9CA3AF), fontSize: 12),
+          style: TextStyle(color: AppColors.secondaryText, fontSize: 12),
         ),
       ],
     );
@@ -88,7 +90,7 @@ class StatsScreen extends StatelessWidget {
         const SizedBox(height: 2),
         Text(
           subtitle,
-          style: const TextStyle(color: Color(0xFF9CA3AF), fontSize: 11),
+          style: const TextStyle(color: AppColors.secondaryText, fontSize: 11),
         ),
       ],
     );

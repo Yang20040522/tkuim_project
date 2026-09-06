@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+
+import '../../core/ui/app_colors.dart';
 import 'exercise.dart';
 import 'rehab_plan.dart';
 
@@ -137,13 +139,15 @@ class _PlanBuilderScreenState extends State<PlanBuilderScreen> {
           GestureDetector(
             onTap: () => Navigator.of(context).pop(),
             child: Container(
-              width: 40, height: 40,
+              width: 40,
+              height: 40,
               decoration: BoxDecoration(
                 color: Colors.white,
                 borderRadius: BorderRadius.circular(12),
                 border: Border.all(color: const Color(0xFFDDE0F0)),
               ),
-              child: const Icon(Icons.close, color: Color(0xFF374151), size: 18),
+              child:
+                  const Icon(Icons.close, color: Color(0xFF374151), size: 18),
             ),
           ),
           const SizedBox(width: 12),
@@ -152,7 +156,10 @@ class _PlanBuilderScreenState extends State<PlanBuilderScreen> {
               widget.patientName == null
                   ? '安排訓練動作'
                   : '為 ${widget.patientName} 安排訓練動作',
-              style: const TextStyle(color: Color(0xFF1A1D2E), fontSize: 18, fontWeight: FontWeight.w800),
+              style: const TextStyle(
+                  color: Color(0xFF1A1D2E),
+                  fontSize: 18,
+                  fontWeight: FontWeight.w800),
             ),
           ),
           GestureDetector(
@@ -160,10 +167,14 @@ class _PlanBuilderScreenState extends State<PlanBuilderScreen> {
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
               decoration: BoxDecoration(
-                color: selectedItems.isEmpty ? const Color(0xFFDDE0F0) : const Color(0xFF4A65FF),
+                color: selectedItems.isEmpty
+                    ? const Color(0xFFDDE0F0)
+                    : const Color(0xFF4A65FF),
                 borderRadius: BorderRadius.circular(12),
               ),
-              child: const Text('儲存', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
+              child: const Text('儲存',
+                  style: TextStyle(
+                      color: Colors.white, fontWeight: FontWeight.w700)),
             ),
           ),
         ],
@@ -173,7 +184,10 @@ class _PlanBuilderScreenState extends State<PlanBuilderScreen> {
 
   Widget _buildSectionTitle(String text) {
     return Text(text,
-        style: const TextStyle(color: Color(0xFF1A1D2E), fontSize: 16, fontWeight: FontWeight.w800));
+        style: const TextStyle(
+            color: Color(0xFF1A1D2E),
+            fontSize: 16,
+            fontWeight: FontWeight.w800));
   }
 
   Widget _buildSelectedList() {
@@ -186,11 +200,12 @@ class _PlanBuilderScreenState extends State<PlanBuilderScreen> {
           border: Border.all(color: const Color(0xFFDDE0F0)),
         ),
         child: const Text('尚未選擇動作，請從下方勾選',
-            style: TextStyle(color: Color(0xFF9CA3AF), fontSize: 13)),
+            style: TextStyle(color: AppColors.secondaryText, fontSize: 13)),
       );
     }
 
-    final sorted = [...selectedItems]..sort((a, b) => a.order.compareTo(b.order));
+    final sorted = [...selectedItems]
+      ..sort((a, b) => a.order.compareTo(b.order));
 
     return ReorderableListView(
       shrinkWrap: true,
@@ -205,23 +220,35 @@ class _PlanBuilderScreenState extends State<PlanBuilderScreen> {
           decoration: BoxDecoration(
             color: Colors.white,
             borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: const Color(0xFF4A65FF).withValues(alpha: 0.3)),
+            border: Border.all(
+                color: const Color(0xFF4A65FF).withValues(alpha: 0.3)),
           ),
           child: Row(
             children: [
-              const Icon(Icons.drag_handle, color: Color(0xFF9CA3AF), size: 20),
+              const Icon(
+                Icons.drag_handle,
+                color: AppColors.secondaryText,
+                size: 20,
+              ),
               const SizedBox(width: 8),
               Text(exercise.icon, style: const TextStyle(fontSize: 20)),
               const SizedBox(width: 8),
               Expanded(
                 child: Text(exercise.name,
-                    style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700)),
+                    style: const TextStyle(
+                        fontSize: 14, fontWeight: FontWeight.w700)),
               ),
-              _stepperField('組', item.sets, (v) => _updateSets(item.exerciseId, v)),
+              _stepperField(
+                  '組', item.sets, (v) => _updateSets(item.exerciseId, v)),
               const SizedBox(width: 8),
-              _stepperField('下', item.repsPerSet, (v) => _updateReps(item.exerciseId, v)),
+              _stepperField(
+                  '下', item.repsPerSet, (v) => _updateReps(item.exerciseId, v)),
               IconButton(
-                icon: const Icon(Icons.close, size: 18, color: Color(0xFF9CA3AF)),
+                icon: const Icon(
+                  Icons.close,
+                  size: 18,
+                  color: AppColors.secondaryText,
+                ),
                 onPressed: () => _toggleExercise(exercise),
               ),
             ],
@@ -237,22 +264,30 @@ class _PlanBuilderScreenState extends State<PlanBuilderScreen> {
       children: [
         GestureDetector(
           onTap: () => onChanged(value - 1),
-          child: const Icon(Icons.remove_circle_outline, size: 18, color: Color(0xFF9CA3AF)),
+          child: const Icon(
+            Icons.remove_circle_outline,
+            size: 18,
+            color: AppColors.secondaryText,
+          ),
         ),
         SizedBox(
           width: 28,
-          child: Text('$value$label', textAlign: TextAlign.center, style: const TextStyle(fontSize: 12)),
+          child: Text('$value$label',
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontSize: 12)),
         ),
         GestureDetector(
           onTap: () => onChanged(value + 1),
-          child: const Icon(Icons.add_circle_outline, size: 18, color: Color(0xFF4A65FF)),
+          child: const Icon(Icons.add_circle_outline,
+              size: 18, color: Color(0xFF4A65FF)),
         ),
       ],
     );
   }
 
   Widget _buildExerciseGrid(ExerciseCategory category) {
-    final exercises = exerciseLibrary.where((e) => e.category == category).toList();
+    final exercises =
+        exerciseLibrary.where((e) => e.category == category).toList();
     return Column(
       children: exercises.map((exercise) {
         final selected = _isSelected(exercise.id);
@@ -265,7 +300,9 @@ class _PlanBuilderScreenState extends State<PlanBuilderScreen> {
               color: selected ? const Color(0xFFF0F2FF) : Colors.white,
               borderRadius: BorderRadius.circular(14),
               border: Border.all(
-                color: selected ? const Color(0xFF4A65FF) : const Color(0xFFDDE0F0),
+                color: selected
+                    ? const Color(0xFF4A65FF)
+                    : const Color(0xFFDDE0F0),
               ),
             ),
             child: Row(
@@ -277,15 +314,21 @@ class _PlanBuilderScreenState extends State<PlanBuilderScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(exercise.name,
-                          style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700)),
+                          style: const TextStyle(
+                              fontSize: 14, fontWeight: FontWeight.w700)),
                       Text('${exercise.level} · ${exercise.defaultMinutes} 分鐘',
-                          style: const TextStyle(color: Color(0xFF9CA3AF), fontSize: 12)),
+                          style: const TextStyle(
+                            color: AppColors.secondaryText,
+                            fontSize: 12,
+                          )),
                     ],
                   ),
                 ),
                 Icon(
                   selected ? Icons.check_circle : Icons.circle_outlined,
-                  color: selected ? const Color(0xFF4A65FF) : const Color(0xFFDDE0F0),
+                  color: selected
+                      ? const Color(0xFF4A65FF)
+                      : const Color(0xFFDDE0F0),
                 ),
               ],
             ),

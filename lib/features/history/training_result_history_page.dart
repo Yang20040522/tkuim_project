@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../core/ui/app_colors.dart';
 import '../../models/training_session_result.dart';
 import '../pose_measurement/repositories/training_result_repository.dart';
 import '../pose_measurement/repositories/training_result_repository_selection.dart';
@@ -105,10 +106,14 @@ class _ResultCard extends StatelessWidget {
         ),
         title: Text(
           result.exerciseName,
-          style: const TextStyle(fontWeight: FontWeight.w800),
+          style: const TextStyle(
+            color: AppColors.primaryText,
+            fontWeight: FontWeight.w800,
+          ),
         ),
         subtitle: Text(
           '$time\n完成 ${result.completedReps} 次／${result.completedSets} 組',
+          style: const TextStyle(color: AppColors.secondaryText),
         ),
         isThreeLine: true,
         trailing: Text(

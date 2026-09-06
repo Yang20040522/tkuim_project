@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+
+import '../../core/ui/app_colors.dart';
 import '../../models/training_action.dart';
 import '../../services/history_service.dart';
 import 'video_playback_screen.dart';
@@ -596,7 +598,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
             SizedBox(height: 8),
             Text(
               '完成第一次訓練後會顯示在這裡',
-              style: TextStyle(color: Color(0xFF9CA3AF), fontSize: 13),
+              style: TextStyle(color: AppColors.secondaryText, fontSize: 13),
             ),
           ],
         ),
@@ -619,7 +621,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
               const SizedBox(height: 8),
               const Text(
                 '完成一次訓練後這裡就會顯示紀錄',
-                style: TextStyle(color: Color(0xFF9CA3AF), fontSize: 13),
+                style: TextStyle(color: AppColors.secondaryText, fontSize: 13),
               ),
             ],
           ),
@@ -639,7 +641,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
             SizedBox(height: 8),
             Text(
               '試試切換分類、動作或時間範圍',
-              style: TextStyle(color: Color(0xFF9CA3AF), fontSize: 13),
+              style: TextStyle(color: AppColors.secondaryText, fontSize: 13),
             ),
           ],
         ),
@@ -778,8 +780,10 @@ class _HistoryScreenState extends State<HistoryScreen> {
                   Text(
                     //'$perfect / 10',
                     '$perfect / ${record.targetReps}',
-                    style:
-                        const TextStyle(color: Color(0xFF9CA3AF), fontSize: 11),
+                    style: const TextStyle(
+                      color: AppColors.secondaryText,
+                      fontSize: 11,
+                    ),
                   ),
                 ],
               ),

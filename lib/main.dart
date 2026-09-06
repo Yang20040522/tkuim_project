@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter_localizations/flutter_localizations.dart';   // ← 新增
+import 'package:flutter_localizations/flutter_localizations.dart'; // ← 新增
 //import 'features/home/home_screen.dart';
 import 'features/splash/splash_screen.dart';
 import 'features/notification/notification_service.dart';
+import 'core/ui/app_theme.dart';
 
 import 'package:provider/provider.dart';
 import 'services/history_service.dart';
@@ -45,13 +46,7 @@ class RehabAssistApp extends StatelessWidget {
       ],
       locale: const Locale('zh', 'TW'),
       // ↑ 新增結束
-      theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFF4A65FF),
-          brightness: Brightness.dark,
-        ),
-        useMaterial3: true,
-      ),
+      theme: AppTheme.light,
       //home: const HomeScreen(),
       home: const SplashScreen(),
     );

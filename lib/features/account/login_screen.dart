@@ -1,6 +1,8 @@
 // lib/features/account/login_screen.dart
 import 'package:flutter/material.dart';
 
+import '../../core/ui/app_colors.dart';
+
 import 'auth_service.dart';
 import 'google_auth_service.dart';
 import 'home_router.dart';
@@ -152,7 +154,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 Text(
                   '以${widget.role.label}身分登入',
                   style: const TextStyle(
-                    color: Color(0xFF9CA3AF),
+                    color: AppColors.secondaryText,
                     fontSize: 13,
                   ),
                 ),
@@ -198,7 +200,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         padding: EdgeInsets.symmetric(horizontal: 12),
                         child: Text(
                           '或',
-                          style: TextStyle(color: Color(0xFF9CA3AF)),
+                          style: TextStyle(color: AppColors.secondaryText),
                         ),
                       ),
                       Expanded(child: Divider(color: Color(0xFFDDE0F0))),
@@ -261,8 +263,8 @@ class _LoginScreenState extends State<LoginScreen> {
   }) {
     return InputDecoration(
       hintText: hint,
-      hintStyle: const TextStyle(color: Color(0xFF9CA3AF), fontSize: 14),
-      prefixIcon: Icon(icon, color: const Color(0xFF6B7280), size: 20),
+      hintStyle: const TextStyle(color: AppColors.hintText, fontSize: 14),
+      prefixIcon: Icon(icon, color: AppColors.secondaryText, size: 20),
       suffixIcon: suffixIcon,
       filled: true,
       fillColor: Colors.white,
@@ -314,7 +316,7 @@ class _LoginScreenState extends State<LoginScreen> {
             _obscurePassword
                 ? Icons.visibility_outlined
                 : Icons.visibility_off_outlined,
-            color: const Color(0xFF9CA3AF),
+            color: AppColors.hintText,
             size: 20,
           ),
           onPressed: () {

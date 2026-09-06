@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../core/ui/app_colors.dart';
 import '../../models/assignable_exercise.dart';
 import '../../models/custom_exercise_assignment.dart';
 import 'repositories/unified_exercise_assignment_repository.dart';
@@ -248,6 +249,12 @@ class _UnifiedExerciseAssignmentPageState
   Widget _buildExerciseItem(AssignableExercise exercise) {
     final busy = _busyExerciseKeys.contains(exercise.identityKey);
     final isDefault = exercise.type == AssignableExerciseType.defaultExercise;
+    final titleColor =
+        exercise.assigned ? AppColors.primaryText : AppColors.disabledText;
+    final subtitleColor =
+        exercise.assigned ? AppColors.secondaryText : AppColors.disabledText;
+    final iconColor =
+        exercise.assigned ? AppColors.secondaryText : AppColors.disabledText;
     return Card(
       key: Key('assignable-exercise-${exercise.identityKey}'),
       margin: EdgeInsets.zero,
@@ -259,7 +266,11 @@ class _UnifiedExerciseAssignmentPageState
             Expanded(
               child: Text(
                 exercise.name,
-                style: const TextStyle(fontWeight: FontWeight.w800),
+                key: Key('assignable-exercise-title-${exercise.identityKey}'),
+                style: TextStyle(
+                  color: titleColor,
+                  fontWeight: FontWeight.w800,
+                ),
               ),
             ),
             _ExerciseTypeBadge(isDefault: isDefault),
@@ -269,6 +280,8 @@ class _UnifiedExerciseAssignmentPageState
           padding: const EdgeInsets.only(top: 5),
           child: Text(
             exercise.description.isEmpty ? '無動作說明' : exercise.description,
+            key: Key('assignable-exercise-description-${exercise.identityKey}'),
+            style: TextStyle(color: subtitleColor),
             maxLines: 2,
             overflow: TextOverflow.ellipsis,
           ),
@@ -281,7 +294,11 @@ class _UnifiedExerciseAssignmentPageState
                 height: 22,
                 child: CircularProgressIndicator(strokeWidth: 2),
               )
-            : Icon(isDefault ? Icons.fitness_center : Icons.accessibility_new),
+            : Icon(
+                isDefault ? Icons.fitness_center : Icons.accessibility_new,
+                key: Key('assignable-exercise-icon-${exercise.identityKey}'),
+                color: iconColor,
+              ),
       ),
     );
   }

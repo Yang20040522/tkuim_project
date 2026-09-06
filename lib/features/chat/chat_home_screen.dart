@@ -8,6 +8,8 @@
 // 治療師、病友目前全 mock,加入/聊天先跳提示,等後端接。
 
 import 'package:flutter/material.dart';
+
+import '../../core/ui/app_colors.dart';
 import 'chat_screen.dart';
 import 'therapist.dart';
 import 'peer.dart';
@@ -121,7 +123,7 @@ class _ChatHomeScreenState extends State<ChatHomeScreen> {
           SizedBox(height: 4),
           Text(
             'AI、治療師、夥伴,陪你一起復健',
-            style: TextStyle(color: Color(0xFF9CA3AF), fontSize: 12),
+            style: TextStyle(color: AppColors.secondaryText, fontSize: 12),
           ),
         ],
       ),
@@ -158,8 +160,8 @@ class _ChatHomeScreenState extends State<ChatHomeScreen> {
                 color: Colors.white.withValues(alpha: 0.2),
                 shape: BoxShape.circle,
               ),
-              child: const Icon(Icons.auto_awesome,
-                  color: Colors.white, size: 26),
+              child:
+                  const Icon(Icons.auto_awesome, color: Colors.white, size: 26),
             ),
             const SizedBox(width: 14),
             Expanded(
@@ -412,7 +414,10 @@ class _ChatHomeScreenState extends State<ChatHomeScreen> {
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
           Text(time,
-              style: const TextStyle(color: Color(0xFF9CA3AF), fontSize: 11)),
+              style: const TextStyle(
+                color: AppColors.secondaryText,
+                fontSize: 11,
+              )),
           const SizedBox(height: 6),
           if (unread > 0)
             Container(
@@ -421,8 +426,7 @@ class _ChatHomeScreenState extends State<ChatHomeScreen> {
                 color: Color(0xFFEF4444),
                 shape: BoxShape.circle,
               ),
-              constraints:
-                  const BoxConstraints(minWidth: 20, minHeight: 20),
+              constraints: const BoxConstraints(minWidth: 20, minHeight: 20),
               child: Text('$unread',
                   textAlign: TextAlign.center,
                   style: const TextStyle(
@@ -440,7 +444,7 @@ class _ChatHomeScreenState extends State<ChatHomeScreen> {
       );
 
   TextStyle _previewStyle() => const TextStyle(
-        color: Color(0xFF9CA3AF),
+        color: AppColors.secondaryText,
         fontSize: 12,
       );
 
@@ -469,7 +473,10 @@ class _ChatHomeScreenState extends State<ChatHomeScreen> {
               style: const TextStyle(color: Color(0xFF6B7280), fontSize: 14)),
           const SizedBox(height: 4),
           Text(subtitle,
-              style: const TextStyle(color: Color(0xFF9CA3AF), fontSize: 12)),
+              style: const TextStyle(
+                color: AppColors.secondaryText,
+                fontSize: 12,
+              )),
         ],
       ),
     );

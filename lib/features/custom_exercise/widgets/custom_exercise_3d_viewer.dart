@@ -2,6 +2,8 @@ import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+
+import '../../../core/ui/app_colors.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 
 import '../../../models/exercise_keyframe.dart';
@@ -288,7 +290,10 @@ class _CustomExercise3dViewerState extends State<CustomExercise3dViewer> {
             const SizedBox(height: 4),
             Text(
               _restQuaternion!,
-              style: const TextStyle(color: Color(0xFF9CA3AF), fontSize: 10),
+              style: const TextStyle(
+                color: AppColors.secondaryText,
+                fontSize: 10,
+              ),
             ),
           ],
         ],
@@ -305,7 +310,7 @@ class _WebViewUnavailablePlaceholder extends StatelessWidget {
     return const Center(
       child: Text(
         '此測試環境未提供 WebView',
-        style: TextStyle(color: Color(0xFF9CA3AF)),
+        style: TextStyle(color: AppColors.secondaryText),
       ),
     );
   }

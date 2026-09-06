@@ -7,6 +7,8 @@
 // ✅ 修改:選擇難度等級 / 目標次數 / 開始訓練 / 查看訓練紀錄 改為固定在畫面底部(已縮小留白)
 
 import 'package:flutter/material.dart';
+
+import '../../core/ui/app_colors.dart';
 import 'dart:async'; // 🖥️ 電視投放新增
 import '../../models/training_action.dart';
 import '../rehab/training_screen.dart';
@@ -535,7 +537,9 @@ class _ActionListScreenState extends State<ActionListScreen>
                         Text(
                           subtitle,
                           style: const TextStyle(
-                              color: Color(0xFF9CA3AF), fontSize: 11),
+                            color: AppColors.secondaryText,
+                            fontSize: 11,
+                          ),
                         ),
                       ],
                     ),
@@ -824,7 +828,7 @@ class _ActionListScreenState extends State<ActionListScreen>
                     style: TextStyle(
                       color: isSelected
                           ? Colors.white.withValues(alpha: 0.7)
-                          : const Color(0xFF9CA3AF),
+                          : AppColors.secondaryText,
                       fontSize: 10,
                     ),
                     textAlign: TextAlign.center,

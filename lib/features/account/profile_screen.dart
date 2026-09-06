@@ -1,6 +1,8 @@
 // lib/features/account/profile_screen.dart
 import 'package:flutter/material.dart';
 
+import '../../core/ui/app_colors.dart';
+
 import '../../services/history_service.dart';
 import '../notification/notification_settings_screen.dart';
 import 'app_session.dart';
@@ -154,11 +156,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
               ),
               onPressed: () async {
                 Navigator.pop(dialogContext);
-                await AppSession.clear();    // ← 加 await
+                await AppSession.clear(); // ← 加 await
                 if (!context.mounted) return;
                 Navigator.of(context).pushAndRemoveUntil(
-                  MaterialPageRoute(
-                      builder: (_) => const RoleSelectScreen()),
+                  MaterialPageRoute(builder: (_) => const RoleSelectScreen()),
                   (route) => false,
                 );
               },
@@ -264,7 +265,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 Text(
                   _userEmail ?? _userPhone,
                   style: const TextStyle(
-                    color: Color(0xFF9CA3AF),
+                    color: AppColors.secondaryText,
                     fontSize: 12,
                   ),
                 ),
@@ -365,7 +366,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   Widget _buildDivider() {
-    return const Divider(height: 1, color: Color(0xFFDDE0F0), indent: 16, endIndent: 16);
+    return const Divider(
+        height: 1, color: Color(0xFFDDE0F0), indent: 16, endIndent: 16);
   }
 
   Widget _buildSettingsItem({
@@ -394,8 +396,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 ),
               ),
             ),
-            const Icon(Icons.arrow_forward_ios,
-                color: Color(0xFF9CA3AF), size: 12),
+            const Icon(
+              Icons.arrow_forward_ios,
+              color: AppColors.secondaryText,
+              size: 12,
+            ),
           ],
         ),
       ),

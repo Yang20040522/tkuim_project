@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+
+import '../../../core/ui/app_colors.dart';
 import 'package:provider/provider.dart';
 
 import '../../pose_measurement/evaluation/pose_measurement_rule.dart';
@@ -70,7 +72,7 @@ class PoseMeasurementRulesEditor extends StatelessWidget {
             if (controller.poseMeasurementRules.isEmpty)
               const Text(
                 '尚未設定真人姿勢評估規則',
-                style: TextStyle(color: Color(0xFF9CA3AF)),
+                style: TextStyle(color: AppColors.secondaryText),
               )
             else
               for (var index = 0;

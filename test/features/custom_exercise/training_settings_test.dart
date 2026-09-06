@@ -1,6 +1,8 @@
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_body/core/ui/app_colors.dart';
+import 'package:flutter_body/core/ui/app_theme.dart';
 import 'package:flutter_body/features/custom_exercise/controllers/custom_exercise_editor_controller.dart';
 import 'package:flutter_body/features/custom_exercise/controllers/custom_exercise_playback_controller.dart';
 import 'package:flutter_body/features/custom_exercise/custom_exercise_editor_page.dart';
@@ -135,6 +137,7 @@ void main() {
       (tester) async {
     final repository = _Repository();
     await tester.pumpWidget(MaterialApp(
+      theme: AppTheme.light,
       home: CustomExerciseEditorPage(
         key: const ValueKey('first-editor'),
         initialExercise: _exercise(duration: 4),
@@ -147,6 +150,21 @@ void main() {
     expect(_fieldText(tester, 'exercise-repetitions'), '10');
     expect(_fieldText(tester, 'exercise-sets'), '3');
     expect(_fieldText(tester, 'exercise-hold-seconds'), '5');
+    final editable = tester.widget<EditableText>(
+      find.descendant(
+        of: _field('exercise-repetitions'),
+        matching: find.byType(EditableText),
+      ),
+    );
+    expect(editable.style.color, AppColors.primaryText);
+    final fieldContext = tester.element(_field('exercise-repetitions'));
+    final decorationTheme = Theme.of(fieldContext).inputDecorationTheme;
+    expect(decorationTheme.labelStyle?.color, AppColors.primaryText);
+    expect(decorationTheme.hintStyle?.color, AppColors.hintText);
+    expect(
+      (decorationTheme.enabledBorder as OutlineInputBorder).borderSide.color,
+      AppColors.visibleBorder,
+    );
 
     await tester.enterText(
       _field('animation-duration-seconds'),

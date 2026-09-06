@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../core/ui/app_colors.dart';
 import '../../models/assignable_exercise.dart';
 import '../../models/custom_rehab_exercise.dart';
 import '../pose_measurement/pose_training_page.dart';
@@ -176,7 +177,13 @@ class _PatientAssignedExerciseListPageState
                 Expanded(
                   child: Text(
                     exercise.name,
-                    style: const TextStyle(fontWeight: FontWeight.w800),
+                    key: Key(
+                      'patient-assigned-exercise-title-${exercise.identityKey}',
+                    ),
+                    style: const TextStyle(
+                      color: AppColors.primaryText,
+                      fontWeight: FontWeight.w800,
+                    ),
                   ),
                 ),
                 Text(
@@ -197,6 +204,7 @@ class _PatientAssignedExerciseListPageState
                     padding: const EdgeInsets.only(top: 5),
                     child: Text(
                       exercise.description,
+                      style: const TextStyle(color: AppColors.secondaryText),
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                     ),
@@ -207,7 +215,11 @@ class _PatientAssignedExerciseListPageState
                     height: 22,
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
-                : const Icon(Icons.arrow_forward_ios, size: 15),
+                : const Icon(
+                    Icons.arrow_forward_ios,
+                    size: 15,
+                    color: AppColors.secondaryText,
+                  ),
             onTap: opening ? null : () => _openExercise(exercise),
           ),
           if (isDefault)

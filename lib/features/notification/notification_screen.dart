@@ -1,6 +1,8 @@
 // lib/features/notification/notification_screen.dart
 
 import 'package:flutter/material.dart';
+
+import '../../core/ui/app_colors.dart';
 import 'app_notification.dart';
 import 'notification_service.dart';
 import 'notification_settings_screen.dart';
@@ -272,7 +274,9 @@ class _NotificationScreenState extends State<NotificationScreen> {
                 const SizedBox(height: 6),
                 Text(_formatTime(n.timestamp),
                     style: const TextStyle(
-                        color: Color(0xFF9CA3AF), fontSize: 11)),
+                      color: AppColors.secondaryText,
+                      fontSize: 11,
+                    )),
               ],
             ),
           ),

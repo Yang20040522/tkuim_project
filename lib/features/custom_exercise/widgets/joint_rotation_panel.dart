@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../core/ui/app_colors.dart';
 import '../../../models/joint_definition.dart';
 import '../../../models/joint_rotation.dart';
 import '../../../models/joint_type.dart';
@@ -76,7 +77,7 @@ class JointRotationPanel extends StatelessWidget {
           const Text(
             '左右以人偶本身方向為準；正面觀看時，人偶右側位於畫面左側。\n'
             '紅=X、綠=Y、藍=Z，皆為骨骼 local axes。',
-            style: TextStyle(color: Color(0xFF9CA3AF), fontSize: 11),
+            style: TextStyle(color: AppColors.secondaryText, fontSize: 11),
           ),
           const SizedBox(height: 12),
           Wrap(

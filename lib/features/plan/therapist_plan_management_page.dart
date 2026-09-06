@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../../core/ui/app_colors.dart';
+
 import '../../models/therapist_patient.dart';
 import '../account/repositories/therapist_patient_repository.dart';
 import '../account/repositories/therapist_patient_repository_selection.dart';
@@ -374,7 +376,7 @@ class _TherapistPlanManagementPageState
                   style: TextStyle(
                     color: selected
                         ? const Color(0xFF4A65FF)
-                        : const Color(0xFF9CA3AF),
+                        : AppColors.secondaryText,
                     fontSize: 12,
                   ),
                 ),
@@ -580,7 +582,7 @@ class _TherapistPlanManagementPageState
             const SizedBox(height: 4),
             Text(
               '${_selectedPatient!.patientName} · ${_selectedDate.month}/${_selectedDate.day}',
-              style: const TextStyle(color: Color(0xFF9CA3AF)),
+              style: const TextStyle(color: AppColors.secondaryText),
             ),
             const SizedBox(height: 16),
             _conditionOption(
@@ -638,14 +640,17 @@ class _TherapistPlanManagementPageState
                   Text(
                     subtitle,
                     style: const TextStyle(
-                      color: Color(0xFF9CA3AF),
+                      color: AppColors.secondaryText,
                       fontSize: 12,
                     ),
                   ),
                 ],
               ),
             ),
-            const Icon(Icons.chevron_right, color: Color(0xFF9CA3AF)),
+            const Icon(
+              Icons.chevron_right,
+              color: AppColors.secondaryText,
+            ),
           ],
         ),
       ),

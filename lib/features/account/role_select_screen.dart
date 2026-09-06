@@ -2,6 +2,8 @@
 // 打開 app 第一個畫面 — 選身分,選好進登入。
 import 'package:flutter/material.dart';
 
+import '../../core/ui/app_colors.dart';
+
 import 'login_screen.dart';
 import 'user_role.dart';
 import 'therapist_login_screen.dart';
@@ -38,7 +40,7 @@ class RoleSelectScreen extends StatelessWidget {
               const SizedBox(height: 8),
               const Text(
                 '請先選擇你的身分',
-                style: TextStyle(color: Color(0xFF9CA3AF), fontSize: 14),
+                style: TextStyle(color: AppColors.secondaryText, fontSize: 14),
               ),
               const SizedBox(height: 36),
               _RoleCard(
@@ -55,7 +57,8 @@ class RoleSelectScreen extends StatelessWidget {
                 onTap: () {
                   Navigator.push(
                     context,
-                    MaterialPageRoute(builder: (_) => const TherapistLoginScreen()),
+                    MaterialPageRoute(
+                        builder: (_) => const TherapistLoginScreen()),
                   );
                 },
               ),
@@ -130,15 +133,18 @@ class _RoleCard extends StatelessWidget {
                   Text(
                     subtitle,
                     style: const TextStyle(
-                      color: Color(0xFF9CA3AF),
+                      color: AppColors.secondaryText,
                       fontSize: 12,
                     ),
                   ),
                 ],
               ),
             ),
-            const Icon(Icons.arrow_forward_ios,
-                color: Color(0xFF9CA3AF), size: 14),
+            const Icon(
+              Icons.arrow_forward_ios,
+              color: AppColors.secondaryText,
+              size: 14,
+            ),
           ],
         ),
       ),

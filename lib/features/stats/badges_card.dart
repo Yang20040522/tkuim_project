@@ -5,6 +5,8 @@
 // - 已解鎖顯示彩色圖示,尚未解鎖顯示灰色鎖頭
 
 import 'package:flutter/material.dart';
+
+import '../../core/ui/app_colors.dart';
 import 'package:provider/provider.dart';
 import '../../services/history_service.dart';
 import 'stats_calculator.dart';
@@ -104,7 +106,7 @@ class _BadgesCardState extends State<BadgesCard> {
                     Text(
                       _loading ? '載入中...' : '$unlockedCount / $total 已解鎖',
                       style: const TextStyle(
-                          color: Color(0xFF9CA3AF), fontSize: 11),
+                          color: AppColors.secondaryText, fontSize: 11),
                     ),
                   ],
                 ),
@@ -130,14 +132,12 @@ class _BadgesCardState extends State<BadgesCard> {
               physics: const NeverScrollableScrollPhysics(),
               mainAxisSpacing: 10,
               crossAxisSpacing: 10,
-              children: _achievements
-                  .map((a) => _buildBadge(a))
-                  .toList(),
+              children: _achievements.map((a) => _buildBadge(a)).toList(),
             ),
             const SizedBox(height: 8),
             const Text(
               '點徽章看詳情',
-              style: TextStyle(color: Color(0xFF9CA3AF), fontSize: 11),
+              style: TextStyle(color: AppColors.secondaryText, fontSize: 11),
             ),
           ],
         ],
@@ -182,10 +182,10 @@ class _BadgesCardState extends State<BadgesCard> {
       };
 
   Color _colorFor(BadgeCategory c) => switch (c) {
-        BadgeCategory.streak => const Color(0xFFEF4444),   // 紅 - 熱情
-        BadgeCategory.volume => const Color(0xFF4A65FF),   // 藍 - 累積
+        BadgeCategory.streak => const Color(0xFFEF4444), // 紅 - 熱情
+        BadgeCategory.volume => const Color(0xFF4A65FF), // 藍 - 累積
         BadgeCategory.intensity => const Color(0xFFF59E0B), // 橙 - 爆發
-        BadgeCategory.accuracy => const Color(0xFF10B981),  // 綠 - 精準
+        BadgeCategory.accuracy => const Color(0xFF10B981), // 綠 - 精準
       };
 
   String _categoryName(BadgeCategory c) => switch (c) {
@@ -203,8 +203,7 @@ class _BadgesCardState extends State<BadgesCard> {
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: Colors.white,
-        shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(20)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         contentPadding: const EdgeInsets.fromLTRB(24, 24, 24, 16),
         content: Column(
           mainAxisSize: MainAxisSize.min,
@@ -235,8 +234,7 @@ class _BadgesCardState extends State<BadgesCard> {
             ),
             const SizedBox(height: 4),
             Container(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
               decoration: BoxDecoration(
                 color: color.withValues(alpha: 0.1),
                 borderRadius: BorderRadius.circular(6),
@@ -244,9 +242,7 @@ class _BadgesCardState extends State<BadgesCard> {
               child: Text(
                 _categoryName(a.category),
                 style: TextStyle(
-                    color: color,
-                    fontSize: 10,
-                    fontWeight: FontWeight.w700),
+                    color: color, fontSize: 10, fontWeight: FontWeight.w700),
               ),
             ),
             const SizedBox(height: 12),
@@ -295,8 +291,7 @@ class _BadgesCardState extends State<BadgesCard> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: const Text('關閉',
-                style: TextStyle(color: Color(0xFF6B7280))),
+            child: const Text('關閉', style: TextStyle(color: Color(0xFF6B7280))),
           ),
         ],
       ),

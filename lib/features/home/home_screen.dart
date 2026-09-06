@@ -9,6 +9,8 @@
 //              手部動作 → TrainingScreen(isDisplay:true)
 
 import 'package:flutter/material.dart';
+
+import '../../core/ui/app_colors.dart';
 import 'package:flutter/services.dart';
 
 import '../../models/training_action.dart';
@@ -885,8 +887,11 @@ class _HomeContentState extends State<_HomeContent>
                 ],
               ),
             ),
-            const Icon(Icons.arrow_forward_ios,
-                color: Color(0xFF9CA3AF), size: 14),
+            const Icon(
+              Icons.arrow_forward_ios,
+              color: AppColors.secondaryText,
+              size: 14,
+            ),
           ],
         ),
       ),
@@ -1241,7 +1246,7 @@ class _HomeContentState extends State<_HomeContent>
             ),
             Icon(
               Icons.arrow_forward_ios,
-              color: Color(0xFF9CA3AF),
+              color: AppColors.secondaryText,
               size: 14,
             ),
           ],
@@ -1318,15 +1323,18 @@ class _HomeContentState extends State<_HomeContent>
                   Text(
                     '從治療師示範影片建立動作標準',
                     style: TextStyle(
-                      color: Color(0xFF9CA3AF),
+                      color: AppColors.secondaryText,
                       fontSize: 11,
                     ),
                   ),
                 ],
               ),
             ),
-            const Icon(Icons.arrow_forward_ios,
-                color: Color(0xFF9CA3AF), size: 14),
+            const Icon(
+              Icons.arrow_forward_ios,
+              color: AppColors.secondaryText,
+              size: 14,
+            ),
           ],
         ),
       ),

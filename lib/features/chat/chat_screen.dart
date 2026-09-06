@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+
+import '../../core/ui/app_colors.dart';
 import 'dart:async'; // 🖥️ 電視投放新增
 import 'chat_repository.dart';
 import 'chat_conversation.dart';
@@ -446,7 +448,7 @@ class _ChatScreenState extends State<ChatScreen> {
                   ? const Center(
                       child: Text('尚無對話',
                           style: TextStyle(
-                              color: Color(0xFF9CA3AF), fontSize: 13)))
+                              color: AppColors.secondaryText, fontSize: 13)))
                   : ListView.builder(
                       padding: const EdgeInsets.symmetric(vertical: 6),
                       itemCount: _conversations.length,
@@ -489,7 +491,8 @@ class _ChatScreenState extends State<ChatScreen> {
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                                 style: const TextStyle(
-                                    color: Color(0xFF9CA3AF), fontSize: 11),
+                                    color: AppColors.secondaryText,
+                                    fontSize: 11),
                               ),
                               onTap: () => _switchTo(c),
                             ),
@@ -502,7 +505,10 @@ class _ChatScreenState extends State<ChatScreen> {
               padding: EdgeInsets.symmetric(horizontal: 20, vertical: 10),
               child: Text(
                 '往左滑刪除對話',
-                style: TextStyle(color: Color(0xFF9CA3AF), fontSize: 11),
+                style: TextStyle(
+                  color: AppColors.secondaryText,
+                  fontSize: 11,
+                ),
               ),
             ),
           ],
@@ -546,7 +552,7 @@ class _ChatScreenState extends State<ChatScreen> {
         ),
         child: const Text(
           '思考中...',
-          style: TextStyle(color: Color(0xFF9CA3AF), fontSize: 13),
+          style: TextStyle(color: AppColors.secondaryText, fontSize: 13),
         ),
       ),
     );
@@ -592,7 +598,10 @@ class _ChatScreenState extends State<ChatScreen> {
             const SizedBox(height: 3),
             Text(
               timeText,
-              style: const TextStyle(color: Color(0xFF9CA3AF), fontSize: 10),
+              style: const TextStyle(
+                color: AppColors.secondaryText,
+                fontSize: 10,
+              ),
             ),
           ],
         ),
@@ -632,7 +641,7 @@ class _ChatScreenState extends State<ChatScreen> {
                   decoration: const InputDecoration(
                     hintText: '輸入訊息...',
                     hintStyle:
-                        TextStyle(color: Color(0xFF9CA3AF), fontSize: 14),
+                        TextStyle(color: AppColors.hintText, fontSize: 14),
                     border: InputBorder.none,
                     isDense: true,
                     contentPadding: EdgeInsets.symmetric(vertical: 10),

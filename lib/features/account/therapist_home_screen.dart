@@ -1,6 +1,8 @@
 // lib/features/account/therapist_home_screen.dart
 import 'package:flutter/material.dart';
 
+import '../../core/ui/app_colors.dart';
+
 import '../custom_exercise/custom_exercise_editor_page.dart';
 import '../custom_exercise/custom_exercise_assignment_page.dart';
 import '../custom_exercise/custom_exercise_list_page.dart';
@@ -124,7 +126,7 @@ class TherapistHomeScreen extends StatelessWidget {
             const SizedBox(height: 8),
             const Text(
               '建立適合患者需求的自訂復健動作',
-              style: TextStyle(color: Color(0xFF9CA3AF), fontSize: 13),
+              style: TextStyle(color: AppColors.secondaryText, fontSize: 13),
             ),
             const SizedBox(height: 18),
             _TherapistFeatureCard(
@@ -170,7 +172,7 @@ class TherapistHomeScreen extends StatelessWidget {
             const Text(
               '患者綁定後即可在指派頁選擇復健動作',
               textAlign: TextAlign.center,
-              style: TextStyle(color: Color(0xFF9CA3AF), fontSize: 12),
+              style: TextStyle(color: AppColors.secondaryText, fontSize: 12),
             ),
             const SizedBox(height: 8),
           ],
@@ -236,7 +238,7 @@ class _TherapistFeatureCard extends StatelessWidget {
                     Text(
                       subtitle,
                       style: const TextStyle(
-                        color: Color(0xFF9CA3AF),
+                        color: AppColors.secondaryText,
                         fontSize: 12,
                       ),
                     ),
@@ -245,7 +247,7 @@ class _TherapistFeatureCard extends StatelessWidget {
               ),
               const Icon(
                 Icons.arrow_forward_ios,
-                color: Color(0xFF9CA3AF),
+                color: AppColors.secondaryText,
                 size: 15,
               ),
             ],

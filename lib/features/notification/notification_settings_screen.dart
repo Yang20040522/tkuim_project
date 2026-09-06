@@ -1,6 +1,8 @@
 // lib/features/notification/notification_settings_screen.dart
 
 import 'package:flutter/material.dart';
+
+import '../../core/ui/app_colors.dart';
 import 'notification_service.dart';
 import 'native_notification_service.dart';
 
@@ -165,7 +167,10 @@ class _NotificationSettingsScreenState
                   padding: EdgeInsets.symmetric(horizontal: 4),
                   child: Text(
                     '關閉通知後,系統排程推播會全部取消,\n訓練完成也不會再產生成就通知。\n已存在的通知記錄會保留。',
-                    style: TextStyle(color: Color(0xFF9CA3AF), fontSize: 11),
+                    style: TextStyle(
+                      color: AppColors.secondaryText,
+                      fontSize: 11,
+                    ),
                   ),
                 ),
               ],

@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+
+import '../../core/ui/app_colors.dart';
 import 'package:provider/provider.dart';
 
 import '../../models/custom_rehab_exercise.dart';
@@ -510,7 +512,10 @@ class _EditorTopBar extends StatelessWidget {
                 ),
                 Text(
                   '建立姿勢與關鍵幀動畫',
-                  style: TextStyle(color: Color(0xFF9CA3AF), fontSize: 12),
+                  style: TextStyle(
+                    color: AppColors.secondaryText,
+                    fontSize: 12,
+                  ),
                 ),
               ],
             ),

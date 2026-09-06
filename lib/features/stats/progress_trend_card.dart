@@ -4,6 +4,8 @@
 // 大字顯示「進步 +X%」,把抽象的努力變成看得見的成長
 
 import 'package:flutter/material.dart';
+
+import '../../core/ui/app_colors.dart';
 import 'package:provider/provider.dart';
 import '../../services/history_service.dart';
 import 'stats_calculator.dart';
@@ -100,7 +102,7 @@ class _ProgressTrendCardState extends State<ProgressTrendCard> {
                     Text(
                       '你練最多的動作,成長看得見',
                       style: TextStyle(
-                          color: Color(0xFF9CA3AF), fontSize: 11),
+                          color: AppColors.secondaryText, fontSize: 11),
                     ),
                   ],
                 ),
@@ -138,7 +140,7 @@ class _ProgressTrendCardState extends State<ProgressTrendCard> {
               '同一個動作練滿 3 次\n就能看到你的進步曲線',
               textAlign: TextAlign.center,
               style: TextStyle(
-                color: Color(0xFF9CA3AF),
+                color: AppColors.secondaryText,
                 fontSize: 13,
                 height: 1.5,
               ),
@@ -175,7 +177,7 @@ class _ProgressTrendCardState extends State<ProgressTrendCard> {
                   Text(
                     '共 ${_trend.accuracies.length} 次紀錄',
                     style: const TextStyle(
-                        color: Color(0xFF9CA3AF), fontSize: 11),
+                        color: AppColors.secondaryText, fontSize: 11),
                   ),
                 ],
               ),
@@ -259,10 +261,8 @@ class _TrendPainter extends CustomPainter {
     final chartH = size.height - padding * 2;
 
     // Y 軸固定 0~100
-    double xFor(int i) =>
-        padding + chartW * (i / (accuracies.length - 1));
-    double yFor(double acc) =>
-        padding + chartH * (1 - acc / 100);
+    double xFor(int i) => padding + chartW * (i / (accuracies.length - 1));
+    double yFor(double acc) => padding + chartH * (1 - acc / 100);
 
     // 背景橫線(25/50/75)
     final gridPaint = Paint()
@@ -270,8 +270,8 @@ class _TrendPainter extends CustomPainter {
       ..strokeWidth = 1;
     for (final v in [25.0, 50.0, 75.0]) {
       final y = yFor(v);
-      canvas.drawLine(Offset(padding, y),
-          Offset(size.width - padding, y), gridPaint);
+      canvas.drawLine(
+          Offset(padding, y), Offset(size.width - padding, y), gridPaint);
     }
 
     // 漸層填充區
@@ -318,12 +318,8 @@ class _TrendPainter extends CustomPainter {
     // 頭尾標數字(第一次 vs 最近)
     _drawLabel(canvas, '${accuracies.first.round()}%',
         Offset(xFor(0), yFor(accuracies.first)), true);
-    _drawLabel(
-        canvas,
-        '${accuracies.last.round()}%',
-        Offset(xFor(accuracies.length - 1),
-            yFor(accuracies.last)),
-        false);
+    _drawLabel(canvas, '${accuracies.last.round()}%',
+        Offset(xFor(accuracies.length - 1), yFor(accuracies.last)), false);
   }
 
   void _drawLabel(Canvas canvas, String text, Offset pt, bool isFirst) {

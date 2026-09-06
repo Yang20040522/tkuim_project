@@ -6,6 +6,8 @@
 
 import 'package:flutter/material.dart';
 
+import '../../core/ui/app_colors.dart';
+
 import 'app_session.dart';
 import 'home_router.dart';
 import 'therapist_account_service.dart';
@@ -137,7 +139,10 @@ class _TherapistRegisterScreenState extends State<TherapistRegisterScreen> {
                 const SizedBox(height: 8),
                 const Text(
                   '目前為本機測試帳號,尚未串接雲端後端',
-                  style: TextStyle(color: Color(0xFF9CA3AF), fontSize: 13),
+                  style: TextStyle(
+                    color: AppColors.secondaryText,
+                    fontSize: 13,
+                  ),
                 ),
                 const SizedBox(height: 32),
                 _label('姓名'),
@@ -170,8 +175,8 @@ class _TherapistRegisterScreenState extends State<TherapistRegisterScreen> {
                       icon: Icon(_obscurePassword
                           ? Icons.visibility_outlined
                           : Icons.visibility_off_outlined),
-                      onPressed: () => setState(
-                          () => _obscurePassword = !_obscurePassword),
+                      onPressed: () =>
+                          setState(() => _obscurePassword = !_obscurePassword),
                     ),
                   ),
                   validator: _validatePassword,
@@ -233,20 +238,17 @@ class _TherapistRegisterScreenState extends State<TherapistRegisterScreen> {
 
   Widget _label(String text) => Text(text,
       style: const TextStyle(
-          color: Color(0xFF1A1D2E),
-          fontSize: 13,
-          fontWeight: FontWeight.w700));
+          color: Color(0xFF1A1D2E), fontSize: 13, fontWeight: FontWeight.w700));
 
   InputDecoration _decoration(String hint, IconData icon, {Widget? suffix}) {
     return InputDecoration(
       hintText: hint,
-      hintStyle: const TextStyle(color: Color(0xFF9CA3AF), fontSize: 14),
-      prefixIcon: Icon(icon, color: const Color(0xFF6B7280), size: 20),
+      hintStyle: const TextStyle(color: AppColors.hintText, fontSize: 14),
+      prefixIcon: Icon(icon, color: AppColors.secondaryText, size: 20),
       suffixIcon: suffix,
       filled: true,
       fillColor: Colors.white,
-      contentPadding:
-          const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
       border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(14),
           borderSide: const BorderSide(color: Color(0xFFDDE0F0))),

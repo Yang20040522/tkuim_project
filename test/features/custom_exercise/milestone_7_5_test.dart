@@ -1,6 +1,8 @@
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_body/core/ui/app_colors.dart';
+import 'package:flutter_body/core/ui/app_theme.dart';
 import 'package:flutter_body/features/custom_exercise/custom_exercise_editor_page.dart';
 import 'package:flutter_body/features/custom_exercise/patient_assigned_exercise_list_page.dart';
 import 'package:flutter_body/features/custom_exercise/repositories/unified_exercise_assignment_repository.dart';
@@ -120,6 +122,48 @@ void main() {
   });
 
   group('Unified assignment widgets', () {
+    testWidgets(
+        'assignment card changes from inactive to readable when enabled',
+        (tester) async {
+      final repository = _FakeUnifiedRepository();
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: AppTheme.light,
+          home: UnifiedExerciseAssignmentPage(repository: repository),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      const identity = 'DEFAULT:1';
+      Text title() => tester.widget<Text>(
+            find.byKey(const Key('assignable-exercise-title-$identity')),
+          );
+      Text description() => tester.widget<Text>(
+            find.byKey(
+              const Key('assignable-exercise-description-$identity'),
+            ),
+          );
+      Icon icon() => tester.widget<Icon>(
+            find.byKey(const Key('assignable-exercise-icon-$identity')),
+          );
+
+      expect(title().style?.color, AppColors.disabledText);
+      expect(description().style?.color, AppColors.disabledText);
+      expect(icon().color, AppColors.disabledText);
+
+      await tester.tap(
+        find.descendant(
+          of: find.byKey(const Key('assignable-exercise-$identity')),
+          matching: find.byType(Switch),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(title().style?.color, AppColors.primaryText);
+      expect(description().style?.color, AppColors.secondaryText);
+      expect(icon().color, AppColors.secondaryText);
+    });
+
     testWidgets('therapist sees and filters DEFAULT and CUSTOM exercises',
         (tester) async {
       final repository = _FakeUnifiedRepository();
@@ -205,6 +249,15 @@ void main() {
 
       expect(find.text('翻掌訓練'), findsOneWidget);
       expect(find.text('肩部活動'), findsOneWidget);
+      expect(
+        tester
+            .widget<Text>(find.byKey(const Key(
+              'patient-assigned-exercise-title-CUSTOM:custom_1',
+            )))
+            .style
+            ?.color,
+        AppColors.primaryText,
+      );
 
       await tester.tap(
         find.byKey(const Key('patient-assigned-exercise-DEFAULT:1')),

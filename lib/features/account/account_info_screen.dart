@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+
+import '../../core/ui/app_colors.dart';
 import 'package:flutter/services.dart';
 
 import '../tv_cast/socket_client_service.dart';
@@ -652,7 +654,7 @@ class _AccountInfoScreenState extends State<AccountInfoScreen> {
                         child: Text(
                           '帳號識別、密碼與 Google 綁定由伺服器安全保存；生日目前僅儲存於本機裝置。',
                           style: TextStyle(
-                            color: Color(0xFF9CA3AF),
+                            color: AppColors.secondaryText,
                             fontSize: 11,
                           ),
                         ),
@@ -816,7 +818,7 @@ class _AccountInfoScreenState extends State<AccountInfoScreen> {
                   Text(
                     label,
                     style: const TextStyle(
-                      color: Color(0xFF9CA3AF),
+                      color: AppColors.secondaryText,
                       fontSize: 11,
                     ),
                   ),

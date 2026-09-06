@@ -6,6 +6,8 @@
 
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
+
+import '../../core/ui/app_colors.dart';
 import 'stats_calculator.dart';
 import '../history/history_screen.dart';
 import 'package:provider/provider.dart';
@@ -112,7 +114,7 @@ class _RadarChartCardState extends State<RadarChartCard> {
                     Text(
                       '近 30 天,弱項在前',
                       style: TextStyle(
-                          color: Color(0xFF9CA3AF), fontSize: 11),
+                          color: AppColors.secondaryText, fontSize: 11),
                     ),
                   ],
                 ),
@@ -158,7 +160,7 @@ class _RadarChartCardState extends State<RadarChartCard> {
         const SizedBox(height: 12),
         const Text(
           '點動作名稱看歷史紀錄',
-          style: TextStyle(color: Color(0xFF9CA3AF), fontSize: 11),
+          style: TextStyle(color: AppColors.secondaryText, fontSize: 11),
         ),
       ],
     );
@@ -178,8 +180,7 @@ class _RadarChartCardState extends State<RadarChartCard> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            const Icon(Icons.radar_rounded,
-                size: 40, color: Color(0xFF9CA3AF)),
+            const Icon(Icons.radar_rounded, size: 40, color: Color(0xFF9CA3AF)),
             const SizedBox(height: 12),
             const Text(
               '至少練 3 種不同動作\n雷達圖就會出現',
@@ -192,8 +193,7 @@ class _RadarChartCardState extends State<RadarChartCard> {
             ),
             const SizedBox(height: 8),
             Container(
-              padding: const EdgeInsets.symmetric(
-                  horizontal: 10, vertical: 4),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
               decoration: BoxDecoration(
                 color: const Color(0xFF4A65FF).withValues(alpha: 0.1),
                 borderRadius: BorderRadius.circular(10),
@@ -321,8 +321,7 @@ class _RadarPainter extends CustomPainter {
         center.dx + math.cos(angle) * r,
         center.dy + math.sin(angle) * r,
       );
-      canvas.drawCircle(
-          pt, 5, Paint()..color = const Color(0xFF4A65FF));
+      canvas.drawCircle(pt, 5, Paint()..color = const Color(0xFF4A65FF));
       canvas.drawCircle(
         pt,
         5,

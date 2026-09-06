@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+
+import '../../core/ui/app_colors.dart';
 import 'exercise.dart';
 import 'rehab_plan.dart';
 import 'plan_repository.dart';
@@ -309,7 +311,7 @@ class _PlanScreenState extends State<PlanScreen> {
                   style: TextStyle(
                     color: isSelected
                         ? const Color(0xFF4A65FF)
-                        : const Color(0xFF9CA3AF),
+                        : AppColors.secondaryText,
                     fontSize: 12,
                     fontWeight: isSelected ? FontWeight.w800 : FontWeight.w500,
                   ),
@@ -383,7 +385,7 @@ class _PlanScreenState extends State<PlanScreen> {
         ),
         child: const Text(
           '治療師尚未安排這一天的復健計畫',
-          style: TextStyle(color: Color(0xFF9CA3AF), fontSize: 13),
+          style: TextStyle(color: AppColors.secondaryText, fontSize: 13),
         ),
       );
     }
@@ -465,8 +467,10 @@ class _PlanScreenState extends State<PlanScreen> {
                   const SizedBox(height: 2),
                   Text(
                     '${item.sets} 組 × ${item.repsPerSet} 下',
-                    style:
-                        const TextStyle(color: Color(0xFF9CA3AF), fontSize: 12),
+                    style: const TextStyle(
+                      color: AppColors.secondaryText,
+                      fontSize: 12,
+                    ),
                   ),
                 ],
               ),
@@ -474,8 +478,11 @@ class _PlanScreenState extends State<PlanScreen> {
             // 完成 → 不用額外標示；可訓練(今天,未完成) → 箭頭；
             // 其餘(過去/未來,未完成) → 文字狀態
             if (!item.done && tappable)
-              const Icon(Icons.chevron_right,
-                  color: Color(0xFF9CA3AF), size: 18)
+              const Icon(
+                Icons.chevron_right,
+                color: AppColors.secondaryText,
+                size: 18,
+              )
             else if (!item.done && !tappable)
               Text(
                 _isReadOnly ? '未完成' : '尚未開始',

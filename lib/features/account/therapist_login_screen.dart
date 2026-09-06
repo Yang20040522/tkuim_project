@@ -4,6 +4,8 @@
 
 import 'package:flutter/material.dart';
 
+import '../../core/ui/app_colors.dart';
+
 import 'app_session.dart';
 import 'auth_service.dart';
 import 'home_router.dart';
@@ -116,7 +118,10 @@ class _TherapistLoginScreenState extends State<TherapistLoginScreen> {
                 const SizedBox(height: 8),
                 const Text(
                   '使用雲端治療師帳號登入',
-                  style: TextStyle(color: Color(0xFF9CA3AF), fontSize: 13),
+                  style: TextStyle(
+                    color: AppColors.secondaryText,
+                    fontSize: 13,
+                  ),
                 ),
                 const SizedBox(height: 32),
                 const Text('電子郵件或帳號 ID',
@@ -195,8 +200,8 @@ class _TherapistLoginScreenState extends State<TherapistLoginScreen> {
   InputDecoration _decoration(String hint, IconData icon, {Widget? suffix}) {
     return InputDecoration(
       hintText: hint,
-      hintStyle: const TextStyle(color: Color(0xFF9CA3AF), fontSize: 14),
-      prefixIcon: Icon(icon, color: const Color(0xFF6B7280), size: 20),
+      hintStyle: const TextStyle(color: AppColors.hintText, fontSize: 14),
+      prefixIcon: Icon(icon, color: AppColors.secondaryText, size: 20),
       suffixIcon: suffix,
       filled: true,
       fillColor: Colors.white,

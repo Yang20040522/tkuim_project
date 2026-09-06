@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../core/ui/app_colors.dart';
 import '../../../models/exercise_keyframe.dart';
 
 class KeyframeTimeline extends StatelessWidget {
@@ -125,7 +126,7 @@ class KeyframeTimeline extends StatelessWidget {
             const SizedBox(height: 8),
             const Text(
               '至少新增 2 個 Keyframe 後才能播放預覽',
-              style: TextStyle(color: Color(0xFF9CA3AF), fontSize: 11),
+              style: TextStyle(color: AppColors.secondaryText, fontSize: 11),
             ),
           ],
         ],

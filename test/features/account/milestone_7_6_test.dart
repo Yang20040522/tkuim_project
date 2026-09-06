@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_body/core/ui/app_colors.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_body/features/account/account_info_screen.dart';
 import 'package:flutter_body/features/account/app_session.dart';
@@ -161,6 +162,14 @@ void main() {
       expect(find.text('patient@example.com'), findsOneWidget);
       expect(find.text('THERAPIST'), findsOneWidget);
       expect(find.textContaining('2026/09/04'), findsOneWidget);
+      expect(
+        tester.widget<Text>(find.text('王小明')).style?.color,
+        AppColors.primaryText,
+      );
+      expect(
+        tester.widget<Text>(find.text('patient@example.com')).style?.color,
+        AppColors.secondaryText,
+      );
     });
 
     testWidgets('bind form searches and previews patient', (tester) async {
