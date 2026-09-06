@@ -91,6 +91,7 @@ class _AccountInfoScreenState extends State<AccountInfoScreen> {
       email: account.email,
       accountId: account.accountId,
       bindingCode: account.bindingCode,
+      friendCode: account.friendCode,
       customExerciseToken: AppSession.customExerciseToken,
     );
   }
@@ -363,6 +364,7 @@ class _AccountInfoScreenState extends State<AccountInfoScreen> {
         email: result.email,
         accountId: result.accountId,
         bindingCode: result.bindingCode,
+        friendCode: result.friendCode,
         customExerciseToken: result.customExerciseToken,
       );
       final refreshed = await _service.getAccountInfo();

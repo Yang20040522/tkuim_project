@@ -76,6 +76,7 @@ void main() {
           'accountId': 'rehab123',
           'role': 'PATIENT',
           'bindingCode': 'BIND1234',
+          'friendCode': 'FRND1234',
           'customExerciseToken': 'signed-token',
           'googleLinked': true,
         });
@@ -87,6 +88,7 @@ void main() {
     expect(result.userId, '16');
     expect(result.email, 'new@gmail.com');
     expect(result.accountId, 'rehab123');
+    expect(result.friendCode, 'FRND1234');
   });
 
   test('Gmail conflict preserves machine-readable code', () async {

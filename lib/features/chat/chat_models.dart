@@ -11,6 +11,31 @@
 
 enum ConversationType { therapist, peer }
 
+/// 目前登入者可以合法建立聊天室的對象。
+class ChatContact {
+  const ChatContact({
+    required this.userId,
+    required this.name,
+    required this.role,
+    required this.type,
+  });
+
+  factory ChatContact.fromJson(Map<String, dynamic> json) => ChatContact(
+        userId: json['userId'].toString(),
+        name: json['name']?.toString() ?? '使用者',
+        role: json['role']?.toString() ?? '',
+        type: ConversationType.values.firstWhere(
+          (type) => type.name == json['type']?.toString(),
+          orElse: () => throw const FormatException('未知的聊天室類型'),
+        ),
+      );
+
+  final String userId;
+  final String name;
+  final String role;
+  final ConversationType type;
+}
+
 /// 一則真人對真人的訊息
 class RemoteChatMessage {
   final String id;
@@ -51,14 +76,14 @@ class RemoteChatMessage {
 
   factory RemoteChatMessage.fromJson(Map<String, dynamic> json) =>
       RemoteChatMessage(
-        id: json['id'] as String,
-        conversationId: json['conversationId'] as String,
-        senderId: json['senderId'] as String,
-        text: json['text'] as String,
-        sentAt: DateTime.parse(json['sentAt'] as String),
+        id: json['id'].toString(),
+        conversationId: json['conversationId'].toString(),
+        senderId: json['senderId'].toString(),
+        text: json['text']?.toString() ?? '',
+        sentAt: DateTime.parse(json['sentAt'].toString()),
         readAt: json['readAt'] == null
             ? null
-            : DateTime.parse(json['readAt'] as String),
+            : DateTime.parse(json['readAt'].toString()),
       );
 }
 
@@ -100,16 +125,18 @@ class RemoteConversation {
 
   factory RemoteConversation.fromJson(Map<String, dynamic> json) =>
       RemoteConversation(
-        id: json['id'] as String,
-        type: ConversationType.values.firstWhere((e) => e.name == json['type']),
+        id: json['id'].toString(),
+        type: ConversationType.values.firstWhere(
+          (e) => e.name == json['type']?.toString(),
+        ),
         participantIds: (json['participantIds'] as List<dynamic>)
-            .map((e) => e as String)
+            .map((e) => e.toString())
             .toList(),
-        lastMessageText: json['lastMessageText'] as String?,
+        lastMessageText: json['lastMessageText']?.toString(),
         lastMessageAt: json['lastMessageAt'] == null
             ? null
-            : DateTime.parse(json['lastMessageAt'] as String),
-        updatedAt: DateTime.parse(json['updatedAt'] as String),
+            : DateTime.parse(json['lastMessageAt'].toString()),
+        updatedAt: DateTime.parse(json['updatedAt'].toString()),
       );
 
   Map<String, dynamic> toJson() => {
@@ -127,4 +154,9 @@ class UnreadCount {
   final String conversationId;
   final int count;
   const UnreadCount(this.conversationId, this.count);
+
+  factory UnreadCount.fromJson(Map<String, dynamic> json) => UnreadCount(
+        json['conversationId'].toString(),
+        int.parse(json['count'].toString()),
+      );
 }

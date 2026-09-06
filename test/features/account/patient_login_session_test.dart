@@ -13,6 +13,7 @@ void main() {
     AppSession.name = null;
     AppSession.email = null;
     AppSession.bindingCode = null;
+    AppSession.friendCode = null;
     AppSession.customExerciseToken = null;
   });
 
@@ -24,6 +25,7 @@ void main() {
       name: '王小明',
       email: 'patient@example.com',
       bindingCode: 'ABC12345',
+      friendCode: 'XYZ12345',
       customExerciseToken: 'backend-hmac-token',
       backendRole: 'PATIENT',
     );
@@ -33,6 +35,7 @@ void main() {
     expect(AppSession.role, UserRole.patient);
     expect(AppSession.userId, '12');
     expect(AppSession.bindingCode, 'ABC12345');
+    expect(AppSession.friendCode, 'XYZ12345');
     expect(AppSession.customExerciseToken, 'backend-hmac-token');
     final preferences = await SharedPreferences.getInstance();
     expect(preferences.getKeys(), isNot(contains('google_id_token')));

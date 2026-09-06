@@ -30,6 +30,9 @@ class ChatBackendMemory implements ChatBackend {
   final Map<String, List<RemoteChatMessage>> _messagesCache = {};
   bool _loaded = false;
 
+  @override
+  Future<List<ChatContact>> getContacts() async => const [];
+
   Future<void> _ensureLoaded() async {
     if (_loaded) return;
     final prefs = await SharedPreferences.getInstance();
@@ -81,7 +84,8 @@ class ChatBackendMemory implements ChatBackend {
   void _emitMessages(String conversationId) {
     final ctrl = _messageControllers[conversationId];
     if (ctrl == null) return;
-    final msgs = List<RemoteChatMessage>.from(_messagesCache[conversationId] ?? []);
+    final msgs =
+        List<RemoteChatMessage>.from(_messagesCache[conversationId] ?? []);
     msgs.sort((a, b) => a.sentAt.compareTo(b.sentAt));
     ctrl.add(msgs);
   }
@@ -93,7 +97,8 @@ class ChatBackendMemory implements ChatBackend {
     for (final conv in _conversationsCache) {
       if (!conv.participantIds.contains(myUserId)) continue;
       final msgs = _messagesCache[conv.id] ?? [];
-      final count = msgs.where((m) => m.senderId != myUserId && !m.isRead).length;
+      final count =
+          msgs.where((m) => m.senderId != myUserId && !m.isRead).length;
       result.add(UnreadCount(conv.id, count));
     }
     ctrl.add(result);
@@ -161,7 +166,8 @@ class ChatBackendMemory implements ChatBackend {
     _messagesCache.putIfAbsent(conversationId, () => []).add(msg);
     await _persistMessages(conversationId);
 
-    final convIdx = _conversationsCache.indexWhere((c) => c.id == conversationId);
+    final convIdx =
+        _conversationsCache.indexWhere((c) => c.id == conversationId);
     if (convIdx >= 0) {
       final conv = _conversationsCache[convIdx];
       _conversationsCache[convIdx] = conv.copyWith(
@@ -208,6 +214,21 @@ class ChatBackendMemory implements ChatBackend {
         myUserId, () => StreamController<List<UnreadCount>>.broadcast());
     _ensureLoaded().then((_) => _emitUnread(myUserId));
     return ctrl.stream;
+  }
+
+  @override
+  void refresh() {
+    unawaited(_ensureLoaded().then((_) {
+      for (final userId in _conversationControllers.keys) {
+        _emitConversations(userId);
+      }
+      for (final conversationId in _messageControllers.keys) {
+        _emitMessages(conversationId);
+      }
+      for (final userId in _unreadControllers.keys) {
+        _emitUnread(userId);
+      }
+    }));
   }
 
   @override

@@ -66,6 +66,7 @@ class _TherapistLoginScreenState extends State<TherapistLoginScreen> {
       name: result.name,
       email: result.email,
       bindingCode: result.bindingCode,
+      friendCode: result.friendCode,
       customExerciseToken: customExerciseToken,
     );
 

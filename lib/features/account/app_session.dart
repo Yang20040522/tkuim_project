@@ -11,6 +11,7 @@ class AppSession {
   static String? email;
   static String? accountId;
   static String? bindingCode;
+  static String? friendCode;
   static String? customExerciseToken;
 
   static bool get isLoggedIn => userId != null || email != null;
@@ -21,6 +22,7 @@ class AppSession {
   static const _keyEmail = 'session_email';
   static const _keyAccountId = 'session_accountId';
   static const _keyBindingCode = 'session_bindingCode';
+  static const _keyFriendCode = 'session_friendCode';
   static const _keyCustomExerciseToken = 'session_customExerciseToken';
 
   /// App 啟動時呼叫一次,把上次登入狀態從本機讀回記憶體。
@@ -40,6 +42,7 @@ class AppSession {
     email = prefs.getString(_keyEmail);
     accountId = prefs.getString(_keyAccountId);
     bindingCode = prefs.getString(_keyBindingCode);
+    friendCode = prefs.getString(_keyFriendCode);
     customExerciseToken = prefs.getString(_keyCustomExerciseToken);
   }
 
@@ -51,6 +54,7 @@ class AppSession {
     String? email,
     String? accountId,
     String? bindingCode,
+    String? friendCode,
     String? customExerciseToken,
   }) async {
     AppSession.role = role;
@@ -59,6 +63,7 @@ class AppSession {
     AppSession.email = email;
     AppSession.accountId = accountId;
     AppSession.bindingCode = bindingCode;
+    AppSession.friendCode = friendCode;
     AppSession.customExerciseToken = customExerciseToken;
 
     final prefs = await SharedPreferences.getInstance();
@@ -76,6 +81,11 @@ class AppSession {
     } else {
       await prefs.remove(_keyBindingCode);
     }
+    if (friendCode != null) {
+      await prefs.setString(_keyFriendCode, friendCode);
+    } else {
+      await prefs.remove(_keyFriendCode);
+    }
     if (customExerciseToken != null) {
       await prefs.setString(_keyCustomExerciseToken, customExerciseToken);
     } else {
@@ -91,6 +101,7 @@ class AppSession {
     email = null;
     accountId = null;
     bindingCode = null;
+    friendCode = null;
     customExerciseToken = null;
 
     final prefs = await SharedPreferences.getInstance();
@@ -100,6 +111,7 @@ class AppSession {
     await prefs.remove(_keyEmail);
     await prefs.remove(_keyAccountId);
     await prefs.remove(_keyBindingCode);
+    await prefs.remove(_keyFriendCode);
     await prefs.remove(_keyCustomExerciseToken);
   }
 }

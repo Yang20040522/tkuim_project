@@ -145,6 +145,7 @@ class LoginResult {
   final String? email;
   final String? accountId;
   final String? bindingCode;
+  final String? friendCode;
   final String? customExerciseToken;
   final String? backendRole;
   final String? errorCode;
@@ -155,6 +156,7 @@ class LoginResult {
     required this.email,
     this.accountId,
     required this.bindingCode,
+    this.friendCode,
     required this.customExerciseToken,
     required this.backendRole,
     this.errorCode,
@@ -168,6 +170,7 @@ class LoginResult {
         email = null,
         accountId = null,
         bindingCode = null,
+        friendCode = null,
         customExerciseToken = null,
         backendRole = null;
 
@@ -181,6 +184,7 @@ class LoginResult {
       email: data['email']?.toString() ?? fallbackEmail,
       accountId: data['accountId']?.toString(),
       bindingCode: data['bindingCode']?.toString(),
+      friendCode: data['friendCode']?.toString(),
       customExerciseToken: data['customExerciseToken']?.toString(),
       backendRole: data['role']?.toString(),
     );

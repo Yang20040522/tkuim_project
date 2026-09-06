@@ -10,6 +10,9 @@
 import 'chat_models.dart';
 
 abstract class ChatBackend {
+  /// 取得目前登入者可合法聊天的治療師、病患或好友。
+  Future<List<ChatContact>> getContacts();
+
   /// 取得(或建立)我 跟某個對象之間的 1 對 1 對話,回傳 conversationId。
   /// 如果對話已經存在就直接回傳既有的 id,不會重複建立。
   Future<String> getOrCreateConversation({
@@ -41,6 +44,9 @@ abstract class ChatBackend {
 
   /// 監聽「我」在各對話裡的未讀數
   Stream<List<UnreadCount>> watchUnreadCounts(String myUserId);
+
+  /// 立即重新整理目前已啟動的對話與未讀監聽。
+  void refresh();
 
   /// 資源釋放(有些後端的連線/監聽需要手動關閉)
   void dispose();

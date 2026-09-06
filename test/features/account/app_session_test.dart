@@ -14,6 +14,7 @@ void main() {
     AppSession.email = null;
     AppSession.accountId = null;
     AppSession.bindingCode = null;
+    AppSession.friendCode = null;
     AppSession.customExerciseToken = null;
   });
 
@@ -50,6 +51,22 @@ void main() {
 
     expect(AppSession.userId, isNull);
     expect(AppSession.customExerciseToken, isNull);
+  });
+
+  test('AppSession friendCode 可儲存、重載並在 clear 後移除', () async {
+    await AppSession.save(
+      role: UserRole.patient,
+      userId: '15',
+      friendCode: 'ABCD1234',
+    );
+
+    AppSession.friendCode = null;
+    await AppSession.load();
+    expect(AppSession.friendCode, 'ABCD1234');
+
+    await AppSession.clear();
+    await AppSession.load();
+    expect(AppSession.friendCode, isNull);
   });
 
   test('AppSession 重載後保留患者 binding code', () async {

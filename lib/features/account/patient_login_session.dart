@@ -24,6 +24,7 @@ class PatientLoginSession {
       email: result.email ?? fallbackEmail,
       accountId: result.accountId,
       bindingCode: result.bindingCode,
+      friendCode: result.friendCode,
       customExerciseToken: result.customExerciseToken,
     );
   }

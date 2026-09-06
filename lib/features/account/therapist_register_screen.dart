@@ -104,6 +104,7 @@ class _TherapistRegisterScreenState extends State<TherapistRegisterScreen> {
       email: result.email,
       accountId: result.accountId,
       bindingCode: result.bindingCode,
+      friendCode: result.friendCode,
       customExerciseToken: token,
     );
 
