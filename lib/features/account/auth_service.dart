@@ -81,14 +81,12 @@ class AuthService {
     required String name,
     required String email,
     required String password,
-    required String inviteCode,
   }) async {
     try {
       final data = await ApiService.registerTherapist(
         name: name,
         email: email,
         password: password,
-        inviteCode: inviteCode,
       );
       return LoginResult.fromResponse(data, fallbackEmail: email);
     } on AuthApiFailure catch (error) {

@@ -69,13 +69,11 @@ class ApiService {
     required String name,
     required String email,
     required String password,
-    required String inviteCode,
   }) {
     return _client.registerTherapist(
       name: name,
       email: email,
       password: password,
-      inviteCode: inviteCode,
     );
   }
 }
@@ -181,7 +179,6 @@ class AuthApiClient {
     required String name,
     required String email,
     required String password,
-    required String inviteCode,
   }) {
     return _postAuth(
       '/api/auth/therapist/register',
@@ -189,7 +186,6 @@ class AuthApiClient {
         'name': name,
         'email': email,
         'password': password,
-        'inviteCode': inviteCode,
       },
     );
   }

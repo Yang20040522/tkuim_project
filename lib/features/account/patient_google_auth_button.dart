@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'auth_service.dart';
 import 'google_auth_service.dart';
+import 'user_avatar_repository.dart';
 
 typedef PatientGoogleAuthenticated = Future<void> Function(LoginResult result);
 
@@ -11,11 +12,13 @@ class PatientGoogleAuthButton extends StatefulWidget {
     required this.label,
     required this.onAuthenticated,
     this.coordinator,
+    this.avatarRepository,
   });
 
   final String label;
   final PatientGoogleAuthenticated onAuthenticated;
   final PatientGoogleAuthCoordinator? coordinator;
+  final UserAvatarRepository? avatarRepository;
 
   @override
   State<PatientGoogleAuthButton> createState() =>
@@ -24,12 +27,14 @@ class PatientGoogleAuthButton extends StatefulWidget {
 
 class _PatientGoogleAuthButtonState extends State<PatientGoogleAuthButton> {
   late final PatientGoogleAuthCoordinator _coordinator;
+  late final UserAvatarRepository _avatarRepository;
   bool _isLoading = false;
 
   @override
   void initState() {
     super.initState();
     _coordinator = widget.coordinator ?? PatientGoogleAuthCoordinator();
+    _avatarRepository = widget.avatarRepository ?? LocalUserAvatarRepository();
   }
 
   Future<void> _authenticate() async {
@@ -40,11 +45,13 @@ class _PatientGoogleAuthButtonState extends State<PatientGoogleAuthButton> {
     if (!mounted) return;
 
     if (result.status == PatientGoogleAuthStatus.success) {
+      await _rememberGooglePhoto(result);
       await widget.onAuthenticated(result.loginResult!);
     } else if (result.status == PatientGoogleAuthStatus.linkRequired) {
       final linkedResult = await _showLinkDialog();
       if (linkedResult != null && mounted) {
-        await widget.onAuthenticated(linkedResult);
+        await _rememberGooglePhoto(linkedResult);
+        await widget.onAuthenticated(linkedResult.loginResult!);
       }
     } else {
       _showMessage(result.message ?? 'Google 登入失敗，請稍後再試');
@@ -55,12 +62,25 @@ class _PatientGoogleAuthButtonState extends State<PatientGoogleAuthButton> {
     }
   }
 
-  Future<LoginResult?> _showLinkDialog() async {
-    return showDialog<LoginResult>(
+  Future<PatientGoogleAuthResult?> _showLinkDialog() async {
+    return showDialog<PatientGoogleAuthResult>(
       context: context,
       barrierDismissible: false,
       builder: (_) => _GoogleAccountLinkDialog(coordinator: _coordinator),
     );
+  }
+
+  Future<void> _rememberGooglePhoto(PatientGoogleAuthResult result) async {
+    final userId = result.loginResult?.userId?.trim();
+    if (userId == null || userId.isEmpty) return;
+    try {
+      await _avatarRepository.saveGooglePhotoUrl(
+        'user_$userId',
+        result.googlePhotoUrl,
+      );
+    } catch (_) {
+      // Avatar persistence must never block an otherwise valid login.
+    }
   }
 
   void _showMessage(String message) {
@@ -144,7 +164,7 @@ class _GoogleAccountLinkDialogState extends State<_GoogleAccountLinkDialog> {
     );
     if (!mounted) return;
     if (linkResult.status == PatientGoogleAuthStatus.success) {
-      Navigator.of(context).pop(linkResult.loginResult);
+      Navigator.of(context).pop(linkResult);
       return;
     }
     setState(() {

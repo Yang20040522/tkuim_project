@@ -10,6 +10,7 @@ import 'api_service.dart';
 import 'app_session.dart';
 import 'google_auth_service.dart';
 import 'role_select_screen.dart';
+import 'user_avatar_repository.dart';
 import 'user_role.dart';
 
 class AccountInfoScreen extends StatefulWidget {
@@ -17,10 +18,12 @@ class AccountInfoScreen extends StatefulWidget {
     super.key,
     this.accountService,
     this.googleCredentialProvider,
+    this.avatarRepository,
   });
 
   final AccountProfileService? accountService;
   final PatientGoogleCredentialProvider? googleCredentialProvider;
+  final UserAvatarRepository? avatarRepository;
 
   @override
   State<AccountInfoScreen> createState() => _AccountInfoScreenState();
@@ -29,6 +32,7 @@ class AccountInfoScreen extends StatefulWidget {
 class _AccountInfoScreenState extends State<AccountInfoScreen> {
   late final AccountProfileService _service;
   late final PatientGoogleCredentialProvider _googleCredentialProvider;
+  late final UserAvatarRepository _avatarRepository;
   final _clientService = SocketClientService();
 
   bool _loading = true;
@@ -45,6 +49,7 @@ class _AccountInfoScreenState extends State<AccountInfoScreen> {
     _service = widget.accountService ?? AccountProfileService();
     _googleCredentialProvider =
         widget.googleCredentialProvider ?? GoogleSignInCredentialProvider();
+    _avatarRepository = widget.avatarRepository ?? LocalUserAvatarRepository();
     _load();
   }
 
@@ -339,6 +344,17 @@ class _AccountInfoScreenState extends State<AccountInfoScreen> {
           code: result.errorCode,
           message: result.message ?? 'Google 帳號綁定失敗，請稍後再試',
         );
+      }
+      final linkedUserId = result.userId?.trim();
+      if (linkedUserId != null && linkedUserId.isNotEmpty) {
+        try {
+          await _avatarRepository.saveGooglePhotoUrl(
+            'user_$linkedUserId',
+            credential.photoUrl,
+          );
+        } catch (_) {
+          // A successful account link must not fail because avatar caching failed.
+        }
       }
       await AppSession.save(
         role: UserRole.patient,

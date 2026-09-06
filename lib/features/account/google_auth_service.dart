@@ -4,9 +4,10 @@ import '../../core/api_config.dart';
 import 'auth_service.dart';
 
 class PatientGoogleCredential {
-  const PatientGoogleCredential({required this.idToken});
+  const PatientGoogleCredential({required this.idToken, this.photoUrl});
 
   final String idToken;
+  final String? photoUrl;
 }
 
 abstract class PatientGoogleCredentialProvider {
@@ -49,7 +50,10 @@ class GoogleSignInCredentialProvider
       if (idToken == null || idToken.isEmpty) {
         throw const GoogleAuthException('Google 未提供可驗證的登入憑證');
       }
-      return PatientGoogleCredential(idToken: idToken);
+      return PatientGoogleCredential(
+        idToken: idToken,
+        photoUrl: account.photoUrl,
+      );
     } on GoogleSignInException catch (error) {
       if (error.code == GoogleSignInExceptionCode.canceled) {
         throw const GoogleAuthCancelledException();
@@ -92,10 +96,17 @@ class PatientGoogleAuthResult {
     this.status, {
     this.loginResult,
     this.message,
+    this.googlePhotoUrl,
   });
 
-  const PatientGoogleAuthResult.success(LoginResult result)
-      : this._(PatientGoogleAuthStatus.success, loginResult: result);
+  const PatientGoogleAuthResult.success(
+    LoginResult result, {
+    String? googlePhotoUrl,
+  }) : this._(
+          PatientGoogleAuthStatus.success,
+          loginResult: result,
+          googlePhotoUrl: googlePhotoUrl,
+        );
 
   const PatientGoogleAuthResult.linkRequired()
       : this._(PatientGoogleAuthStatus.linkRequired);
@@ -112,6 +123,7 @@ class PatientGoogleAuthResult {
   final PatientGoogleAuthStatus status;
   final LoginResult? loginResult;
   final String? message;
+  final String? googlePhotoUrl;
 }
 
 class PatientGoogleAuthCoordinator {
@@ -125,20 +137,26 @@ class PatientGoogleAuthCoordinator {
   final PatientGoogleCredentialProvider _credentialProvider;
   final PatientGoogleBackend _backend;
   String? _pendingIdToken;
+  String? _pendingGooglePhotoUrl;
 
   bool get hasPendingLink => _pendingIdToken != null;
 
   Future<PatientGoogleAuthResult> authenticate() async {
     _pendingIdToken = null;
+    _pendingGooglePhotoUrl = null;
     try {
       final credential = await _credentialProvider.authenticate();
       final result = await _backend.login(credential.idToken);
       if (result.success) {
-        return _patientResult(result);
+        return _patientResult(
+          result,
+          googlePhotoUrl: credential.photoUrl,
+        );
       }
       if (result.errorCode == 'GOOGLE_LINK_REQUIRED') {
         // Kept in memory only for the immediately following password proof.
         _pendingIdToken = credential.idToken;
+        _pendingGooglePhotoUrl = credential.photoUrl;
         return const PatientGoogleAuthResult.linkRequired();
       }
       return PatientGoogleAuthResult.failure(
@@ -169,9 +187,13 @@ class PatientGoogleAuthCoordinator {
           result.message ?? '帳號連結失敗，請稍後再試',
         );
       }
-      final patientResult = _patientResult(result);
+      final patientResult = _patientResult(
+        result,
+        googlePhotoUrl: _pendingGooglePhotoUrl,
+      );
       if (patientResult.status == PatientGoogleAuthStatus.success) {
         _pendingIdToken = null;
+        _pendingGooglePhotoUrl = null;
       }
       return patientResult;
     } catch (_) {
@@ -183,9 +205,13 @@ class PatientGoogleAuthCoordinator {
 
   void cancelPendingLink() {
     _pendingIdToken = null;
+    _pendingGooglePhotoUrl = null;
   }
 
-  PatientGoogleAuthResult _patientResult(LoginResult result) {
+  PatientGoogleAuthResult _patientResult(
+    LoginResult result, {
+    String? googlePhotoUrl,
+  }) {
     if (result.backendRole?.toUpperCase() != 'PATIENT') {
       return const PatientGoogleAuthResult.failure(
         '此帳號無法使用患者 Google 登入',
@@ -197,7 +223,10 @@ class PatientGoogleAuthCoordinator {
         '伺服器登入資料不完整，請稍後再試',
       );
     }
-    return PatientGoogleAuthResult.success(result);
+    return PatientGoogleAuthResult.success(
+      result,
+      googlePhotoUrl: googlePhotoUrl,
+    );
   }
 }
 

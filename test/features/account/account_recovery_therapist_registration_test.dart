@@ -140,7 +140,8 @@ void main() {
     expect(preferences.getKeys(), isEmpty);
   });
 
-  testWidgets('therapist login exposes controlled registration entry only',
+  testWidgets(
+      'therapist login exposes direct registration without invite field',
       (tester) async {
     await tester.pumpWidget(_app(const TherapistLoginScreen()));
 
@@ -153,15 +154,8 @@ void main() {
     expect(find.byKey(const Key('therapist-register-email')), findsOneWidget);
     expect(
         find.byKey(const Key('therapist-register-password')), findsOneWidget);
-    expect(find.byKey(const Key('therapist-invite-code')), findsOneWidget);
+    expect(find.byKey(const Key('therapist-invite-code')), findsNothing);
     expect(find.textContaining('角色'), findsNothing);
-    final inviteField = tester.widget<EditableText>(
-      find.descendant(
-        of: find.byKey(const Key('therapist-invite-code')),
-        matching: find.byType(EditableText),
-      ),
-    );
-    expect(inviteField.obscureText, isTrue);
   });
 
   testWidgets('therapist password confirmation prevents submission',
@@ -178,7 +172,8 @@ void main() {
     expect(gateway.calls, 0);
   });
 
-  testWidgets('invalid therapist invite renders generic error', (tester) async {
+  testWidgets('backend therapist registration error is rendered',
+      (tester) async {
     final gateway = FakeTherapistGateway(
       result: LoginResult.failure('治療師註冊資訊無效'),
     );
@@ -217,6 +212,27 @@ void main() {
     expect(AppSession.role, UserRole.therapist);
     expect(AppSession.userId, '21');
     expect(AppSession.customExerciseToken, 'hmac-token');
+  });
+
+  testWidgets('therapist home displays current session name', (tester) async {
+    AppSession.name = '郭宸佑';
+    await tester.pumpWidget(_app(const TherapistHomeScreen()));
+
+    final name = tester.widget<Text>(
+      find.byKey(const Key('therapist-home-name')),
+    );
+    expect(name.data, '郭宸佑');
+  });
+
+  testWidgets('therapist home falls back when session name is missing',
+      (tester) async {
+    AppSession.name = '  ';
+    await tester.pumpWidget(_app(const TherapistHomeScreen()));
+
+    final name = tester.widget<Text>(
+      find.byKey(const Key('therapist-home-name')),
+    );
+    expect(name.data, '治療師');
   });
 
   testWidgets('field hint stays lighter than entered active text',
@@ -298,10 +314,6 @@ Future<void> _enterTherapistForm(
     find.byKey(const Key('therapist-register-confirm-password')),
     confirmPassword,
   );
-  await tester.enterText(
-    find.byKey(const Key('therapist-invite-code')),
-    'invite-code',
-  );
 }
 
 class FakeRecoveryGateway implements AccountRecoveryGateway {
@@ -352,7 +364,6 @@ class FakeTherapistGateway implements TherapistRegistrationGateway {
     required String name,
     required String email,
     required String password,
-    required String inviteCode,
   }) async {
     calls++;
     return result;

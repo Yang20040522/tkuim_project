@@ -87,6 +87,7 @@ class TherapistHomeScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final therapistName = AppSession.name?.trim();
     return Scaffold(
       backgroundColor: const Color(0xFFF5F6FA),
       body: SafeArea(
@@ -97,9 +98,12 @@ class TherapistHomeScreen extends StatelessWidget {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                const Text(
-                  '治療師',
-                  style: TextStyle(
+                Text(
+                  therapistName == null || therapistName.isEmpty
+                      ? '治療師'
+                      : therapistName,
+                  key: const Key('therapist-home-name'),
+                  style: const TextStyle(
                     color: Color(0xFF1A1D2E),
                     fontSize: 22,
                     fontWeight: FontWeight.w900,

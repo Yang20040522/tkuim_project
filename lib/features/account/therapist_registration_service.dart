@@ -5,7 +5,6 @@ abstract interface class TherapistRegistrationGateway {
     required String name,
     required String email,
     required String password,
-    required String inviteCode,
   });
 }
 
@@ -17,13 +16,11 @@ class TherapistRegistrationService implements TherapistRegistrationGateway {
     required String name,
     required String email,
     required String password,
-    required String inviteCode,
   }) {
     return AuthService.registerTherapist(
       name: name,
       email: email,
       password: password,
-      inviteCode: inviteCode,
     );
   }
 }

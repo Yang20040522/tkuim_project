@@ -5,6 +5,7 @@ import 'package:flutter_body/features/account/login_screen.dart';
 import 'package:flutter_body/features/account/patient_google_auth_button.dart';
 import 'package:flutter_body/features/account/register_screen.dart';
 import 'package:flutter_body/features/account/therapist_login_screen.dart';
+import 'package:flutter_body/features/account/user_avatar_repository.dart';
 import 'package:flutter_body/features/account/user_role.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -43,6 +44,7 @@ void main() {
       credentialProvider: UiFakeCredentialProvider(),
       backend: backend,
     );
+    final avatars = UiFakeAvatarRepository();
     LoginResult? authenticated;
 
     await tester.pumpWidget(
@@ -51,6 +53,7 @@ void main() {
           body: PatientGoogleAuthButton(
             label: '使用 Google 登入',
             coordinator: coordinator,
+            avatarRepository: avatars,
             onAuthenticated: (result) async => authenticated = result,
           ),
         ),
@@ -72,6 +75,8 @@ void main() {
 
     expect(authenticated?.userId, '12');
     expect(backend.linkCalls, 1);
+    expect(avatars.ownerKey, 'user_12');
+    expect(avatars.photoUrl, 'https://example.test/google-avatar.jpg');
     expect(find.text('連結既有帳號'), findsNothing);
   });
 }
@@ -79,7 +84,27 @@ void main() {
 class UiFakeCredentialProvider implements PatientGoogleCredentialProvider {
   @override
   Future<PatientGoogleCredential> authenticate() async {
-    return const PatientGoogleCredential(idToken: 'memory-token');
+    return const PatientGoogleCredential(
+      idToken: 'memory-token',
+      photoUrl: 'https://example.test/google-avatar.jpg',
+    );
+  }
+}
+
+class UiFakeAvatarRepository implements UserAvatarRepository {
+  String? ownerKey;
+  String? photoUrl;
+
+  @override
+  Future<UserAvatar> load(String ownerKey) async => const UserAvatar();
+
+  @override
+  Future<String?> pickAndSaveCustomAvatar(String ownerKey) async => null;
+
+  @override
+  Future<void> saveGooglePhotoUrl(String ownerKey, String? photoUrl) async {
+    this.ownerKey = ownerKey;
+    this.photoUrl = photoUrl;
   }
 }
 

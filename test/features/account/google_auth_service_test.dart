@@ -19,6 +19,20 @@ void main() {
     expect(coordinator.hasPendingLink, isFalse);
   });
 
+  test('Google profile photo URL stays with successful auth result', () async {
+    final coordinator = PatientGoogleAuthCoordinator(
+      credentialProvider: FakeCredentialProvider(
+        'memory-only-token',
+        photoUrl: 'https://example.test/avatar.jpg',
+      ),
+      backend: FakeGoogleBackend(loginResult: patientResult()),
+    );
+
+    final result = await coordinator.authenticate();
+
+    expect(result.googlePhotoUrl, 'https://example.test/avatar.jpg');
+  });
+
   test('backend role must be PATIENT', () async {
     final coordinator = PatientGoogleAuthCoordinator(
       credentialProvider: FakeCredentialProvider('token'),
@@ -143,13 +157,14 @@ LoginResult patientResult() => LoginResult.success(
     );
 
 class FakeCredentialProvider implements PatientGoogleCredentialProvider {
-  FakeCredentialProvider(this.token);
+  FakeCredentialProvider(this.token, {this.photoUrl});
 
   final String token;
+  final String? photoUrl;
 
   @override
   Future<PatientGoogleCredential> authenticate() async {
-    return PatientGoogleCredential(idToken: token);
+    return PatientGoogleCredential(idToken: token, photoUrl: photoUrl);
   }
 }
 

@@ -213,9 +213,9 @@ void main() {
           'name': '林治療師',
           'email': 'therapist@example.com',
           'password': 'password',
-          'inviteCode': 'invite-code',
         });
         expect(body, isNot(contains('role')));
+        expect(body, isNot(contains('inviteCode')));
         return jsonResponse(200, {
           'userId': 21,
           'name': '林治療師',
@@ -230,7 +230,6 @@ void main() {
       name: '林治療師',
       email: 'therapist@example.com',
       password: 'password',
-      inviteCode: 'invite-code',
     );
     expect(result['role'], 'THERAPIST');
   });

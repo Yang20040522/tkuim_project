@@ -1,4 +1,6 @@
 // lib/features/account/profile_screen.dart
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 
 import '../../core/ui/app_colors.dart';
@@ -8,9 +10,15 @@ import '../notification/notification_settings_screen.dart';
 import 'app_session.dart';
 import 'role_select_screen.dart';
 import 'account_info_screen.dart';
+import 'user_avatar_repository.dart';
 
 class ProfileScreen extends StatefulWidget {
-  const ProfileScreen({super.key});
+  const ProfileScreen({
+    super.key,
+    this.avatarRepository,
+  });
+
+  final UserAvatarRepository? avatarRepository;
 
   @override
   State<ProfileScreen> createState() => _ProfileScreenState();
@@ -18,21 +26,64 @@ class ProfileScreen extends StatefulWidget {
 
 class _ProfileScreenState extends State<ProfileScreen> {
   final HistoryService _historyService = HistoryService();
+  late final UserAvatarRepository _avatarRepository;
 
   String _userName = '使用者';
   String _userPhone = '尚未設定';
   String? _userEmail;
   int _totalDays = 0;
   String _avgAccuracy = '-- %';
+  String? _avatarOwnerKey;
+  String? _customAvatarPath;
+  String? _googlePhotoUrl;
 
   @override
   void initState() {
     super.initState();
+    _avatarRepository = widget.avatarRepository ?? LocalUserAvatarRepository();
     if (AppSession.name != null && AppSession.name!.isNotEmpty) {
       _userName = AppSession.name!;
     }
     _userEmail = AppSession.email;
     _loadStats();
+    _loadAvatar();
+  }
+
+  Future<void> _loadAvatar() async {
+    final ownerKey = LocalUserAvatarRepository.currentOwnerKey();
+    _avatarOwnerKey = ownerKey;
+    if (ownerKey == null) return;
+    try {
+      final avatar = await _avatarRepository.load(ownerKey);
+      if (!mounted || ownerKey != _avatarOwnerKey) return;
+      setState(() {
+        _customAvatarPath = avatar.customPath;
+        _googlePhotoUrl = avatar.googlePhotoUrl;
+      });
+    } catch (_) {
+      // A missing or unreadable avatar must fall back to initials.
+    }
+  }
+
+  Future<void> _changeAvatar() async {
+    final ownerKey = _avatarOwnerKey;
+    if (ownerKey == null) {
+      _showAvatarError();
+      return;
+    }
+    try {
+      final path = await _avatarRepository.pickAndSaveCustomAvatar(ownerKey);
+      if (!mounted || path == null) return;
+      setState(() => _customAvatarPath = path);
+    } catch (_) {
+      if (mounted) _showAvatarError();
+    }
+  }
+
+  void _showAvatarError() {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('無法更新頭像，請稍後再試')),
+    );
   }
 
   Future<void> _loadStats() async {
@@ -155,10 +206,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 foregroundColor: const Color(0xFFE24B4A),
               ),
               onPressed: () async {
+                final navigator = Navigator.of(context);
                 Navigator.pop(dialogContext);
                 await AppSession.clear(); // ← 加 await
-                if (!context.mounted) return;
-                Navigator.of(context).pushAndRemoveUntil(
+                if (!mounted) return;
+                navigator.pushAndRemoveUntil(
                   MaterialPageRoute(builder: (_) => const RoleSelectScreen()),
                   (route) => false,
                 );
@@ -226,25 +278,37 @@ class _ProfileScreenState extends State<ProfileScreen> {
       ),
       child: Row(
         children: [
-          Container(
-            width: 56,
-            height: 56,
-            decoration: const BoxDecoration(
-              gradient: LinearGradient(
-                colors: [Color(0xFF4A65FF), Color(0xFF7B5EA7)],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              ),
-              shape: BoxShape.circle,
-            ),
-            child: Center(
-              child: Text(
-                _userName.isNotEmpty ? _userName.substring(0, 1) : '?',
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 20,
-                  fontWeight: FontWeight.w800,
-                ),
+          Semantics(
+            button: true,
+            label: '更換頭像',
+            child: GestureDetector(
+              key: const Key('profile-avatar-change'),
+              behavior: HitTestBehavior.opaque,
+              onTap: _changeAvatar,
+              child: Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  _buildAvatar(),
+                  Positioned(
+                    right: -2,
+                    bottom: -2,
+                    child: Container(
+                      key: const Key('profile-avatar-edit-badge'),
+                      width: 22,
+                      height: 22,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF4A65FF),
+                        shape: BoxShape.circle,
+                        border: Border.all(color: Colors.white, width: 2),
+                      ),
+                      child: const Icon(
+                        Icons.camera_alt_outlined,
+                        color: Colors.white,
+                        size: 12,
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
           ),
@@ -287,6 +351,68 @@ class _ProfileScreenState extends State<ProfileScreen> {
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildAvatar() {
+    final avatar = UserAvatar(
+      customPath: _customAvatarPath,
+      googlePhotoUrl: _googlePhotoUrl,
+    );
+    if (avatar.source == UserAvatarSource.custom) {
+      return _avatarImage(
+        Image.file(
+          File(avatar.customPath!),
+          fit: BoxFit.cover,
+          errorBuilder: (_, __, ___) => _buildInitialsAvatar(),
+        ),
+      );
+    }
+    if (avatar.source == UserAvatarSource.google) {
+      return _avatarImage(
+        buildGoogleProfileAvatarImage(
+          avatar.googlePhotoUrl!,
+          _buildInitialsAvatar(),
+        ),
+      );
+    }
+    return _buildInitialsAvatar();
+  }
+
+  Widget _avatarImage(Widget image) {
+    return ClipOval(
+      child: SizedBox(
+        key: const Key('profile-avatar-image'),
+        width: 56,
+        height: 56,
+        child: image,
+      ),
+    );
+  }
+
+  Widget _buildInitialsAvatar() {
+    return Container(
+      key: const Key('profile-avatar-initials'),
+      width: 56,
+      height: 56,
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
+          colors: [Color(0xFF4A65FF), Color(0xFF7B5EA7)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        shape: BoxShape.circle,
+      ),
+      child: Center(
+        child: Text(
+          _userName.isNotEmpty ? _userName.substring(0, 1) : '?',
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 20,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
       ),
     );
   }
@@ -406,6 +532,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
       ),
     );
   }
+}
+
+@visibleForTesting
+Image buildGoogleProfileAvatarImage(String url, Widget fallback) {
+  return Image.network(
+    url,
+    fit: BoxFit.cover,
+    errorBuilder: (_, __, ___) => fallback,
+  );
 }
 
 class _MiniStatCard extends StatelessWidget {

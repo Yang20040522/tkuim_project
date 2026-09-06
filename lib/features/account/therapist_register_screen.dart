@@ -1,6 +1,6 @@
 // lib/features/account/therapist_register_screen.dart
 //
-// 治療端專用註冊頁。角色由後端在驗證治療師註冊碼後固定設定。
+// 治療端專用註冊頁。角色固定由後端設定，client 不傳入 role。
 
 import 'package:flutter/material.dart';
 
@@ -27,12 +27,10 @@ class _TherapistRegisterScreenState extends State<TherapistRegisterScreen> {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   final _confirmPasswordController = TextEditingController();
-  final _inviteCodeController = TextEditingController();
   late final TherapistRegistrationGateway _gateway;
 
   bool _obscurePassword = true;
   bool _obscureConfirmPassword = true;
-  bool _obscureInviteCode = true;
   bool _isLoading = false;
 
   @override
@@ -47,7 +45,6 @@ class _TherapistRegisterScreenState extends State<TherapistRegisterScreen> {
     _emailController.dispose();
     _passwordController.dispose();
     _confirmPasswordController.dispose();
-    _inviteCodeController.dispose();
     super.dispose();
   }
 
@@ -73,9 +70,6 @@ class _TherapistRegisterScreenState extends State<TherapistRegisterScreen> {
     return null;
   }
 
-  String? _validateInviteCode(String? value) =>
-      value == null || value.isEmpty ? '請輸入治療師註冊碼' : null;
-
   Future<void> _handleRegister() async {
     if (!_formKey.currentState!.validate()) return;
     setState(() => _isLoading = true);
@@ -84,7 +78,6 @@ class _TherapistRegisterScreenState extends State<TherapistRegisterScreen> {
       name: _nameController.text.trim(),
       email: _emailController.text.trim(),
       password: _passwordController.text,
-      inviteCode: _inviteCodeController.text,
     );
 
     if (!mounted) return;
@@ -228,30 +221,6 @@ class _TherapistRegisterScreenState extends State<TherapistRegisterScreen> {
                     ),
                   ),
                   validator: _validateConfirmPassword,
-                  onFieldSubmitted: (_) => _handleRegister(),
-                ),
-                const SizedBox(height: 20),
-                _label('治療師註冊碼'),
-                const SizedBox(height: 8),
-                TextFormField(
-                  key: const Key('therapist-invite-code'),
-                  controller: _inviteCodeController,
-                  obscureText: _obscureInviteCode,
-                  decoration: _decoration(
-                    '請輸入治療師註冊碼',
-                    Icons.admin_panel_settings_outlined,
-                    suffix: IconButton(
-                      icon: Icon(
-                        _obscureInviteCode
-                            ? Icons.visibility_outlined
-                            : Icons.visibility_off_outlined,
-                      ),
-                      onPressed: () => setState(
-                        () => _obscureInviteCode = !_obscureInviteCode,
-                      ),
-                    ),
-                  ),
-                  validator: _validateInviteCode,
                   onFieldSubmitted: (_) => _handleRegister(),
                 ),
                 const SizedBox(height: 24),
