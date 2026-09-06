@@ -238,7 +238,7 @@ class _RemoteChatScreenState extends State<RemoteChatScreen> {
             ),
             const SizedBox(height: 4),
             Text(
-              _formatMessageTime(message.sentAt),
+              _messageMetadata(message, mine),
               style: TextStyle(
                 color: mine
                     ? Colors.white.withValues(alpha: 0.75)
@@ -305,13 +305,27 @@ class _RemoteChatScreenState extends State<RemoteChatScreen> {
             IconButton.filled(
               key: const ValueKey('remote-chat-send'),
               onPressed: _sending ? null : _send,
+              style: ButtonStyle(
+                backgroundColor: WidgetStateProperty.resolveWith((states) {
+                  if (states.contains(WidgetState.disabled)) {
+                    return const Color(0xFFD5DAEE);
+                  }
+                  return const Color(0xFF4A65FF);
+                }),
+                foregroundColor: WidgetStateProperty.resolveWith((states) {
+                  if (states.contains(WidgetState.disabled)) {
+                    return const Color(0xFF7D87A8);
+                  }
+                  return Colors.white;
+                }),
+              ),
               icon: _sending
                   ? const SizedBox(
                       width: 18,
                       height: 18,
                       child: CircularProgressIndicator(
                         strokeWidth: 2,
-                        color: Colors.white,
+                        color: Color(0xFF7D87A8),
                       ),
                     )
                   : const Icon(Icons.send_rounded),
@@ -326,5 +340,10 @@ class _RemoteChatScreenState extends State<RemoteChatScreen> {
     final local = value.toLocal();
     return '${local.hour.toString().padLeft(2, '0')}:'
         '${local.minute.toString().padLeft(2, '0')}';
+  }
+
+  String _messageMetadata(RemoteChatMessage message, bool mine) {
+    final time = _formatMessageTime(message.sentAt);
+    return mine && message.isRead ? '$time · 已讀' : time;
   }
 }

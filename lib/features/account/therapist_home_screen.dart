@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 
 import '../../core/ui/app_colors.dart';
 
+import '../chat/chat_backend.dart';
+import '../chat/chat_home_screen.dart';
 import '../custom_exercise/custom_exercise_editor_page.dart';
 import '../custom_exercise/custom_exercise_assignment_page.dart';
 import '../custom_exercise/custom_exercise_list_page.dart';
@@ -16,8 +18,57 @@ import 'app_session.dart';
 import 'patient_management_page.dart';
 import 'role_select_screen.dart';
 
-class TherapistHomeScreen extends StatelessWidget {
-  const TherapistHomeScreen({super.key});
+class TherapistHomeScreen extends StatefulWidget {
+  const TherapistHomeScreen({
+    super.key,
+    this.chatBackend,
+  });
+
+  final ChatBackend? chatBackend;
+
+  @override
+  State<TherapistHomeScreen> createState() => _TherapistHomeScreenState();
+}
+
+class _TherapistHomeScreenState extends State<TherapistHomeScreen> {
+  late final PageController _pageController;
+  late final List<Widget> _pages;
+  int _selectedIndex = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _pageController = PageController(keepPage: true);
+    _pages = [
+      _TherapistKeepAlivePage(
+        child: Builder(builder: _buildHomePage),
+      ),
+      _TherapistKeepAlivePage(
+        child: ChatHomeScreen(backend: widget.chatBackend),
+      ),
+    ];
+  }
+
+  @override
+  void dispose() {
+    _pageController.dispose();
+    super.dispose();
+  }
+
+  void _selectPage(int index) {
+    if (index == _selectedIndex) return;
+    setState(() => _selectedIndex = index);
+    _pageController.animateToPage(
+      index,
+      duration: const Duration(milliseconds: 250),
+      curve: Curves.easeOutCubic,
+    );
+  }
+
+  void _handlePageChanged(int index) {
+    if (index == _selectedIndex) return;
+    setState(() => _selectedIndex = index);
+  }
 
   void _logout(BuildContext context) async {
     await AppSession.clear();
@@ -87,11 +138,56 @@ class TherapistHomeScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final therapistName = AppSession.name?.trim();
     return Scaffold(
       backgroundColor: const Color(0xFFF5F6FA),
-      body: SafeArea(
+      body: PageView(
+        key: const ValueKey('therapist-tab-pages'),
+        controller: _pageController,
+        onPageChanged: _handlePageChanged,
+        children: _pages,
+      ),
+      bottomNavigationBar: BottomNavigationBar(
+        key: const ValueKey('therapist-bottom-navigation'),
+        currentIndex: _selectedIndex,
+        onTap: _selectPage,
+        type: BottomNavigationBarType.fixed,
+        selectedItemColor: const Color(0xFF4A65FF),
+        unselectedItemColor: AppColors.secondaryText,
+        items: const [
+          BottomNavigationBarItem(
+            icon: Icon(
+              Icons.home_outlined,
+              key: ValueKey('therapist-tab-home'),
+            ),
+            activeIcon: Icon(
+              Icons.home,
+              key: ValueKey('therapist-tab-home'),
+            ),
+            label: '首頁',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(
+              Icons.chat_bubble_outline,
+              key: ValueKey('therapist-tab-chat'),
+            ),
+            activeIcon: Icon(
+              Icons.chat_bubble,
+              key: ValueKey('therapist-tab-chat'),
+            ),
+            label: '訊息',
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildHomePage(BuildContext context) {
+    final therapistName = AppSession.name?.trim();
+    return ColoredBox(
+      color: const Color(0xFFF5F6FA),
+      child: SafeArea(
         child: ListView(
+          key: const ValueKey('therapist-home-list'),
           padding: const EdgeInsets.all(24),
           children: [
             const SizedBox(height: 8),
@@ -183,6 +279,28 @@ class TherapistHomeScreen extends StatelessWidget {
         ),
       ),
     );
+  }
+}
+
+class _TherapistKeepAlivePage extends StatefulWidget {
+  const _TherapistKeepAlivePage({required this.child});
+
+  final Widget child;
+
+  @override
+  State<_TherapistKeepAlivePage> createState() =>
+      _TherapistKeepAlivePageState();
+}
+
+class _TherapistKeepAlivePageState extends State<_TherapistKeepAlivePage>
+    with AutomaticKeepAliveClientMixin {
+  @override
+  bool get wantKeepAlive => true;
+
+  @override
+  Widget build(BuildContext context) {
+    super.build(context);
+    return widget.child;
   }
 }
 

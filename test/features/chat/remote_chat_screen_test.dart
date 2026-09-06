@@ -68,6 +68,117 @@ void main() {
     backend.dispose();
   });
 
+  testWidgets(
+      'read receipt only appears for my messages and updates by polling',
+      (tester) async {
+    final backend = FakeChatBackend();
+    await tester.pumpWidget(
+      MaterialApp(
+        home: RemoteChatScreen(
+          backend: backend,
+          conversationId: '123',
+          otherUserId: '25',
+          otherUserName: '病友 B',
+          conversationType: ConversationType.peer,
+        ),
+      ),
+    );
+
+    backend.messages.add([
+      RemoteChatMessage(
+        id: 'unread',
+        conversationId: '123',
+        senderId: '15',
+        text: '尚未讀取',
+        sentAt: DateTime(2026, 9, 6, 22, 42),
+      ),
+      RemoteChatMessage(
+        id: 'read',
+        conversationId: '123',
+        senderId: '15',
+        text: '已讀訊息',
+        sentAt: DateTime(2026, 9, 6, 22, 43),
+        readAt: DateTime(2026, 9, 6, 22, 44),
+      ),
+      RemoteChatMessage(
+        id: 'other',
+        conversationId: '123',
+        senderId: '25',
+        text: '對方訊息',
+        sentAt: DateTime(2026, 9, 6, 22, 45),
+        readAt: DateTime(2026, 9, 6, 22, 46),
+      ),
+    ]);
+    await tester.pump();
+
+    expect(find.text('22:42'), findsOneWidget);
+    expect(find.text('22:43 · 已讀'), findsOneWidget);
+    expect(find.text('22:45'), findsOneWidget);
+    expect(find.text('22:42 · 已讀'), findsNothing);
+    expect(find.text('22:45 · 已讀'), findsNothing);
+
+    backend.messages.add([
+      RemoteChatMessage(
+        id: 'unread',
+        conversationId: '123',
+        senderId: '15',
+        text: '尚未讀取',
+        sentAt: DateTime(2026, 9, 6, 22, 42),
+        readAt: DateTime(2026, 9, 6, 22, 47),
+      ),
+    ]);
+    await tester.pump();
+
+    expect(find.text('22:42 · 已讀'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox());
+    backend.dispose();
+  });
+
+  testWidgets('send button uses the outgoing bubble blue and sends normally',
+      (tester) async {
+    final backend = FakeChatBackend();
+    await tester.pumpWidget(
+      MaterialApp(
+        home: RemoteChatScreen(
+          backend: backend,
+          conversationId: '123',
+          otherUserId: '25',
+          otherUserName: '病友 B',
+          conversationType: ConversationType.peer,
+        ),
+      ),
+    );
+    await tester.pump();
+
+    final button = tester.widget<IconButton>(
+      find.byKey(const ValueKey('remote-chat-send')),
+    );
+    expect(
+      button.style!.backgroundColor!.resolve({}),
+      const Color(0xFF4A65FF),
+    );
+    expect(
+      button.style!.foregroundColor!.resolve({}),
+      Colors.white,
+    );
+    expect(
+      button.style!.backgroundColor!.resolve({WidgetState.disabled}),
+      const Color(0xFFD5DAEE),
+    );
+
+    await tester.enterText(
+      find.byKey(const ValueKey('remote-chat-input')),
+      '你好',
+    );
+    await tester.tap(find.byKey(const ValueKey('remote-chat-send')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    expect(backend.sentTexts, ['你好']);
+    await tester.pumpWidget(const SizedBox());
+    backend.dispose();
+  });
+
   testWidgets('ChatHome renders backend contacts instead of mock contacts',
       (tester) async {
     final backend = FakeChatBackend(
@@ -167,6 +278,7 @@ class FakeChatBackend implements ChatBackend {
   int unreadWatchCalls = 0;
   int markReadCalls = 0;
   int refreshCalls = 0;
+  final List<String> sentTexts = [];
   bool _disposed = false;
 
   @override
@@ -198,7 +310,9 @@ class FakeChatBackend implements ChatBackend {
     required String conversationId,
     required String senderId,
     required String text,
-  }) async {}
+  }) async {
+    sentTexts.add(text);
+  }
 
   @override
   Future<void> markAsRead({
