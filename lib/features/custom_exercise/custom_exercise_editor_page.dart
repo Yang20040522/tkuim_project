@@ -53,12 +53,17 @@ class _CustomExerciseEditorViewState extends State<_CustomExerciseEditorView> {
 
   late final TextEditingController _nameController;
   late final TextEditingController _descriptionController;
+  late final TextEditingController _animationDurationController;
+  late final TextEditingController _repetitionsController;
+  late final TextEditingController _setsController;
+  late final TextEditingController _holdSecondsController;
   final ScrollController _scrollController = ScrollController();
   final GlobalKey _editorViewportKey = GlobalKey();
   final GlobalKey _viewerSlotKey = GlobalKey();
   bool _isSaving = false;
   bool _showFloatingPreview = false;
   bool _viewerGeometryScheduled = false;
+  String? _trainingSettingsError;
   Rect? _mainViewerRect;
 
   @override
@@ -67,6 +72,17 @@ class _CustomExerciseEditorViewState extends State<_CustomExerciseEditorView> {
     final draft = context.read<CustomExerciseEditorController>().draft;
     _nameController = TextEditingController(text: draft.name);
     _descriptionController = TextEditingController(text: draft.description);
+    final editorController = context.read<CustomExerciseEditorController>();
+    _animationDurationController = TextEditingController(
+      text: _formatSeconds(editorController.animationDurationSeconds),
+    );
+    _repetitionsController = TextEditingController(
+      text: draft.repetitions.toString(),
+    );
+    _setsController = TextEditingController(text: draft.sets.toString());
+    _holdSecondsController = TextEditingController(
+      text: _formatSeconds(draft.holdSeconds),
+    );
     _scrollController.addListener(_handleEditorScroll);
     _scheduleViewerGeometryUpdate();
   }
@@ -75,6 +91,10 @@ class _CustomExerciseEditorViewState extends State<_CustomExerciseEditorView> {
   void dispose() {
     _nameController.dispose();
     _descriptionController.dispose();
+    _animationDurationController.dispose();
+    _repetitionsController.dispose();
+    _setsController.dispose();
+    _holdSecondsController.dispose();
     _scrollController
       ..removeListener(_handleEditorScroll)
       ..dispose();
@@ -150,8 +170,42 @@ class _CustomExerciseEditorViewState extends State<_CustomExerciseEditorView> {
     );
   }
 
+  bool _updateTrainingSettings() {
+    final animationDuration =
+        double.tryParse(_animationDurationController.text.trim());
+    final repetitions = int.tryParse(_repetitionsController.text.trim());
+    final sets = int.tryParse(_setsController.text.trim());
+    final holdSeconds = double.tryParse(_holdSecondsController.text.trim());
+    String? error;
+    if (animationDuration == null) {
+      error = '動畫播放時間請輸入 1～60 秒';
+    } else if (repetitions == null) {
+      error = '每組次數請輸入 1～100 次';
+    } else if (sets == null) {
+      error = '組數請輸入 1～20 組';
+    } else if (holdSeconds == null) {
+      error = '保持時間請輸入 0.5～30 秒';
+    } else {
+      error =
+          context.read<CustomExerciseEditorController>().updateTrainingSettings(
+                animationDurationSeconds: animationDuration,
+                repetitions: repetitions,
+                sets: sets,
+                holdSeconds: holdSeconds,
+              );
+    }
+    if (_trainingSettingsError != error) {
+      setState(() => _trainingSettingsError = error);
+    }
+    return error == null;
+  }
+
   Future<void> _saveExercise() async {
     _updateBasicInfo();
+    if (!_updateTrainingSettings()) {
+      _showMessage(_trainingSettingsError!);
+      return;
+    }
     final controller = context.read<CustomExerciseEditorController>();
     final validationError = controller.saveValidationError;
     if (validationError != null) {
@@ -298,6 +352,15 @@ class _CustomExerciseEditorViewState extends State<_CustomExerciseEditorView> {
                     onChanged: _updateBasicInfo,
                   ),
                   const SizedBox(height: 16),
+                  _TrainingSettingsCard(
+                    animationDurationController: _animationDurationController,
+                    repetitionsController: _repetitionsController,
+                    setsController: _setsController,
+                    holdSecondsController: _holdSecondsController,
+                    errorText: _trainingSettingsError,
+                    onChanged: _updateTrainingSettings,
+                  ),
+                  const SizedBox(height: 16),
                   Consumer<CustomExerciseEditorController>(
                     builder: (_, controller, __) => JointRotationPanel(
                       selectedJoint: controller.selectedJoint,
@@ -331,6 +394,15 @@ class _CustomExerciseEditorViewState extends State<_CustomExerciseEditorView> {
           nameController: _nameController,
           descriptionController: _descriptionController,
           onChanged: _updateBasicInfo,
+        ),
+        const SizedBox(height: 16),
+        _TrainingSettingsCard(
+          animationDurationController: _animationDurationController,
+          repetitionsController: _repetitionsController,
+          setsController: _setsController,
+          holdSecondsController: _holdSecondsController,
+          errorText: _trainingSettingsError,
+          onChanged: _updateTrainingSettings,
         ),
         const SizedBox(height: 16),
         Consumer<CustomExerciseEditorController>(
@@ -394,6 +466,10 @@ class _CustomExerciseEditorViewState extends State<_CustomExerciseEditorView> {
       ),
     );
   }
+
+  static String _formatSeconds(double value) => value == value.roundToDouble()
+      ? value.toStringAsFixed(0)
+      : value.toStringAsFixed(1);
 }
 
 class _EditorTopBar extends StatelessWidget {
@@ -512,6 +588,109 @@ class _BasicInfoCard extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _TrainingSettingsCard extends StatelessWidget {
+  const _TrainingSettingsCard({
+    required this.animationDurationController,
+    required this.repetitionsController,
+    required this.setsController,
+    required this.holdSecondsController,
+    required this.errorText,
+    required this.onChanged,
+  });
+
+  final TextEditingController animationDurationController;
+  final TextEditingController repetitionsController;
+  final TextEditingController setsController;
+  final TextEditingController holdSecondsController;
+  final String? errorText;
+  final VoidCallback onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return _EditorCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const _SectionTitle(icon: Icons.tune, text: '訓練設定'),
+          const SizedBox(height: 14),
+          _NumberSettingField(
+            key: const Key('animation-duration-seconds'),
+            controller: animationDurationController,
+            label: '動畫播放時間',
+            unit: '秒',
+            decimal: true,
+            onChanged: onChanged,
+          ),
+          const SizedBox(height: 12),
+          _NumberSettingField(
+            key: const Key('exercise-repetitions'),
+            controller: repetitionsController,
+            label: '每組次數',
+            unit: '次',
+            onChanged: onChanged,
+          ),
+          const SizedBox(height: 12),
+          _NumberSettingField(
+            key: const Key('exercise-sets'),
+            controller: setsController,
+            label: '組數',
+            unit: '組',
+            onChanged: onChanged,
+          ),
+          const SizedBox(height: 12),
+          _NumberSettingField(
+            key: const Key('exercise-hold-seconds'),
+            controller: holdSecondsController,
+            label: '保持時間',
+            unit: '秒',
+            decimal: true,
+            onChanged: onChanged,
+          ),
+          if (errorText != null) ...[
+            const SizedBox(height: 8),
+            Text(
+              errorText!,
+              key: const Key('training-settings-error'),
+              style: const TextStyle(color: Colors.red, fontSize: 12),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _NumberSettingField extends StatelessWidget {
+  const _NumberSettingField({
+    super.key,
+    required this.controller,
+    required this.label,
+    required this.unit,
+    required this.onChanged,
+    this.decimal = false,
+  });
+
+  final TextEditingController controller;
+  final String label;
+  final String unit;
+  final VoidCallback onChanged;
+  final bool decimal;
+
+  @override
+  Widget build(BuildContext context) {
+    return TextField(
+      controller: controller,
+      keyboardType: TextInputType.numberWithOptions(decimal: decimal),
+      onChanged: (_) => onChanged(),
+      decoration: InputDecoration(
+        labelText: label,
+        suffixText: unit,
+        border: const OutlineInputBorder(),
       ),
     );
   }

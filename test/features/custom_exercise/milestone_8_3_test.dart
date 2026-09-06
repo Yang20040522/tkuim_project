@@ -28,6 +28,29 @@ void main() {
     feedbackTooHigh: '請減少左手肘角度',
   );
 
+  const directionalShoulderRules = <PoseMeasurementRule>[
+    PoseMeasurementRule(
+      measurement: JointMeasurementType.leftShoulderAbduction,
+      targetAngleDegrees: 90,
+      toleranceDegrees: 10,
+    ),
+    PoseMeasurementRule(
+      measurement: JointMeasurementType.rightShoulderAbduction,
+      targetAngleDegrees: 90,
+      toleranceDegrees: 10,
+    ),
+    PoseMeasurementRule(
+      measurement: JointMeasurementType.leftShoulderFlexion,
+      targetAngleDegrees: 90,
+      toleranceDegrees: 10,
+    ),
+    PoseMeasurementRule(
+      measurement: JointMeasurementType.rightShoulderFlexion,
+      targetAngleDegrees: 90,
+      toleranceDegrees: 10,
+    ),
+  ];
+
   test('PoseMeasurementRule 與 CUSTOM JSON 可完整 round-trip', () {
     final original = _customExercise(poseRules: const [leftElbowRule]);
     final decoded = CustomRehabExercise.fromJson(
@@ -38,6 +61,27 @@ void main() {
     expect(
         decoded.poseMeasurementRules.single.toJson(), leftElbowRule.toJson());
     expect(decoded.evaluationRules.single.joint, JointType.rightShoulder);
+  });
+
+  test('肩部側抬與前抬規則可完整 JSON round-trip', () {
+    final original = _customExercise(poseRules: directionalShoulderRules);
+    final decoded = CustomRehabExercise.fromJson(
+      jsonDecode(jsonEncode(original.toJson())) as Map<String, dynamic>,
+    );
+
+    expect(
+      decoded.poseMeasurementRules.map((rule) => rule.measurement),
+      directionalShoulderRules.map((rule) => rule.measurement),
+    );
+    expect(
+      decoded.poseMeasurementRules.map((rule) => rule.toJson()),
+      directionalShoulderRules.map((rule) => rule.toJson()),
+    );
+    expect(
+      PoseMeasurementRule.supportedCustomMeasurements
+          .map((measurement) => measurement.poseRuleLabel),
+      containsAll(<String>['左肩側抬', '右肩側抬', '左肩前抬', '右肩前抬']),
+    );
   });
 
   test('舊 CUSTOM 的 missing/null/壞單筆 pose rules 都安全解析', () {
@@ -200,6 +244,19 @@ void main() {
     );
     await tester.pump();
     expect(find.text('尚未設定真人姿勢評估規則'), findsOneWidget);
+  });
+
+  testWidgets('Editor 顯示正面人偶的 anatomical 左右提示', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: CustomExerciseEditorPage(initialExercise: _customExercise()),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final orientationHint = find.textContaining('人偶右側位於畫面左側');
+    await tester.ensureVisible(orientationHint);
+    expect(orientationHint, findsOneWidget);
   });
 
   testWidgets('CUSTOM 示範頁的開始訓練傳遞完整 exercise context', (tester) async {

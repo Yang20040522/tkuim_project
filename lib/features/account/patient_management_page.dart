@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../models/therapist_patient.dart';
+import '../history/training_result_history_page.dart';
 import '../custom_exercise/services/custom_exercise_api_client.dart';
 import 'bind_patient_page.dart';
 import 'repositories/therapist_patient_repository.dart';
@@ -109,6 +110,17 @@ class _PatientManagementPageState extends State<PatientManagementPage> {
         setState(() => _busyPatientIds.remove(patient.patientId));
       }
     }
+  }
+
+  void _openTrainingResults(TherapistPatient patient) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => TrainingResultHistoryPage(
+          patientId: patient.patientId,
+          patientName: patient.patientName,
+        ),
+      ),
+    );
   }
 
   String _safeMessage(Object error) {
@@ -239,19 +251,29 @@ class _PatientManagementPageState extends State<PatientManagementPage> {
                 ],
               ),
             ),
-            TextButton(
-              key: Key('unbind-patient-${patient.patientId}'),
-              onPressed: busy ? null : () => _confirmUnbind(patient),
-              style: TextButton.styleFrom(
-                foregroundColor: const Color(0xFFE24B4A),
-              ),
-              child: busy
-                  ? const SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Text('解除綁定'),
+            Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextButton(
+                  key: Key('patient-training-results-${patient.patientId}'),
+                  onPressed: () => _openTrainingResults(patient),
+                  child: const Text('訓練紀錄'),
+                ),
+                TextButton(
+                  key: Key('unbind-patient-${patient.patientId}'),
+                  onPressed: busy ? null : () => _confirmUnbind(patient),
+                  style: TextButton.styleFrom(
+                    foregroundColor: const Color(0xFFE24B4A),
+                  ),
+                  child: busy
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Text('解除綁定'),
+                ),
+              ],
             ),
           ],
         ),

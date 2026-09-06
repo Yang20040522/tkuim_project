@@ -93,5 +93,9 @@ extension JointMeasurementEvaluationLabel on JointMeasurementType {
         JointMeasurementType.rightShoulderBodyAngle => '右肩軀幹',
         JointMeasurementType.leftHipBodyAngle => '左髖軀幹',
         JointMeasurementType.rightHipBodyAngle => '右髖軀幹',
+        JointMeasurementType.leftShoulderAbduction => '左肩側抬',
+        JointMeasurementType.rightShoulderAbduction => '右肩側抬',
+        JointMeasurementType.leftShoulderFlexion => '左肩前抬',
+        JointMeasurementType.rightShoulderFlexion => '右肩前抬',
       };
 }

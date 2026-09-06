@@ -25,6 +25,8 @@ class CustomExerciseEditorController extends ChangeNotifier {
   double _playbackTime = 0;
   int _nextKeyframeSequence = 1;
   final bool isEditing;
+  late double _animationDurationSeconds;
+  bool _hasConfiguredAnimationDuration = false;
 
   CustomExerciseEditorController({
     CustomRehabExercise? initialExercise,
@@ -36,6 +38,7 @@ class CustomExerciseEditorController extends ChangeNotifier {
               therapistId: therapistId,
               now: now ?? DateTime.now(),
             ) {
+    _animationDurationSeconds = _draft.duration > 0 ? _draft.duration : 5;
     if (_draft.keyframes.isNotEmpty) {
       final firstKeyframe = _draft.keyframes.first;
       _loadPose(firstKeyframe.jointRotations);
@@ -57,6 +60,7 @@ class CustomExerciseEditorController extends ChangeNotifier {
   CustomExercisePlaybackStatus get playbackStatus => _playbackStatus;
   double get playbackTime => _playbackTime;
   bool get canPlay => _draft.keyframes.length >= 2;
+  double get animationDurationSeconds => _animationDurationSeconds;
 
   List<PoseMeasurementRule> get poseMeasurementRules =>
       _draft.poseMeasurementRules;
@@ -68,6 +72,8 @@ class CustomExerciseEditorController extends ChangeNotifier {
     if (_draft.keyframes.length < 2) {
       return '至少需要 2 個 Keyframes 才能儲存';
     }
+    final settingsError = trainingSettingsValidationError;
+    if (settingsError != null) return settingsError;
     if (_draft.duration != _draft.keyframes.last.time) {
       return 'Keyframes 與 duration 不一致';
     }
@@ -153,9 +159,18 @@ class CustomExerciseEditorController extends ChangeNotifier {
       time: time,
       jointRotations: _completePose(_currentPose),
     );
+    final keyframes = [..._draft.keyframes, keyframe];
+    final timedKeyframes =
+        _hasConfiguredAnimationDuration && keyframes.length >= 2
+            ? _scaleKeyframesToDuration(keyframes, _animationDurationSeconds)
+            : keyframes;
+    final duration = timedKeyframes.isEmpty ? 0.0 : timedKeyframes.last.time;
+    if (!_hasConfiguredAnimationDuration) {
+      _animationDurationSeconds = duration;
+    }
     _draft = _draft.copyWith(
-      duration: time,
-      keyframes: [..._draft.keyframes, keyframe],
+      duration: duration,
+      keyframes: timedKeyframes,
       updatedAt: DateTime.now(),
     );
     _selectedKeyframeId = keyframe.id;
@@ -181,22 +196,31 @@ class CustomExerciseEditorController extends ChangeNotifier {
     _stopPlaybackState();
     final remaining = List<ExerciseKeyframe>.of(_draft.keyframes)
       ..removeAt(removedIndex);
-    final duration = remaining.isEmpty ? 0.0 : remaining.last.time;
+    final timedRemaining =
+        _hasConfiguredAnimationDuration && remaining.length >= 2
+            ? _scaleKeyframesToDuration(remaining, _animationDurationSeconds)
+            : remaining.length < 2
+                ? [for (final keyframe in remaining) keyframe.copyWith(time: 0)]
+                : remaining;
+    final duration = timedRemaining.isEmpty ? 0.0 : timedRemaining.last.time;
+    if (!_hasConfiguredAnimationDuration) {
+      _animationDurationSeconds = duration;
+    }
     final wasSelected = _selectedKeyframeId == id;
 
     _draft = _draft.copyWith(
       duration: duration,
-      keyframes: remaining,
+      keyframes: timedRemaining,
       updatedAt: DateTime.now(),
     );
 
     if (wasSelected) {
-      if (remaining.isEmpty) {
+      if (timedRemaining.isEmpty) {
         _selectedKeyframeId = null;
         _playbackTime = 0;
       } else {
-        final adjacentIndex = removedIndex.clamp(0, remaining.length - 1);
-        final adjacent = remaining[adjacentIndex];
+        final adjacentIndex = removedIndex.clamp(0, timedRemaining.length - 1);
+        final adjacent = timedRemaining[adjacentIndex];
         _selectedKeyframeId = adjacent.id;
         _playbackTime = adjacent.time;
         _loadPose(adjacent.jointRotations);
@@ -263,6 +287,46 @@ class CustomExerciseEditorController extends ChangeNotifier {
       updatedAt: DateTime.now(),
     );
     notifyListeners();
+  }
+
+  String? get trainingSettingsValidationError => _validateTrainingSettings(
+        animationDurationSeconds: _animationDurationSeconds,
+        repetitions: _draft.repetitions,
+        sets: _draft.sets,
+        holdSeconds: _draft.holdSeconds,
+      );
+
+  String? updateTrainingSettings({
+    required double animationDurationSeconds,
+    required int repetitions,
+    required int sets,
+    required double holdSeconds,
+  }) {
+    final error = _validateTrainingSettings(
+      animationDurationSeconds: animationDurationSeconds,
+      repetitions: repetitions,
+      sets: sets,
+      holdSeconds: holdSeconds,
+    );
+    if (error != null) return error;
+    final keyframes = _draft.keyframes.length >= 2
+        ? _scaleKeyframesToDuration(
+            _draft.keyframes,
+            animationDurationSeconds,
+          )
+        : _draft.keyframes;
+    _animationDurationSeconds = animationDurationSeconds;
+    _hasConfiguredAnimationDuration = true;
+    _draft = _draft.copyWith(
+      repetitions: repetitions,
+      sets: sets,
+      holdSeconds: holdSeconds,
+      duration: keyframes.length >= 2 ? animationDurationSeconds : 0,
+      keyframes: keyframes,
+      updatedAt: DateTime.now(),
+    );
+    notifyListeners();
+    return null;
   }
 
   String? addPoseMeasurementRule(PoseMeasurementRule rule) {
@@ -338,6 +402,8 @@ class CustomExerciseEditorController extends ChangeNotifier {
       throw ArgumentError('儲存結果的 exercise id 與目前草稿不一致');
     }
     _draft = savedExercise;
+    _animationDurationSeconds = savedExercise.duration;
+    _hasConfiguredAnimationDuration = true;
     notifyListeners();
   }
 
@@ -363,6 +429,54 @@ class CustomExerciseEditorController extends ChangeNotifier {
       for (final joint in CustomExerciseBoneMapping.controllableJoints)
         joint: source[joint] ?? DefaultPose.rotationOf(joint),
     };
+  }
+
+  static List<ExerciseKeyframe> _scaleKeyframesToDuration(
+    List<ExerciseKeyframe> keyframes,
+    double duration,
+  ) {
+    if (keyframes.length < 2) return List.of(keyframes);
+    final sourceEnd = keyframes.last.time;
+    if (sourceEnd <= 0) {
+      final interval = duration / (keyframes.length - 1);
+      return [
+        for (var index = 0; index < keyframes.length; index++)
+          keyframes[index].copyWith(
+            time: index == keyframes.length - 1 ? duration : interval * index,
+          ),
+      ];
+    }
+    return [
+      for (var index = 0; index < keyframes.length; index++)
+        keyframes[index].copyWith(
+          time: index == keyframes.length - 1
+              ? duration
+              : keyframes[index].time / sourceEnd * duration,
+        ),
+    ];
+  }
+
+  static String? _validateTrainingSettings({
+    required double animationDurationSeconds,
+    required int repetitions,
+    required int sets,
+    required double holdSeconds,
+  }) {
+    if (!animationDurationSeconds.isFinite ||
+        animationDurationSeconds < 1 ||
+        animationDurationSeconds > 60) {
+      return '動畫播放時間必須介於 1～60 秒';
+    }
+    if (repetitions < 1 || repetitions > 100) {
+      return '每組次數必須介於 1～100 次';
+    }
+    if (sets < 1 || sets > 20) {
+      return '組數必須介於 1～20 組';
+    }
+    if (!holdSeconds.isFinite || holdSeconds < 0.5 || holdSeconds > 30) {
+      return '保持時間必須介於 0.5～30 秒';
+    }
+    return null;
   }
 
   String _createKeyframeId() {

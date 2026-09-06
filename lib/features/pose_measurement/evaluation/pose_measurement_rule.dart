@@ -24,6 +24,10 @@ class PoseMeasurementRule {
     JointMeasurementType.rightElbow,
     JointMeasurementType.leftKnee,
     JointMeasurementType.rightKnee,
+    JointMeasurementType.leftShoulderAbduction,
+    JointMeasurementType.rightShoulderAbduction,
+    JointMeasurementType.leftShoulderFlexion,
+    JointMeasurementType.rightShoulderFlexion,
   ];
 
   bool get isValid =>
@@ -117,6 +121,10 @@ extension JointMeasurementTypePoseRuleJson on JointMeasurementType {
         JointMeasurementType.rightElbow => '右手肘角度',
         JointMeasurementType.leftKnee => '左膝角度',
         JointMeasurementType.rightKnee => '右膝角度',
+        JointMeasurementType.leftShoulderAbduction => '左肩側抬',
+        JointMeasurementType.rightShoulderAbduction => '右肩側抬',
+        JointMeasurementType.leftShoulderFlexion => '左肩前抬',
+        JointMeasurementType.rightShoulderFlexion => '右肩前抬',
         _ => label,
       };
 
@@ -125,6 +133,11 @@ extension JointMeasurementTypePoseRuleJson on JointMeasurementType {
         JointMeasurementType.rightElbow => 'RIGHT_ELBOW_ANGLE',
         JointMeasurementType.leftKnee => 'LEFT_KNEE_ANGLE',
         JointMeasurementType.rightKnee => 'RIGHT_KNEE_ANGLE',
+        JointMeasurementType.leftShoulderAbduction => 'LEFT_SHOULDER_ABDUCTION',
+        JointMeasurementType.rightShoulderAbduction =>
+          'RIGHT_SHOULDER_ABDUCTION',
+        JointMeasurementType.leftShoulderFlexion => 'LEFT_SHOULDER_FLEXION',
+        JointMeasurementType.rightShoulderFlexion => 'RIGHT_SHOULDER_FLEXION',
         _ => throw UnsupportedError('此量測類型尚未開放自訂規則'),
       };
 
@@ -134,6 +147,10 @@ extension JointMeasurementTypePoseRuleJson on JointMeasurementType {
       'RIGHT_ELBOW_ANGLE' => JointMeasurementType.rightElbow,
       'LEFT_KNEE_ANGLE' => JointMeasurementType.leftKnee,
       'RIGHT_KNEE_ANGLE' => JointMeasurementType.rightKnee,
+      'LEFT_SHOULDER_ABDUCTION' => JointMeasurementType.leftShoulderAbduction,
+      'RIGHT_SHOULDER_ABDUCTION' => JointMeasurementType.rightShoulderAbduction,
+      'LEFT_SHOULDER_FLEXION' => JointMeasurementType.leftShoulderFlexion,
+      'RIGHT_SHOULDER_FLEXION' => JointMeasurementType.rightShoulderFlexion,
       _ => throw FormatException('不支援的人體關節角度：$value'),
     };
   }

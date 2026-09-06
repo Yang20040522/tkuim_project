@@ -31,7 +31,8 @@ void main() {
     );
   });
 
-  test('missing, coincident, nonfinite, low or absent confidence is unavailable',
+  test(
+      'missing, coincident, nonfinite, low or absent confidence is unavailable',
       () {
     final invalid = <PoseLandmark?>[
       null,
@@ -62,11 +63,21 @@ void main() {
     );
   });
 
-  test('all eight measurements use correct anatomical triples', () {
+  test('existing elbow knee shoulder-body and hip-body angles stay unchanged',
+      () {
     final result = calculator.calculate(fullFrame());
     expect(result.timestampMs, 42);
-    expect(result.angles.length, 8);
-    for (final type in JointMeasurementType.values) {
+    const legacyMeasurements = [
+      JointMeasurementType.leftElbow,
+      JointMeasurementType.rightElbow,
+      JointMeasurementType.leftKnee,
+      JointMeasurementType.rightKnee,
+      JointMeasurementType.leftShoulderBodyAngle,
+      JointMeasurementType.rightShoulderBodyAngle,
+      JointMeasurementType.leftHipBodyAngle,
+      JointMeasurementType.rightHipBodyAngle,
+    ];
+    for (final type in legacyMeasurements) {
       expect(result[type], closeTo(90, 1e-9), reason: type.name);
     }
   });

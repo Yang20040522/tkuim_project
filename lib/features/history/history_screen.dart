@@ -7,6 +7,7 @@ import '../analysis/video_analysis_service.dart';
 
 import '../analysis/hand_analysis_service.dart';
 import '../analysis/hand_comparison_report_screen.dart';
+import 'training_result_history_page.dart';
 // 🖥️ 電視投放新增
 import '../tv_cast/socket_client_service.dart';
 
@@ -311,6 +312,19 @@ class _HistoryScreenState extends State<HistoryScreen> {
                 fontSize: 22,
                 fontWeight: FontWeight.w900,
               ),
+            ),
+          ),
+          IconButton(
+            key: const Key('open-pose-training-history'),
+            tooltip: '姿勢訓練紀錄',
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => const TrainingResultHistoryPage(),
+              ),
+            ),
+            icon: const Icon(
+              Icons.accessibility_new,
+              color: Color(0xFF4A65FF),
             ),
           ),
           if (_allRecords.isNotEmpty)
@@ -659,7 +673,8 @@ class _HistoryScreenState extends State<HistoryScreen> {
               _allRecords.removeWhere((r) => r.timestamp == record.timestamp);
             });
             // 🆕 刪除後,待上傳筆數也要跟著重新整理
-            final newPendingCount = await _historyService.getPendingUploadCount();
+            final newPendingCount =
+                await _historyService.getPendingUploadCount();
             if (!mounted) return;
             setState(() => _pendingUploadCount = newPendingCount);
             ScaffoldMessenger.of(context).showSnackBar(
@@ -683,7 +698,8 @@ class _HistoryScreenState extends State<HistoryScreen> {
     final seconds = record.durationSeconds % 60;
     final hasMistakes = record.mistakeLogs.isNotEmpty;
     final hasVideo = record.videoPath != null;
-    final isUploadingThis = _uploadingTimestamps.contains(record.timestamp); // 🆕
+    final isUploadingThis =
+        _uploadingTimestamps.contains(record.timestamp); // 🆕
 
     return Container(
       margin: const EdgeInsets.only(bottom: 10),

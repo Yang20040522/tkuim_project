@@ -74,7 +74,8 @@ class JointRotationPanel extends StatelessWidget {
           ),
           const SizedBox(height: 10),
           const Text(
-            '目前開放完整 12 個主要關節。紅=X、綠=Y、藍=Z，皆為骨骼 local axes。',
+            '左右以人偶本身方向為準；正面觀看時，人偶右側位於畫面左側。\n'
+            '紅=X、綠=Y、藍=Z，皆為骨骼 local axes。',
             style: TextStyle(color: Color(0xFF9CA3AF), fontSize: 11),
           ),
           const SizedBox(height: 12),

@@ -12,8 +12,35 @@ import 'evaluation/pose_measurement_rule_resolver.dart';
 import 'models/joint_angle_frame.dart';
 import 'pose_camera_controller.dart';
 import 'pose_camera_view.dart';
+import 'repositories/training_result_repository.dart';
+import 'repositories/training_result_repository_selection.dart';
+import 'training/pose_training_session_controller.dart';
+import 'training/training_progress_panel.dart';
+import 'training/training_session_state_machine.dart';
 
-/// Real-time geometric pose evaluation only: no repetition counting or upload.
+@visibleForTesting
+TrainingSessionConfig trainingSessionConfigFor({
+  required CustomRehabExercise? customExercise,
+  required bool hasRules,
+}) {
+  final custom = customExercise;
+  return custom == null
+      ? TrainingSessionConfig(
+          targetReps: 5,
+          targetSets: 1,
+          holdDuration: const Duration(milliseconds: 1500),
+          autoCountEnabled: hasRules,
+        )
+      : TrainingSessionConfig(
+          targetReps: custom.repetitions,
+          targetSets: custom.sets,
+          holdDuration: Duration(
+            milliseconds: (custom.holdSeconds * 1000).round(),
+          ),
+          autoCountEnabled: hasRules,
+        );
+}
+
 /// An injected controller is owned and disposed by this page as well.
 class PoseTrainingPage extends StatefulWidget {
   const PoseTrainingPage({
@@ -23,6 +50,7 @@ class PoseTrainingPage extends StatefulWidget {
     this.controller,
     this.previewBuilder,
     this.ruleResolver = const PoseMeasurementRuleResolver(),
+    this.resultRepository,
   });
 
   final AssignableExercise exercise;
@@ -30,6 +58,7 @@ class PoseTrainingPage extends StatefulWidget {
   final PoseCameraController? controller;
   final PoseNativePreviewBuilder? previewBuilder;
   final PoseMeasurementRuleResolver ruleResolver;
+  final TrainingResultRepository? resultRepository;
 
   @override
   State<PoseTrainingPage> createState() => _PoseTrainingPageState();
@@ -40,6 +69,7 @@ class _PoseTrainingPageState extends State<PoseTrainingPage>
   late final PoseCameraController _controller;
   late List<PoseMeasurementRule> _rules;
   late PoseEvaluationSession _evaluationSession;
+  late PoseTrainingSessionController _trainingSession;
   bool _foreground = true;
   bool _routeVisible = true;
 
@@ -48,6 +78,7 @@ class _PoseTrainingPageState extends State<PoseTrainingPage>
     super.initState();
     _controller = widget.controller ?? PoseCameraController();
     _createEvaluationSession();
+    _controller.state.addListener(_onCameraState);
     WidgetsBinding.instance.addObserver(this);
     final lifecycle = WidgetsBinding.instance.lifecycleState;
     _foreground = lifecycle == null || lifecycle == AppLifecycleState.resumed;
@@ -66,6 +97,16 @@ class _PoseTrainingPageState extends State<PoseTrainingPage>
       camera: _controller,
       rules: _rules,
     );
+    final config = trainingSessionConfigFor(
+      customExercise: widget.customExercise,
+      hasRules: _rules.isNotEmpty,
+    );
+    _trainingSession = PoseTrainingSessionController(
+      evaluation: _evaluationSession.snapshot,
+      exercise: widget.exercise,
+      repository: widget.resultRepository ?? trainingResultRepository,
+      config: config,
+    );
   }
 
   @override
@@ -73,7 +114,9 @@ class _PoseTrainingPageState extends State<PoseTrainingPage>
     super.didUpdateWidget(oldWidget);
     if (oldWidget.exercise.identityKey != widget.exercise.identityKey ||
         oldWidget.customExercise != widget.customExercise ||
-        oldWidget.ruleResolver != widget.ruleResolver) {
+        oldWidget.ruleResolver != widget.ruleResolver ||
+        oldWidget.resultRepository != widget.resultRepository) {
+      _trainingSession.dispose();
       _evaluationSession.dispose();
       _createEvaluationSession();
     }
@@ -93,14 +136,32 @@ class _PoseTrainingPageState extends State<PoseTrainingPage>
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     _foreground = state == AppLifecycleState.resumed;
+    if (!_foreground) _trainingSession.reset();
     _syncActive();
   }
 
-  void _syncActive() => _controller.setActive(_foreground && _routeVisible);
+  void _syncActive() {
+    final active = _foreground && _routeVisible;
+    if (!active) _trainingSession.reset();
+    _controller.setActive(active);
+  }
+
+  void _onCameraState() {
+    final state = _controller.state.value;
+    if (state == PoseCameraState.paused ||
+        state == PoseCameraState.unavailable ||
+        state == PoseCameraState.error ||
+        state == PoseCameraState.permissionDenied ||
+        state == PoseCameraState.permissionPermanentlyDenied) {
+      _trainingSession.reset();
+    }
+  }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _controller.state.removeListener(_onCameraState);
+    _trainingSession.dispose();
     _evaluationSession.dispose();
     _controller.dispose();
     super.dispose();
@@ -151,6 +212,7 @@ class _PoseTrainingPageState extends State<PoseTrainingPage>
                       valueListenable: _controller.state,
                       builder: (_, state, __) => _buildStatus(state),
                     ),
+                    TrainingProgressPanel(controller: _trainingSession),
                     _AngleAndEvaluationReadout(
                       session: _evaluationSession,
                     ),
@@ -234,7 +296,7 @@ class _AngleAndEvaluationReadout extends StatelessWidget {
               ],
               const SizedBox(height: 8),
               const Text(
-                '請與鏡頭保持距離，讓頭部與雙腳入鏡。\n左右以您自身為準；關節不清楚時顯示 --。\n此頁只依幾何角度檢查目前姿勢，不計次、不記錄結果，亦不代表醫療診斷。',
+                '請與鏡頭保持距離，讓頭部與雙腳入鏡。\n左右以您自身為準；關節不清楚時顯示 --。\n本頁依幾何角度完成保持、次數與組數訓練；分數僅代表完成度，不代表醫療診斷。',
                 textAlign: TextAlign.center,
                 style: TextStyle(color: Color(0xFF667085), fontSize: 11),
               ),
