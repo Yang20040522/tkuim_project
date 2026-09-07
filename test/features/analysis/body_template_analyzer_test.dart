@@ -4,6 +4,7 @@ import 'package:flutter_body/actions/standing_knee_raise_action.dart';
 import 'package:flutter_body/features/analysis/body/body_motion_template.dart';
 import 'package:flutter_body/features/analysis/body/body_rep_trajectory_collector.dart';
 import 'package:flutter_body/features/analysis/body/body_template_analyzer.dart';
+import 'package:flutter_body/features/analysis/body/body_template_deviation_formatter.dart';
 import 'package:flutter_body/features/analysis/models/environment_metadata.dart';
 import 'package:flutter_body/features/analysis/models/template_quality.dart';
 import 'package:flutter_body/models/body_frame.dart';
@@ -179,6 +180,19 @@ void main() {
     expect(result.overallScore, isNull);
   });
 
+  test('selected right template is unavailable for a left-side rep', () {
+    final result = analyzer.analyze(
+      template: _template(movementSide: BodySide.right),
+      patientSamples: _patientSamples(side: BodySide.left),
+      movementSide: BodySide.left,
+      currentCameraView: CameraView.front,
+    );
+
+    expect(result.valid, isFalse);
+    expect(result.enoughData, isTrue);
+    expect(result.overallScore, isNull);
+  });
+
   test('no template never changes the existing scored rep decision', () {
     final action = StandingKneeRaiseAction()..selectRightLeg();
     final feedback = action.update(const BodyFrame(joints: {
@@ -199,6 +213,51 @@ void main() {
     expect(analysis.overallScore, isNull);
     expect(action.successCount, 1);
     expect(ActionType.wipeBody.name, 'wipeBody');
+  });
+
+  test('a low post-rep template score does not change the scored rep', () {
+    final action = StandingKneeRaiseAction()..selectRightLeg();
+    final feedback = action.update(const BodyFrame(joints: {
+      RehabJoint.leftShoulder: Offset(0.4, 0.2),
+      RehabJoint.rightShoulder: Offset(0.6, 0.2),
+      RehabJoint.rightHip: Offset(0.55, 0.6),
+      RehabJoint.rightKnee: Offset(0.55, 0.4),
+      RehabJoint.rightAnkle: Offset(0.55, 0.8),
+    }));
+    final analysis = analyzer.analyze(
+      template: _template(),
+      patientSamples: _patientSamples(
+        deviatedJoints: const [12, 14, 16],
+        deviation: const Offset(2, 1),
+      ),
+      movementSide: BodySide.right,
+      currentCameraView: CameraView.front,
+    );
+
+    expect(feedback.scored, isTrue);
+    expect(analysis.valid, isTrue);
+    expect(analysis.overallScore, lessThan(50));
+    expect(action.successCount, 1);
+  });
+
+  test('deviation result maps joints to non-diagnostic readable messages', () {
+    final result = BodyTemplateAnalysisResult(
+      valid: true,
+      enoughData: true,
+      overallScore: 65,
+      similarity: 0.65,
+      jointScores: const {14: 45, 11: 55, 16: 65},
+      biggestDeviations: const [14, 11, 16],
+    );
+
+    expect(
+      BodyTemplateDeviationFormatter.describe(result),
+      [
+        '右膝軌跡與標準模板差異較大',
+        '軀幹穩定度與標準模板差異較大',
+        '右踝軌跡偏離標準模板',
+      ],
+    );
   });
 }
 

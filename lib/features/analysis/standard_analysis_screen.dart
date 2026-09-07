@@ -21,6 +21,8 @@ import '../account/user_role.dart';
 import 'body/body_motion_template.dart';
 import 'hand/hand_motion_template.dart';
 import 'models/environment_metadata.dart';
+import 'models/motion_action_registry.dart';
+import 'models/motion_template_catalog.dart';
 import 'models/video_segment.dart';
 import 'motion_feature_extractor.dart';
 import 'storage/local_motion_template_repository.dart';
@@ -44,7 +46,8 @@ class _StandardAnalysisScreenState extends State<StandardAnalysisScreen> {
   static const List<Map<String, String>> _presetVideos = [
     {
       'name': '站姿抬腳(示範)',
-      'actionType': '站姿抬腳',
+      'actionType': '站姿抬腳式訓練',
+      'actionId': 'standing_knee_raise',
       'assetPath': 'assets/preset_videos/standing_knee_raise_demo.mp4',
     },
     // 未來擴充加在這裡
@@ -53,6 +56,7 @@ class _StandardAnalysisScreenState extends State<StandardAnalysisScreen> {
   // ── 選擇狀態 ──
   String? _selectedVideoPath;
   String _currentActionType = '';
+  String _currentActionId = '';
   bool _isPreset = false; // 是否為內建影片
   bool _isAnalyzing = false;
   VideoSegment? _selectedSegment;
@@ -65,13 +69,18 @@ class _StandardAnalysisScreenState extends State<StandardAnalysisScreen> {
   // ── 分析類型(全身 / 手部) ──
   String _analysisType = 'body'; // 'body' 或 'hand'
 
+  List<Map<String, String>> get _availablePresetVideos {
+    final modelType = MotionTemplateModelTypeX.tryParse(_analysisType)!;
+    return _presetVideos.where((video) {
+      final capability = MotionActionRegistry.resolve(video['actionId']);
+      return capability?.modelType == modelType;
+    }).toList();
+  }
+
   // ── 手部分析結果(如果是手部) ──
   HandAnalysisResult? _handResult;
   HandVideoAnalysisResult? _handVideoAnalysis;
   BodyVideoAnalysisResult? _bodyVideoAnalysis;
-
-  // ── 使用者輸入動作名稱 ──
-  final TextEditingController _actionNameController = TextEditingController();
 
   // ── 分析進度 ──
   int _totalFrames = 0;
@@ -87,12 +96,6 @@ class _StandardAnalysisScreenState extends State<StandardAnalysisScreen> {
   int _estimatedReps = 0;
   double _symmetryScore = 0;
   double _stabilityScore = 0;
-
-  @override
-  void dispose() {
-    _actionNameController.dispose();
-    super.dispose();
-  }
 
   // ═══════════════════════════════════════════════════════════════
   //  1. 選影片來源
@@ -125,18 +128,22 @@ class _StandardAnalysisScreenState extends State<StandardAnalysisScreen> {
                 leading:
                     const Icon(Icons.video_library, color: Color(0xFF4A65FF)),
                 title: const Text('內建示範影片'),
-                subtitle: Text('${_presetVideos.length} 支可選'),
-                onTap: () {
-                  Navigator.pop(ctx);
-                  _showPresetVideoPicker();
-                },
+                subtitle: Text(_availablePresetVideos.isEmpty
+                    ? '目前沒有此類型的內建影片'
+                    : '${_availablePresetVideos.length} 支可選'),
+                onTap: _availablePresetVideos.isEmpty
+                    ? null
+                    : () {
+                        Navigator.pop(ctx);
+                        _showPresetVideoPicker();
+                      },
               ),
               const Divider(),
               ListTile(
                 leading:
                     const Icon(Icons.folder_open, color: Color(0xFF4CAF50)),
                 title: const Text('選我的影片'),
-                subtitle: const Text('從相簿選擇 + 手動輸入動作名稱'),
+                subtitle: const Text('從相簿選擇 + 指定復健動作'),
                 onTap: () {
                   Navigator.pop(ctx);
                   _pickCustomVideo();
@@ -166,7 +173,7 @@ class _StandardAnalysisScreenState extends State<StandardAnalysisScreen> {
               const Text('選內建示範影片',
                   style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800)),
               const SizedBox(height: 12),
-              ..._presetVideos.map((v) => ListTile(
+              ..._availablePresetVideos.map((v) => ListTile(
                     leading: const Icon(Icons.movie, color: Color(0xFF4A65FF)),
                     title: Text(v['name']!),
                     subtitle: Text('動作類型:${v['actionType']}'),
@@ -184,6 +191,7 @@ class _StandardAnalysisScreenState extends State<StandardAnalysisScreen> {
     setState(() {
       _selectedVideoPath = tempPath;
       _currentActionType = picked['actionType']!;
+      _currentActionId = picked['actionId']!;
       _isPreset = true;
       _resetAnalysisState();
     });
@@ -193,36 +201,51 @@ class _StandardAnalysisScreenState extends State<StandardAnalysisScreen> {
     final result = await FilePicker.platform.pickFiles(type: FileType.video);
     if (result == null || result.files.isEmpty) return;
 
-    final actionName = await _askActionName();
-    if (actionName == null || actionName.isEmpty) return;
+    final capability = await _askAction();
+    if (capability == null) return;
 
     setState(() {
       _selectedVideoPath = result.files.single.path;
-      _currentActionType = actionName;
+      _currentActionType = capability.displayName;
+      _currentActionId = capability.actionId;
       _isPreset = false;
       _resetAnalysisState();
     });
   }
 
-  Future<String?> _askActionName() async {
-    _actionNameController.text = '';
-    return showDialog<String>(
+  Future<MotionActionCapability?> _askAction() async {
+    final modelType = MotionTemplateModelTypeX.tryParse(_analysisType)!;
+    final capabilities = MotionActionRegistry.capabilities
+        .where((item) =>
+            item.modelType == modelType && item.canCreateTemplate)
+        .toList();
+    var selected = capabilities.first;
+    return showDialog<MotionActionCapability>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('這是什麼動作?'),
-        content: TextField(
-          controller: _actionNameController,
-          autofocus: true,
+        title: const Text('選擇模板動作'),
+        content: DropdownButtonFormField<MotionActionCapability>(
+          initialValue: selected,
+          isExpanded: true,
           decoration: const InputDecoration(
-            hintText: '例如:站姿抬腳、翻掌、側捏',
+            labelText: '復健動作',
+            border: OutlineInputBorder(),
           ),
+          items: capabilities
+              .map((item) => DropdownMenuItem(
+                    value: item,
+                    child: Text(item.displayName),
+                  ))
+              .toList(),
+          onChanged: (value) {
+            if (value != null) selected = value;
+          },
         ),
         actions: [
           TextButton(
               onPressed: () => Navigator.pop(ctx), child: const Text('取消')),
           ElevatedButton(
-            onPressed: () =>
-                Navigator.pop(ctx, _actionNameController.text.trim()),
+            onPressed: () => Navigator.pop(ctx, selected),
             child: const Text('確定'),
           ),
         ],
@@ -469,7 +492,8 @@ class _StandardAnalysisScreenState extends State<StandardAnalysisScreen> {
         final build = BodyMotionTemplate.build(
           analysis: _bodyVideoAnalysis!,
           templateName: saveName,
-          actionType: _currentActionType,
+          actionType: _currentActionId,
+          actionId: _currentActionId,
           environment: environment,
           createdByTherapistId: creatorId,
         );
@@ -482,7 +506,8 @@ class _StandardAnalysisScreenState extends State<StandardAnalysisScreen> {
         final build = HandMotionTemplate.build(
           analysis: _handVideoAnalysis!,
           templateName: saveName,
-          actionType: _currentActionType,
+          actionType: _currentActionId,
+          actionId: _currentActionId,
           environment: environment,
           createdByTherapistId: creatorId,
         );
@@ -633,8 +658,10 @@ class _StandardAnalysisScreenState extends State<StandardAnalysisScreen> {
   }
 
   /// 讀取所有 JSON 模板(從手機內部目錄)
-  Future<List<Map<String, dynamic>>> _loadAllTemplates() =>
-      _templateRepository.listTemplateJson();
+  Future<List<Map<String, dynamic>>> _loadAllTemplates() async {
+    final templates = await _templateRepository.listTemplateJson();
+    return MotionTemplateCatalog.sortRawTemplates(templates);
+  }
 
   /// 刪除模板檔
   Future<void> _deleteTemplate(String path) =>
@@ -668,15 +695,23 @@ class _StandardAnalysisScreenState extends State<StandardAnalysisScreen> {
   /// 單一模板卡片
   Widget _buildTemplateCard(Map<String, dynamic> t, VoidCallback onDelete) {
     final name = t['templateName'] ?? '未命名';
-    final actionType = t['actionType'] ?? '未知動作';
+    final modelType = MotionTemplateModelTypeX.tryParse(t['modelType']) ??
+        MotionTemplateModelType.body;
+    final capability = MotionActionRegistry.resolveTemplateJson(t);
+    final actionName = capability?.displayName ??
+        t['actionId'] ??
+        t['actionType'] ??
+        '未知動作';
+    final environment = EnvironmentMetadata.fromJson(t);
     final createdAt = t['createdAt'] ?? '';
-    final createdShort =
-        createdAt.length >= 10 ? createdAt.substring(0, 10) : createdAt;
+    final createdShort = createdAt.length >= 16
+        ? createdAt.substring(0, 16).replaceFirst('T', ' ')
+        : createdAt;
     final reps = t['estimatedReps'] ?? 0;
     final sym = (t['symmetryScore'] ?? 0.0) as num;
     final sta = (t['stabilityScore'] ?? 0.0) as num;
     final frames = t['totalFrames'] ?? 0;
-    final isHand = t['modelType'] == HandMotionTemplate.modelType;
+    final isHand = modelType == MotionTemplateModelType.hand;
     final sampleCount = t['sampleCount'] ?? 0;
     final regularity = (t['regularityScore'] ?? 0.0) as num;
 
@@ -708,7 +743,7 @@ class _StandardAnalysisScreenState extends State<StandardAnalysisScreen> {
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      '$actionType · $createdShort',
+                      '$actionName · ${modelType.label} · $createdShort',
                       style:
                           TextStyle(color: Colors.grey.shade600, fontSize: 11),
                     ),
@@ -727,6 +762,19 @@ class _StandardAnalysisScreenState extends State<StandardAnalysisScreen> {
             spacing: 6,
             runSpacing: 4,
             children: [
+              _miniChip(
+                '動作側 ${environment.movementSide.label}',
+                const Color(0xFF7C3AED),
+              ),
+              _miniChip(
+                '視角 ${environment.cameraView.label}',
+                const Color(0xFF0F766E),
+              ),
+              if (environment.supportType != SupportType.none)
+                _miniChip(
+                  '${environment.supportType.label} · ${environment.supportSide.label}',
+                  const Color(0xFF9A3412),
+                ),
               _miniChip('$reps 次', const Color(0xFF4CAF50)),
               if (isHand)
                 _miniChip('規律 ${(regularity * 100).toStringAsFixed(0)}%',
@@ -1439,6 +1487,7 @@ class _StandardAnalysisScreenState extends State<StandardAnalysisScreen> {
                 // 換類型時清空既有選擇
                 _selectedVideoPath = null;
                 _currentActionType = '';
+                _currentActionId = '';
                 _resetAnalysisState();
                 _handResult = null;
               });

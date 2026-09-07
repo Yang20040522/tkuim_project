@@ -15,6 +15,7 @@ import '../rehab/training_screen.dart';
 import '../body_test/body_test_screen.dart';
 import '../history/history_screen.dart';
 import '../rehab/body_training_screen.dart';
+import '../analysis/widgets/template_training_mode_dialog.dart';
 import '../../actions/standing_knee_raise_action.dart';
 import '../../actions/draw_circle_action.dart';
 import '../../actions/reach_action.dart';
@@ -219,7 +220,10 @@ class _ActionListScreenState extends State<ActionListScreen>
     _broadcastSync();
   }
 
-  void _startTraining({TrainingAction? action, DifficultyOption? difficulty}) {
+  Future<void> _startTraining({
+    TrainingAction? action,
+    DifficultyOption? difficulty,
+  }) async {
     final act = action ?? _selectedAction;
     var diff = difficulty ?? _selectedDifficulty;
     if (act == null || diff == null) return;
@@ -241,6 +245,12 @@ class _ActionListScreenState extends State<ActionListScreen>
       return;
     }
 
+    final templateSelection = await MotionTemplateTrainingPicker.choose(
+      context: context,
+      action: act,
+    );
+    if (!mounted || templateSelection == null) return;
+
     Widget screen;
     if (act.type == ActionType.wipeBody) {
       screen = BodyTrainingScreen(
@@ -250,6 +260,7 @@ class _ActionListScreenState extends State<ActionListScreen>
         ),
         trainingActionMeta: act,
         difficultyMeta: diff,
+        selectedTemplate: templateSelection.selectedBodyTemplate,
         autoLevelUp: _autoLevelUp,
       );
     } else if (act.type == ActionType.drawCircle) {

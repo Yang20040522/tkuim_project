@@ -42,6 +42,7 @@ class HandMotionTemplate {
     required this.templateId,
     required this.templateName,
     required this.actionType,
+    this.actionId,
     required this.createdAt,
     required this.environment,
     required this.selectedStartMs,
@@ -71,6 +72,7 @@ class HandMotionTemplate {
   final String templateId;
   final String templateName;
   final String actionType;
+  final String? actionId;
   final DateTime createdAt;
   final EnvironmentMetadata environment;
   final int selectedStartMs;
@@ -94,6 +96,7 @@ class HandMotionTemplate {
         'templateId': templateId,
         'templateName': templateName,
         'actionType': actionType,
+        if (actionId != null) 'actionId': actionId,
         'movementSide': environment.movementSide.name,
         'createdAt': createdAt.toIso8601String(),
         'modelType': modelType,
@@ -125,6 +128,7 @@ class HandMotionTemplate {
       templateId: json['templateId']?.toString() ?? '',
       templateName: json['templateName']?.toString() ?? '',
       actionType: json['actionType']?.toString() ?? '',
+      actionId: json['actionId']?.toString(),
       createdAt: DateTime.tryParse(json['createdAt']?.toString() ?? '') ??
           DateTime.fromMillisecondsSinceEpoch(0),
       environment: EnvironmentMetadata.fromJson(json),
@@ -154,6 +158,7 @@ class HandMotionTemplate {
     required HandVideoAnalysisResult analysis,
     required String templateName,
     required String actionType,
+    String? actionId,
     required EnvironmentMetadata environment,
     String? createdByTherapistId,
     String? patientId,
@@ -258,6 +263,7 @@ class HandMotionTemplate {
       templateId: templateId ?? 'hand_${now.microsecondsSinceEpoch}',
       templateName: templateName,
       actionType: actionType,
+      actionId: actionId,
       createdAt: now,
       environment: environment,
       selectedStartMs: analysis.segment.startMs,

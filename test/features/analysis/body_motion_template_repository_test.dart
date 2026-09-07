@@ -34,7 +34,10 @@ void main() {
     expect(selected, isNotNull);
     expect(selected!.templateId, 'phase1-template');
     expect(selected.actionType, '站姿抬腳');
-    expect(BodyTemplateSelector.standingKneeRaiseActionId, 'wipeBody');
+    expect(
+      BodyTemplateSelector.standingKneeRaiseActionId,
+      'standing_knee_raise',
+    );
     expect(selected.toJson(), oldPhase1Json);
   });
 
@@ -55,6 +58,31 @@ void main() {
     expect(
       File(listed.single['_filePath'] as String).absolute.uri,
       saved.absolute.uri,
+    );
+  });
+
+  test('same action templates from different videos coexist', () async {
+    final directory =
+        await Directory.systemTemp.createTemp('motion_templates_');
+    addTearDown(() => directory.delete(recursive: true));
+    final storage = LocalMotionTemplateRepository(
+      directoryProvider: () async => directory,
+    );
+
+    final first = _oldPhase1Template().toJson();
+    final second = <String, dynamic>{
+      ..._oldPhase1Template().toJson(),
+      'templateId': 'phase1-template-second-video',
+      'templateName': '站姿抬腳 第二支影片',
+    };
+    await storage.saveTemplateJson(first);
+    await storage.saveTemplateJson(second);
+
+    final listed = await storage.listTemplateJson();
+    expect(listed, hasLength(2));
+    expect(
+      listed.map((item) => item['templateId']).toSet(),
+      {'phase1-template', 'phase1-template-second-video'},
     );
   });
 }

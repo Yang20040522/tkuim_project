@@ -47,9 +47,8 @@
 //     - 兩個下肢動作都實作同一個 LegRoleSelectable 介面,所以這裡完全
 //       不用分辨底下是哪一個動作類別,共用同一套按鈕邏輯。
 //
-//  🔀 2026-09-07:合併組員版本,補回站姿抬腳式的 AI 動作品質分析功能
-//     - 補回 _usesStandingKneeRaiseAi / AI 相關 fields、_buildAiQualityCard、
-//       trajectory collector 在 _onPoseUpdate 及各重置點的呼叫。
+//  🔀 2026-09-07:AI 標準模板採 opt-in selectedTemplate。
+//     一般訓練不收集 trajectory；AI 模式只在既有 scored rep 後比較。
 // ══════════════════════════════════════════════════════════════════
 
 import 'dart:io';
@@ -82,11 +81,12 @@ import '../../actions/lateral_step_action.dart';
 import '../../features/account/app_session.dart';
 import '../../features/plan/plan_repository.dart';
 import '../../features/analysis/body/body_motion_template.dart';
-import '../../features/analysis/body/body_motion_template_repository.dart';
 import '../../features/analysis/body/body_rep_trajectory_collector.dart';
 import '../../features/analysis/body/body_template_analyzer.dart';
-import '../../features/analysis/body/body_template_selector.dart';
+import '../../features/analysis/body/body_template_deviation_formatter.dart';
 import '../../features/analysis/models/environment_metadata.dart';
+import '../../features/analysis/models/motion_action_registry.dart';
+import '../../features/analysis/widgets/template_training_mode_dialog.dart';
 
 // 🖥️ 電視投放新增
 import 'dart:async';
@@ -129,6 +129,7 @@ class BodyTrainingScreen extends StatefulWidget {
 
   final TrainingAction? trainingActionMeta;
   final DifficultyOption? difficultyMeta;
+  final BodyMotionTemplate? selectedTemplate;
 
   final bool isDisplay; // 🖥️ 電視投放新增:true = 這台當電視顯示端
   final bool autoLevelUp; // 🆕 true=自動升級(舊行為), false=跳出詢問讓使用者決定
@@ -138,6 +139,7 @@ class BodyTrainingScreen extends StatefulWidget {
     required this.action,
     this.trainingActionMeta,
     this.difficultyMeta,
+    this.selectedTemplate,
     this.isDisplay = false, // 🖥️ 電視投放新增
     this.autoLevelUp = true, // 🆕 預設 true,不影響現在其他呼叫這個畫面的地方
   });
@@ -195,25 +197,37 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
   int _currentLevelTargetReps = 0; // 🆕 追蹤「目前這一階」實際的目標次數(含自訂值)
   RehabDifficulty _previousLevel = RehabDifficulty.easy;
 
-  // Passive Phase 2 analysis. Existing action remains authoritative for reps.
+  // Passive template analysis. Existing action remains authoritative for reps.
   final BodyRepTrajectoryCollector _aiTrajectoryCollector =
       BodyRepTrajectoryCollector();
   final BodyTemplateAnalyzer _bodyTemplateAnalyzer =
       const BodyTemplateAnalyzer();
-  final BodyMotionTemplateRepository _motionTemplateRepository =
-      BodyMotionTemplateRepository();
   final Stopwatch _aiSessionClock = Stopwatch();
-  List<BodyMotionTemplate> _standingKneeRaiseTemplates = const [];
   BodyTemplateAnalysisResult? _lastAiAnalysis;
+  BodySide? _selectedAiTrainedSide;
   BodySide? _selectedAiMovementSide;
-  bool _aiTemplateLoadFinished = false;
-  int _aiLoadGeneration = 0;
+  late final bool _templateAnalysisEnabled;
 
-  bool get _usesStandingKneeRaiseAi =>
-      !widget.isDisplay &&
-      widget.action is StandingKneeRaiseAction &&
-      (widget.trainingActionMeta == null ||
-          widget.trainingActionMeta!.type == ActionType.wipeBody);
+  bool get _usesTemplateAnalysis => _templateAnalysisEnabled;
+
+  bool _resolveTemplateAnalysisCapability() {
+    if (widget.isDisplay || widget.selectedTemplate == null) return false;
+    final capability = MotionActionRegistry.resolve(
+      widget.trainingActionMeta?.type.name ?? widget.action.title,
+      modelType: MotionTemplateModelType.body,
+    );
+    final templateCapability = MotionActionRegistry.resolve(
+          widget.selectedTemplate!.actionId,
+          modelType: MotionTemplateModelType.body,
+        ) ??
+        MotionActionRegistry.resolve(
+          widget.selectedTemplate!.actionType,
+          modelType: MotionTemplateModelType.body,
+        );
+    return capability?.postRepAnalyzerKind ==
+            PostRepAnalyzerKind.bodyTrajectory &&
+        templateCapability?.actionId == capability?.actionId;
+  }
 
   bool get _waitingHandSelect =>
       widget.action is ReachAction &&
@@ -227,15 +241,15 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
   @override
   void initState() {
     super.initState();
+    _templateAnalysisEnabled = _resolveTemplateAnalysisCapability();
     _currentLevelTargetReps = widget.difficultyMeta?.targetReps ?? 10; // 🆕
     _instruction = widget.action.initialHint;
     _previousLevel = _mapDifficulty(
       widget.difficultyMeta?.level ?? DifficultyLevel.level1,
     );
     VoiceService.init();
-    if (_usesStandingKneeRaiseAi) {
+    if (_usesTemplateAnalysis) {
       _aiSessionClock.start();
-      _loadStandingKneeRaiseTemplates();
     }
     _start();
 
@@ -264,17 +278,6 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
         _serverService.sendMessage(startMsg);
       }
     }
-  }
-
-  Future<void> _loadStandingKneeRaiseTemplates() async {
-    final generation = ++_aiLoadGeneration;
-    final templates = await _motionTemplateRepository.loadTemplates();
-    if (!mounted || generation != _aiLoadGeneration) return;
-    setState(() {
-      _standingKneeRaiseTemplates =
-          BodyTemplateSelector.standingKneeRaiseCandidates(templates);
-      _aiTemplateLoadFinished = true;
-    });
   }
 
   Future<void> _start() async {
@@ -314,7 +317,7 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
         data.scores[6] > _scoreThreshold;
 
     int? aiTimestampMs;
-    if (_usesStandingKneeRaiseAi) {
+    if (_usesTemplateAnalysis) {
       aiTimestampMs = _aiSessionClock.elapsedMilliseconds;
       _aiTrajectoryCollector.addFrame(
         timestampMs: aiTimestampMs,
@@ -325,7 +328,7 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
 
     final fb = widget.action.update(frame);
     BodyTemplateAnalysisResult? completedRepAnalysis;
-    if (_usesStandingKneeRaiseAi && fb.scored) {
+    if (_usesTemplateAnalysis && fb.scored) {
       // Always retain the authoritative scored frame even if it falls inside
       // the normal 100 ms sampling interval.
       _aiTrajectoryCollector.addFrame(
@@ -335,21 +338,19 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
         force: true,
       );
       final completedRep = _aiTrajectoryCollector.takeCompletedRep();
-      if (_aiTemplateLoadFinished) {
-        try {
-          completedRepAnalysis = _bodyTemplateAnalyzer.analyzeBestMatching(
-            templates: _standingKneeRaiseTemplates,
-            patientSamples: completedRep,
-            currentCameraView: CameraView.front,
-            movementSide: _selectedAiMovementSide,
-          );
-        } catch (error) {
-          debugPrint('站姿抬腳 AI 模板分析失敗：$error');
-          completedRepAnalysis = BodyTemplateAnalysisResult.unavailable(
-            enoughData: false,
-            reason: '本次 AI 動作品質暫時無法分析。',
-          );
-        }
+      try {
+        completedRepAnalysis = _bodyTemplateAnalyzer.analyze(
+          template: widget.selectedTemplate!,
+          patientSamples: completedRep,
+          currentCameraView: _isExternalCamera ? null : CameraView.front,
+          movementSide: _selectedAiMovementSide,
+        );
+      } catch (error) {
+        debugPrint('Body AI 模板分析失敗：$error');
+        completedRepAnalysis = BodyTemplateAnalysisResult.unavailable(
+          enoughData: false,
+          reason: '本次 AI 動作品質暫時無法分析。',
+        );
       }
     }
 
@@ -776,6 +777,7 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
             action: widget.action,
             trainingActionMeta: widget.trainingActionMeta,
             difficultyMeta: widget.difficultyMeta,
+            selectedTemplate: widget.selectedTemplate,
             autoLevelUp: widget.autoLevelUp, // 🆕(原本漏了,補上)
           ),
         ));
@@ -791,6 +793,12 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
 
   Future<void> _navigateToAction(
       TrainingAction action, DifficultyOption difficulty, bool autoLevelUp) async { // 🆕 多一個參數
+    final templateSelection = await MotionTemplateTrainingPicker.choose(
+      context: context,
+      action: action,
+    );
+    if (!mounted || templateSelection == null) return;
+
     _aiTrajectoryCollector.reset();
     _engine.poseNotifier.removeListener(_onPoseUpdate); // 🆕 先停止監聽,避免dispose過程中還觸發更新
     _piCamera?.dispose();
@@ -812,6 +820,7 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
         ),
         trainingActionMeta: action,
         difficultyMeta: difficulty,
+        selectedTemplate: templateSelection.selectedBodyTemplate,
         autoLevelUp: autoLevelUp, // 🆕(原本是 widget.autoLevelUp)
       );
     } else if (action.type == ActionType.drawCircle) {
@@ -914,7 +923,6 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
 
   @override
   void dispose() {
-    _aiLoadGeneration++;
     _aiSessionClock.stop();
     _aiTrajectoryCollector.reset();
     if (_recordingStarted && !_completionShown) {
@@ -959,7 +967,7 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
                   )
                 else
                   _buildCoachCard(),
-                if (_usesStandingKneeRaiseAi) _buildAiQualityCard(),
+                if (_usesTemplateAnalysis) _buildAiQualityCard(),
                 if (widget.isDisplay)
                   ValueListenableBuilder<RehabSessionState>(
                     valueListenable: _remoteState,
@@ -1376,8 +1384,8 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
             _legButton('左腳', () {
               setState(() {
                 legAction.selectTrainedLeg(isLeft: true);
-                if (_usesStandingKneeRaiseAi) {
-                  _selectedAiMovementSide = BodySide.left;
+                if (_usesTemplateAnalysis) {
+                  _selectedAiTrainedSide = BodySide.left;
                   _aiTrajectoryCollector.reset();
                 }
               });
@@ -1386,8 +1394,8 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
             _legButton('右腳', () {
               setState(() {
                 legAction.selectTrainedLeg(isLeft: false);
-                if (_usesStandingKneeRaiseAi) {
-                  _selectedAiMovementSide = BodySide.right;
+                if (_usesTemplateAnalysis) {
+                  _selectedAiTrainedSide = BodySide.right;
                   _aiTrajectoryCollector.reset();
                 }
               });
@@ -1415,6 +1423,7 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
           _modeButton('簡單版\n患側動．好腳撐', () {
             setState(() {
               legAction.selectSimpleMode();
+              _updateAiMovementSide(legAction);
               _feedback = '已選擇簡單版';
               _instruction = widget.action.initialHint;
             });
@@ -1423,6 +1432,7 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
           _modeButton('困難版\n患側撐．好腳動', () {
             setState(() {
               legAction.selectHardMode();
+              _updateAiMovementSide(legAction);
               _feedback = '已選擇困難版';
               _instruction = widget.action.initialHint;
             });
@@ -1546,16 +1556,13 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
 
   Widget _buildAiQualityCard() {
     String value = '--';
-    String? detail;
-    if (!_aiTemplateLoadFinished) {
-      value = '載入中';
-    } else if (_standingKneeRaiseTemplates.isEmpty) {
-      value = '尚無標準模板';
-    } else if (_lastAiAnalysis?.valid == true) {
+    final result = _lastAiAnalysis;
+    if (result?.valid == true) {
       value = '${_lastAiAnalysis!.overallScore!.round()} 分';
-    } else if (_lastAiAnalysis?.unavailableReason != null) {
-      detail = _lastAiAnalysis!.unavailableReason;
     }
+    final deviations = result == null
+        ? const <String>[]
+        : BodyTemplateDeviationFormatter.describe(result);
 
     return Container(
       width: double.infinity,
@@ -1566,45 +1573,59 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
         borderRadius: BorderRadius.circular(14),
         border: Border.all(color: const Color(0xFFDDE0F0)),
       ),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Expanded(
-            child: Text(
-              '本次 AI 動作品質',
+          Row(
+            children: [
+              const Expanded(
+                child: Text(
+                  '本次 AI 動作品質',
+                  style: TextStyle(
+                    color: Color(0xFF6B7280),
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+              Text(
+                value,
+                textAlign: TextAlign.right,
+                style: const TextStyle(
+                  color: Color(0xFF1A1D2E),
+                  fontSize: 15,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ],
+          ),
+          if (result?.unavailableReason != null) ...[
+            const SizedBox(height: 4),
+            Text(
+              result!.unavailableReason!,
+              style: const TextStyle(color: Color(0xFF8A8D9F), fontSize: 10),
+            ),
+          ],
+          if (deviations.isNotEmpty) ...[
+            const SizedBox(height: 6),
+            const Text(
+              '主要差異',
               style: TextStyle(
                 color: Color(0xFF6B7280),
-                fontSize: 12,
+                fontSize: 10,
                 fontWeight: FontWeight.w700,
               ),
             ),
-          ),
-          Flexible(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                Text(
-                  value,
-                  textAlign: TextAlign.right,
-                  style: const TextStyle(
-                    color: Color(0xFF1A1D2E),
-                    fontSize: 15,
-                    fontWeight: FontWeight.w800,
-                  ),
+            ...deviations.map(
+              (message) => Text(
+                '• $message',
+                style: const TextStyle(
+                  color: Color(0xFF8A8D9F),
+                  fontSize: 10,
                 ),
-                if (detail != null)
-                  Text(
-                    detail,
-                    textAlign: TextAlign.right,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: Color(0xFF8A8D9F),
-                      fontSize: 10,
-                    ),
-                  ),
-              ],
+              ),
             ),
-          ),
+          ],
         ],
       ),
     );
@@ -1613,6 +1634,15 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
   void _resetAiForSourceChange() {
     _aiTrajectoryCollector.reset();
     _lastAiAnalysis = null;
+  }
+
+  void _updateAiMovementSide(LegRoleSelectable action) {
+    if (!_usesTemplateAnalysis || _selectedAiTrainedSide == null) return;
+    final trainedSide = _selectedAiTrainedSide!;
+    _selectedAiMovementSide = action.role == TrainingLegRole.moveTrainedLeg
+        ? trainedSide
+        : (trainedSide == BodySide.left ? BodySide.right : BodySide.left);
+    _aiTrajectoryCollector.reset();
   }
 
   // 🖥️ 電視投放:顯示端教練卡,讀遠端傳來的 feedback/instruction

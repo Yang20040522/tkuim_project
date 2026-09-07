@@ -20,6 +20,7 @@ import '../../actions/lateral_step_action.dart';
 import '../../actions/body_rehab_action.dart';
 
 import '../training/training_preview_screen.dart';
+import '../analysis/widgets/template_training_mode_dialog.dart';
 
 class PlanScreen extends StatefulWidget {
   final PlanRepository? repository;
@@ -116,6 +117,11 @@ class _PlanScreenState extends State<PlanScreen> {
       orElse: () => kTrainingActions.first,
     );
     final difficulty = action.difficulties.first;
+    final templateSelection = await MotionTemplateTrainingPicker.choose(
+      context: context,
+      action: action,
+    );
+    if (!mounted || templateSelection == null) return;
 
     Widget screen;
     if (exercise.category == ExerciseCategory.hand) {
@@ -129,6 +135,7 @@ class _PlanScreenState extends State<PlanScreen> {
                 difficulty: diff, targetCount: difficulty.targetReps),
             trainingActionMeta: action,
             difficultyMeta: difficulty,
+            selectedTemplate: templateSelection.selectedBodyTemplate,
           );
         case ActionType.drawCircle:
           screen = BodyTrainingScreen(
