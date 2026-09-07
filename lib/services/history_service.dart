@@ -175,35 +175,30 @@ class HistoryService extends ChangeNotifier {
     }
   }
 
-  /// 把單筆 TrainingRecord 轉換成後端 API 需要的格式並送出。
+  /// 把單筆 TrainingRecord 送到後端 /api/training-history。
   ///
-  /// ⚠️ TODO:exerciseId 目前用 0 佔位,需要建立「動作名稱 → exerciseId」
-  /// 的對照表(可以呼叫 ExerciseApiService.fetchExercises() 拿到完整
-  /// 清單後在本地做名稱比對,或請後端提供更直接的查詢方式)。
-  /// 在對照表補上之前,上傳後後端可能無法正確辨識是哪個動作。
+  /// 後端這張表(training_history)是專門為自由訓練紀錄新增的,欄位直接
+  /// 對齊 TrainingRecord,所以不需要「動作名稱 → exerciseId」對照表,
+  /// difficulty / mistakeLogs / targetReps 也都會完整存進資料庫,
+  /// 不像舊的 /api/exercise/result 會遺失欄位。
+  ///
+  /// 後端用 (userId, clientTimestamp) 做冪等 upsert,所以同一筆重複上傳
+  /// 不會在資料庫產生重複列;失敗會往外丟 Exception,由呼叫端決定重試。
+  ///
+  /// ⚠️ 唯一沒送的是 record.videoPath —— 那是手機本機路徑,傳字串到後端
+  /// 治療師也開不了,要真的讓治療師看影片得另外做檔案上傳。
   Future<void> _uploadSingleRecord(
     TrainingRecord record, {
     required int userId,
   }) async {
-    final perfect =
-        (record.targetReps - record.mistakeLogs.length).clamp(0, record.targetReps);
-    final accuracy = record.targetReps > 0
-        ? perfect / record.targetReps * 100
-        : 0.0;
-
-    await ExerciseApiService.saveResult(
+    await ExerciseApiService.uploadTrainingHistory(
       userId: userId,
-      exerciseId: 0, // TODO: 換成「actionName → exerciseId」對照表查出來的真正值
-      repCount: perfect,
-      accuracy: accuracy,
-      progress: 1.0, // 訓練已結束,視為完成度 100%
-      speedState: 'normal', // TODO: 目前 TrainingRecord 沒有存這個資訊,先給預設值
-      isComplete: true,
+      clientTimestamp: record.timestamp,
+      actionName: record.actionName,
+      difficulty: record.difficulty,
+      durationSeconds: record.durationSeconds,
+      targetReps: record.targetReps,
+      mistakeLogs: record.mistakeLogs,
     );
-
-    // ⚠️ 提醒:record.difficulty / record.videoPath / record.mistakeLogs
-    // 目前的 ExerciseApiService.saveResult() 沒有對應欄位可以送,
-    // 這幾項資訊上傳後暫時不會出現在後端資料庫裡,治療師端也看不到。
-    // 待後端補齊欄位或提供其他端點後,這裡需要一併更新。
   }
 }

@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import '../../core/ui/app_colors.dart';
 import '../../models/training_action.dart';
 import '../../services/history_service.dart';
+import '../../services/exercise_api_service.dart'; // 🆕 雲端讀取
+import '../account/app_session.dart'; // 🆕 取得目前登入者 ID
 import 'video_playback_screen.dart';
 import '../analysis/comparison_report_screen.dart';
 import '../analysis/video_analysis_service.dart';
@@ -72,6 +74,9 @@ class _HistoryScreenState extends State<HistoryScreen> {
   // 🆕 目前還有幾筆紀錄尚未上傳到雲端(內部統計用,已不再顯示整批上傳按鈕)
   int _pendingUploadCount = 0;
 
+  // 🆕 正在從雲端載入紀錄中(標題列的雲端按鈕顯示 loading 用)
+  bool _loadingCloud = false;
+
   // 🆕 目前正在上傳中的紀錄(用 timestamp 標記),用來讓對應卡片顯示 loading。
   // 用 Set 而不是單一 bool,是因為理論上使用者可能連續點好幾張卡片的
   // 上傳按鈕,每一筆要各自獨立顯示自己的上傳中狀態,不會互相影響。
@@ -91,6 +96,62 @@ class _HistoryScreenState extends State<HistoryScreen> {
       _isLoading = false;
       _pendingUploadCount = pendingCount; // 🆕
     });
+  }
+
+  // 🆕 ─────────────────────────────────────────────────────────
+  //  從雲端載入(需要有網路 + 已登入)
+  // ─────────────────────────────────────────────────────────
+  //
+  // 離線環境(連樹莓派熱點)時不要按這個,會連不到後端。這裡只把雲端
+  // 紀錄「合併進目前畫面顯示的清單」,不寫回本機:離開頁面或下次重進
+  // 只會看到本機紀錄,想看雲端就再按一次。以 timestamp 去重,本機已有
+  // 的那筆不會被覆蓋(保留本機才有的錄影/失誤明細)。
+  Future<void> _loadFromCloud() async {
+    if (_loadingCloud) return;
+
+    final userId = int.tryParse(AppSession.userId ?? '');
+    if (userId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('尚未登入,無法讀取雲端紀錄')),
+      );
+      return;
+    }
+
+    setState(() => _loadingCloud = true);
+
+    try {
+      final rows = await ExerciseApiService.fetchTrainingHistory(userId: userId);
+      final cloudRecords =
+          rows.map((e) => TrainingRecord.fromJson(e)).toList();
+
+      if (!mounted) return;
+
+      final existing = _allRecords.map((r) => r.timestamp).toSet();
+      final merged = <TrainingRecord>[..._allRecords];
+      int added = 0;
+      for (final r in cloudRecords) {
+        if (!existing.contains(r.timestamp)) {
+          merged.add(r);
+          added++;
+        }
+      }
+      merged.sort((a, b) => a.timestamp.compareTo(b.timestamp));
+
+      setState(() {
+        _allRecords = merged;
+        _loadingCloud = false;
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('已從雲端載入,新增 $added 筆')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _loadingCloud = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('雲端載入失敗,請確認網路連線')),
+      );
+    }
   }
 
   Future<void> _clearHistory() async {
@@ -113,10 +174,19 @@ class _HistoryScreenState extends State<HistoryScreen> {
   Future<void> _handleSingleUpload(TrainingRecord record) async {
     if (_uploadingTimestamps.contains(record.timestamp)) return;
 
+    // 上傳需要有網路 + 已登入。userId 來自目前登入者(AppSession),
+    // 沒登入(或 userId 不是數字)就不上傳,直接提示。
+    final userId = int.tryParse(AppSession.userId ?? '');
+    if (userId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('尚未登入,無法上傳到雲端')),
+      );
+      return;
+    }
+
     setState(() => _uploadingTimestamps.add(record.timestamp));
 
-    // TODO: userId 目前用 0 佔位,請換成目前登入使用者的真正 ID
-    final ok = await _historyService.uploadSingleRecord(record, userId: 0);
+    final ok = await _historyService.uploadSingleRecord(record, userId: userId);
 
     if (!mounted) return;
 
@@ -315,6 +385,25 @@ class _HistoryScreenState extends State<HistoryScreen> {
                 fontWeight: FontWeight.w900,
               ),
             ),
+          ),
+          // 🆕 從雲端載入(需要有網路 + 已登入)
+          IconButton(
+            key: const Key('load-history-from-cloud'),
+            tooltip: '從雲端載入',
+            onPressed: _loadingCloud ? null : _loadFromCloud,
+            icon: _loadingCloud
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: Color(0xFF4A65FF),
+                    ),
+                  )
+                : const Icon(
+                    Icons.cloud_download_outlined,
+                    color: Color(0xFF4A65FF),
+                  ),
           ),
           IconButton(
             key: const Key('open-pose-training-history'),
