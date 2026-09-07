@@ -501,30 +501,35 @@ class _HomeScreenState extends State<HomeScreen> {
               _NavItem(
                 key: const ValueKey('main-tab-home'),
                 label: MainTab.home.label,
+                icon: Icons.home_rounded,
                 isActive: _currentTab == MainTab.home,
                 onTap: () => _selectTab(MainTab.home),
               ),
               _NavItem(
                 key: const ValueKey('main-tab-stats'),
                 label: MainTab.stats.label,
+                icon: Icons.bar_chart_rounded,
                 isActive: _currentTab == MainTab.stats,
                 onTap: () => _selectTab(MainTab.stats),
               ),
               _NavItem(
                 key: const ValueKey('main-tab-plan'),
                 label: MainTab.plan.label,
+                icon: Icons.calendar_month_rounded,
                 isActive: _currentTab == MainTab.plan,
                 onTap: () => _selectTab(MainTab.plan),
               ),
               _NavItem(
                 key: const ValueKey('main-tab-chat'),
                 label: MainTab.chat.label,
+                icon: Icons.chat_bubble_rounded,
                 isActive: _currentTab == MainTab.chat,
                 onTap: () => _selectTab(MainTab.chat),
               ),
               _NavItem(
                 key: const ValueKey('main-tab-profile'),
                 label: MainTab.profile.label,
+                icon: Icons.person_rounded,
                 isActive: _currentTab == MainTab.profile,
                 onTap: () => _selectTab(MainTab.profile),
               ),
@@ -1475,12 +1480,14 @@ class _ShortcutCard extends StatelessWidget {
 
 class _NavItem extends StatelessWidget {
   final String label;
+  final IconData icon;
   final bool isActive;
   final VoidCallback onTap;
 
   const _NavItem({
     super.key,
     required this.label,
+    required this.icon,
     required this.isActive,
     required this.onTap,
   });
@@ -1495,15 +1502,8 @@ class _NavItem extends StatelessWidget {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Container(
-              width: 6,
-              height: 6,
-              decoration: BoxDecoration(
-                color: color,
-                shape: BoxShape.circle,
-              ),
-            ),
-            const SizedBox(height: 6),
+            Icon(icon, size: 24, color: color),
+            const SizedBox(height: 4),
             Text(
               label,
               style: TextStyle(

@@ -63,6 +63,44 @@ void main() {
     await harness.dispose(tester);
   });
 
+  testWidgets('All five patient tabs show icons matching selected label colors',
+      (tester) async {
+    final harness = await _pumpHome(tester);
+    const icons = [
+      Icons.home_rounded,
+      Icons.bar_chart_rounded,
+      Icons.calendar_month_rounded,
+      Icons.chat_bubble_rounded,
+      Icons.person_rounded,
+    ];
+    for (final selected in MainTab.values) {
+      await tester.tap(find.byKey(ValueKey('main-tab-${selected.name}')));
+      await tester.pumpAndSettle();
+      _expectSelectedTab(tester, selected);
+      for (final tab in MainTab.values) {
+        final item = find.byKey(ValueKey('main-tab-${tab.name}'));
+        final iconFinder =
+            find.descendant(of: item, matching: find.byType(Icon));
+        final icon = tester.widget<Icon>(iconFinder);
+        final labelFinder =
+            find.descendant(of: item, matching: find.text(tab.label));
+        final label = tester.widget<Text>(labelFinder);
+        expect(icon.icon, icons[tab.uiIndex]);
+        expect(icon.size, 24);
+        expect(icon.color, label.style!.color);
+        expect(
+            icon.color,
+            tab == selected
+                ? const Color(0xFF4A65FF)
+                : const Color(0xFF9CA3AF));
+        expect(tester.getCenter(iconFinder).dy,
+            lessThan(tester.getCenter(labelFinder).dy));
+      }
+    }
+    expect(harness.hapticCount, 4);
+    await harness.dispose(tester);
+  });
+
   testWidgets('Bottom tap animates adjacent, jumps distant, and haptics once',
       (tester) async {
     final harness = await _pumpHome(tester);
