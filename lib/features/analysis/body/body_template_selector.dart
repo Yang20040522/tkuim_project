@@ -1,19 +1,24 @@
 import '../../../models/training_action.dart';
 import '../models/environment_metadata.dart';
+import '../models/motion_action_registry.dart';
 import 'body_motion_template.dart';
 
 class BodyTemplateSelector {
   const BodyTemplateSelector._();
 
-  static String get standingKneeRaiseActionId => ActionType.wipeBody.name;
+  static String get standingKneeRaiseActionId =>
+      MotionActionRegistry.forActionType(ActionType.wipeBody).actionId;
 
   static bool matchesStandingKneeRaise(BodyMotionTemplate template) {
-    final actionType = template.actionType.trim();
-    if (actionType == standingKneeRaiseActionId) return true;
-
-    // Phase 1 stored its preset label in actionType. Keep this narrow legacy
-    // fallback so existing local templates remain usable.
-    return actionType == '站姿抬腳式訓練' || actionType.contains('站姿抬腳');
+    final capability = MotionActionRegistry.resolve(
+          template.actionId,
+          modelType: MotionTemplateModelType.body,
+        ) ??
+        MotionActionRegistry.resolve(
+          template.actionType,
+          modelType: MotionTemplateModelType.body,
+        );
+    return capability?.actionId == standingKneeRaiseActionId;
   }
 
   static List<BodyMotionTemplate> standingKneeRaiseCandidates(

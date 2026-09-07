@@ -160,6 +160,17 @@ class BodyTemplateAnalyzer {
     required BodySide movementSide,
     required CameraView? currentCameraView,
   }) {
+    final templateSide = template.environment.movementSide;
+    if ((templateSide == BodySide.left || templateSide == BodySide.right) &&
+        (movementSide == BodySide.left || movementSide == BodySide.right) &&
+        templateSide != movementSide) {
+      return BodyTemplateAnalysisResult.unavailable(
+        enoughData: true,
+        reason: '本次動作側別與所選標準模板不一致。',
+        templateId: template.templateId,
+        movementSide: movementSide,
+      );
+    }
     if (currentCameraView == null) {
       return BodyTemplateAnalysisResult.unavailable(
         enoughData: true,

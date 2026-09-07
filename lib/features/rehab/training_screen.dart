@@ -117,6 +117,7 @@ import '../tv_cast/socket_client_service.dart';
 
 import 'package:permission_handler/permission_handler.dart';
 import '../training/training_preview_screen.dart';
+import '../analysis/widgets/template_training_mode_dialog.dart';
 
 
 
@@ -752,6 +753,12 @@ class _TrainingScreenState extends State<TrainingScreen>
     await WidgetsBinding.instance.endOfFrame;
     if (!mounted) return;
 
+    final templateSelection = await MotionTemplateTrainingPicker.choose(
+      context: context,
+      action: action,
+    );
+    if (!mounted || templateSelection == null) return;
+
     await _controller.disposeAsync();
     if (!mounted) return;
     
@@ -763,6 +770,7 @@ class _TrainingScreenState extends State<TrainingScreen>
           action: StandingKneeRaiseAction(difficulty: diff, targetCount: difficulty.targetReps),
           trainingActionMeta: action,
           difficultyMeta: difficulty,
+          selectedTemplate: templateSelection.selectedBodyTemplate,
           autoLevelUp: autoLevelUp, // 🆕
         );
       case ActionType.drawCircle:

@@ -45,7 +45,8 @@ void main() {
     final build = BodyMotionTemplate.build(
       analysis: analysis,
       templateName: '右側抬手',
-      actionType: '抬手',
+      actionType: 'standing_knee_raise',
+      actionId: 'standing_knee_raise',
       environment: environment,
       createdByTherapistId: 'therapist-1',
       patientId: 'patient-1',
@@ -59,6 +60,7 @@ void main() {
     expect(build.template!.featureTrajectory, hasLength(21));
     final json = build.template!.toJson();
     expect(json['modelType'], 'body');
+    expect(json['actionId'], 'standing_knee_raise');
     expect(json['templateSource'], 'therapist_video');
     expect(json['estimatedReps'], 1, reason: 'legacy field stays top-level');
     expect(BodyMotionTemplate.fromJson(json).toJson(), json);
@@ -93,7 +95,8 @@ void main() {
     final build = HandMotionTemplate.build(
       analysis: analysis,
       templateName: '側捏',
-      actionType: '側捏',
+      actionType: 'side_pinch',
+      actionId: 'side_pinch',
       environment: environment,
       createdByTherapistId: 'therapist-1',
       patientId: 'patient-1',
@@ -110,6 +113,7 @@ void main() {
     expect(build.template!.actionIntensitySeries, hasLength(21));
     final json = build.template!.toJson();
     expect(json['modelType'], 'hand');
+    expect(json['actionId'], 'side_pinch');
     expect(json['templateSource'], 'therapist_video');
     expect(json['regularityScore'], 0.8,
         reason: 'legacy field stays top-level');
