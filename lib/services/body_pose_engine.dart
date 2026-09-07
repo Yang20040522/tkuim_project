@@ -197,8 +197,7 @@ class BodyPoseEngine {
   Future<void>? _pendingInference;
 
   // 對外:骨架資料 (畫骨架的人監聽這個)
-  final ValueNotifier<PoseData> poseNotifier =
-      ValueNotifier(PoseData.empty());
+  final ValueNotifier<PoseData> poseNotifier = ValueNotifier(PoseData.empty());
 
   // 對外:相機是否就緒
   final ValueNotifier<bool> cameraReady = ValueNotifier(false);
@@ -220,16 +219,23 @@ class BodyPoseEngine {
   bool get isFrontCamera => _isFrontCamera;
 
   // ── 初始化:相機 + 模型 ──────────────────────────────────────────
-  Future<void> init({bool asReceiver = false}) async {
+  Future<void> init({
+    bool asReceiver = false,
+    bool initializeCamera = true,
+  }) async {
     _isReceiver = asReceiver;
     if (_isReceiver) {
       // 電視顯示端:不開相機、不載模型,直接標記就緒
       cameraReady.value = true;
       return;
     }
-    await _initCamera();
+    if (initializeCamera) await _initCamera();
     await _initOnnx();
   }
+
+  /// 離線影片分析專用：只載入 RTMPose，不取得 CameraController。
+  /// 一般訓練仍走 [init] 的預設行為，因此既有相機生命週期不受影響。
+  Future<void> initForExternalFrames() => init(initializeCamera: false);
 
   Future<void> _initCamera() async {
     final cameras = await availableCameras();
@@ -544,8 +550,7 @@ class BodyPoseEngine {
         }
       }
 
-      poseNotifier.value =
-          PoseData(List.from(_smoothedKeypoints), scores);
+      poseNotifier.value = PoseData(List.from(_smoothedKeypoints), scores);
     } catch (e) {
       debugPrint('BodyPoseEngine 推論錯誤: $e');
     } finally {
@@ -564,15 +569,15 @@ class BodyPoseEngine {
 
   // ── 釋放 ──────────────────────────────────────────────────────────
   Future<void> dispose() async {
-    if (_disposed) return;       // 防重複 dispose
-    _disposed = true;            // 先擋住 _onFrame,不會再啟動新的推論
+    if (_disposed) return; // 防重複 dispose
+    _disposed = true; // 先擋住 _onFrame,不會再啟動新的推論
 
     try {
       if (_cam?.value.isStreamingImages == true) {
         await _cam!.stopImageStream();
       }
     } catch (_) {}
-    
+
     try {
       await _cam?.dispose();
     } catch (_) {}
@@ -595,9 +600,9 @@ class BodyPoseEngine {
     try {
       _poseSession?.release();
     } catch (_) {}
-    
+
     poseNotifier.dispose();
-    imageNotifier.dispose();   // ← 電視投放新增
+    imageNotifier.dispose(); // ← 電視投放新增
     cameraReady.dispose();
   }
 }

@@ -12,29 +12,28 @@
 
 import 'dart:convert';
 import 'dart:io';
-import 'dart:math' as math;
-import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
-import 'package:image/image.dart' as img_lib;
 import 'package:path_provider/path_provider.dart';
-import 'package:video_player/video_player.dart';
-import 'package:video_thumbnail/video_thumbnail.dart';
 
-import '../../models/pose_data.dart';
-import '../../services/body_pose_engine.dart';
+import '../account/app_session.dart';
+import '../account/user_role.dart';
+import 'body/body_motion_template.dart';
+import 'hand/hand_motion_template.dart';
+import 'models/environment_metadata.dart';
+import 'models/video_segment.dart';
 import 'motion_feature_extractor.dart';
-
 import 'hand_analysis_service.dart';
 import 'hand_feature_extractor.dart';
+import 'video_analysis_service.dart';
+import 'widgets/video_segment_selector.dart';
 
 class StandardAnalysisScreen extends StatefulWidget {
   const StandardAnalysisScreen({super.key});
 
   @override
-  State<StandardAnalysisScreen> createState() =>
-      _StandardAnalysisScreenState();
+  State<StandardAnalysisScreen> createState() => _StandardAnalysisScreenState();
 }
 
 class _StandardAnalysisScreenState extends State<StandardAnalysisScreen> {
@@ -51,14 +50,22 @@ class _StandardAnalysisScreenState extends State<StandardAnalysisScreen> {
   // ── 選擇狀態 ──
   String? _selectedVideoPath;
   String _currentActionType = '';
-  bool _isPreset = false;   // 是否為內建影片
+  bool _isPreset = false; // 是否為內建影片
   bool _isAnalyzing = false;
+  VideoSegment? _selectedSegment;
+
+  CameraView _cameraView = CameraView.front;
+  SupportType _supportType = SupportType.none;
+  BodySide _supportSide = BodySide.none;
+  BodySide _movementSide = BodySide.none;
 
   // ── 分析類型(全身 / 手部) ──
-  String _analysisType = 'body';   // 'body' 或 'hand'
+  String _analysisType = 'body'; // 'body' 或 'hand'
 
   // ── 手部分析結果(如果是手部) ──
   HandAnalysisResult? _handResult;
+  HandVideoAnalysisResult? _handVideoAnalysis;
+  BodyVideoAnalysisResult? _bodyVideoAnalysis;
 
   // ── 使用者輸入動作名稱 ──
   final TextEditingController _actionNameController = TextEditingController();
@@ -71,22 +78,15 @@ class _StandardAnalysisScreenState extends State<StandardAnalysisScreen> {
   // ── 多維度分析資料 ──
   final List<List<Offset>> _framePoses = [];
   final List<List<double>> _frameScores = [];
-  final List<PoseData> _collectedPoses = [];
-
   // ── 分析結果 ──
   List<int> _mainJointIndices = [];
   Map<int, double> _jointTotalMovement = {};
-  List<double> _actionIntensity = [];
   int _estimatedReps = 0;
   double _symmetryScore = 0;
   double _stabilityScore = 0;
 
-  // ── 引擎 ──
-  BodyPoseEngine? _engine;
-
   @override
   void dispose() {
-    _engine?.dispose();
     _actionNameController.dispose();
     super.dispose();
   }
@@ -161,12 +161,10 @@ class _StandardAnalysisScreenState extends State<StandardAnalysisScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               const Text('選內建示範影片',
-                  style: TextStyle(
-                      fontSize: 16, fontWeight: FontWeight.w800)),
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800)),
               const SizedBox(height: 12),
               ..._presetVideos.map((v) => ListTile(
-                    leading:
-                        const Icon(Icons.movie, color: Color(0xFF4A65FF)),
+                    leading: const Icon(Icons.movie, color: Color(0xFF4A65FF)),
                     title: Text(v['name']!),
                     subtitle: Text('動作類型:${v['actionType']}'),
                     onTap: () => Navigator.pop(ctx, v),
@@ -218,11 +216,10 @@ class _StandardAnalysisScreenState extends State<StandardAnalysisScreen> {
         ),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('取消')),
+              onPressed: () => Navigator.pop(ctx), child: const Text('取消')),
           ElevatedButton(
-            onPressed: () => Navigator.pop(
-                ctx, _actionNameController.text.trim()),
+            onPressed: () =>
+                Navigator.pop(ctx, _actionNameController.text.trim()),
             child: const Text('確定'),
           ),
         ],
@@ -234,15 +231,17 @@ class _StandardAnalysisScreenState extends State<StandardAnalysisScreen> {
     _totalFrames = 0;
     _processedFrames = 0;
     _framesWithPose = 0;
-    _collectedPoses.clear();
     _framePoses.clear();
     _frameScores.clear();
     _mainJointIndices = [];
     _jointTotalMovement = {};
-    _actionIntensity = [];
     _estimatedReps = 0;
     _symmetryScore = 0;
     _stabilityScore = 0;
+    _selectedSegment = null;
+    _bodyVideoAnalysis = null;
+    _handVideoAnalysis = null;
+    _handResult = null;
   }
 
   Future<String> _copyAssetToTemp(String assetPath) async {
@@ -259,9 +258,8 @@ class _StandardAnalysisScreenState extends State<StandardAnalysisScreen> {
   // ═══════════════════════════════════════════════════════════════
 
   Future<void> _startAnalysis() async {
-    if (_selectedVideoPath == null) return;
+    if (_selectedVideoPath == null || _selectedSegment == null) return;
 
-    // 根據分析類型分派
     if (_analysisType == 'hand') {
       await _startHandAnalysis();
       return;
@@ -271,90 +269,51 @@ class _StandardAnalysisScreenState extends State<StandardAnalysisScreen> {
       _isAnalyzing = true;
       _processedFrames = 0;
       _framesWithPose = 0;
-      _collectedPoses.clear();
       _framePoses.clear();
       _frameScores.clear();
+      _bodyVideoAnalysis = null;
     });
 
     try {
-      _engine ??= BodyPoseEngine();
-      await _engine!.init();
+      final segment = _selectedSegment!;
+      final analysis = await VideoAnalysisService.analyzeVideoDetailed(
+        videoPath: _selectedVideoPath!,
+        fps: 2,
+        startTime: segment.startTime,
+        endTime: segment.endTime,
+        onProgress: (progress) {
+          if (!mounted) return;
+          setState(() {
+            _processedFrames = (progress * 100).round();
+            _totalFrames = 100;
+          });
+        },
+      );
 
-      // 讀影片實際長度
-      final videoCtrl = VideoPlayerController.file(File(_selectedVideoPath!));
-      await videoCtrl.initialize();
-      final double videoDurationSec =
-          videoCtrl.value.duration.inMilliseconds / 1000.0;
-      await videoCtrl.dispose();
+      if (!mounted) return;
+      final summary = analysis.summary;
+      setState(() {
+        _bodyVideoAnalysis = analysis;
+        _processedFrames = analysis.attemptedFrameCount;
+        _totalFrames = analysis.attemptedFrameCount;
+        _framesWithPose = analysis.validFrameCount;
+        _framePoses.addAll(analysis.attemptedFrames
+            .where((frame) => frame.isValid)
+            .map((frame) => frame.landmarks!));
+        _frameScores.addAll(analysis.attemptedFrames
+            .where((frame) => frame.isValid)
+            .map((frame) => frame.scores!));
+        if (summary != null) _applyBodySummary(summary);
+      });
 
-      // 逐幀設定
-      const int fps = 2;
-      const int maxAnalyzeSec = 60;
-      final double actualAnalyzeSec =
-          math.min(videoDurationSec, maxAnalyzeSec.toDouble());
-      final int totalFrames = (fps * actualAnalyzeSec).ceil();
-
-      debugPrint('📹 影片長度: ${videoDurationSec.toStringAsFixed(1)} 秒, '
-          '將分析前 ${actualAnalyzeSec.toStringAsFixed(1)} 秒 = $totalFrames 幀');
-
-      setState(() => _totalFrames = totalFrames);
-
-      for (int i = 0; i < totalFrames; i++) {
-        if (!mounted) return;
-        final int timeMs = i * (1000 ~/ fps);
-
-        final Uint8List? jpegBytes = await VideoThumbnail.thumbnailData(
-          video: _selectedVideoPath!,
-          timeMs: timeMs,
-          imageFormat: ImageFormat.JPEG,
-          quality: 75,
-        );
-
-        if (jpegBytes == null) {
-          setState(() => _processedFrames = i + 1);
-          continue;
-        }
-
-        final img_lib.Image? decoded = img_lib.decodeJpg(jpegBytes);
-        if (decoded == null) {
-          setState(() => _processedFrames = i + 1);
-          continue;
-        }
-
-        final Uint8List rgbBytes = _imageToRgbBytes(decoded);
-
-        await _engine!.processExternalFrame(
-          rgbBytes,
-          decoded.width,
-          decoded.height,
-          isMirror: false,
-        );
-
-        final PoseData pose = _engine!.poseNotifier.value;
-        if (pose.keypoints.isNotEmpty) {
-          _collectedPoses.add(pose);
-          _framePoses.add(List<Offset>.from(pose.keypoints));
-          _frameScores.add(List<double>.from(pose.scores));
-          setState(() => _framesWithPose++);
-        }
-
-        setState(() => _processedFrames = i + 1);
-      }
-
-      // 多維度分析
-      if (_framePoses.length >= 3) {
-        _analyzeMultiDimensional();
-        if (mounted) setState(() {});
-      }
-
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-                '分析完成:$_processedFrames 幀,成功偵測 $_framesWithPose 幀'),
-          ),
-        );
-      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(summary == null
+              ? '分析完成，但可用骨架幀數不足。'
+              : '分析完成:${analysis.attemptedFrameCount} 幀,'
+                  '成功偵測 ${analysis.validFrameCount} 幀'),
+        ),
+      );
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -368,19 +327,23 @@ class _StandardAnalysisScreenState extends State<StandardAnalysisScreen> {
 
   /// 手部影片分析(獨立於全身分析)
   Future<void> _startHandAnalysis() async {
-    if (_selectedVideoPath == null) return;
+    if (_selectedVideoPath == null || _selectedSegment == null) return;
 
     setState(() {
       _isAnalyzing = true;
       _processedFrames = 0;
       _framesWithPose = 0;
       _handResult = null;
+      _handVideoAnalysis = null;
     });
 
     try {
-      final result = await HandAnalysisService.analyzeVideo(
+      final segment = _selectedSegment!;
+      final analysis = await HandAnalysisService.analyzeVideoDetailed(
         videoPath: _selectedVideoPath!,
         fps: 3,
+        startTime: segment.startTime,
+        endTime: segment.endTime,
         onProgress: (p) {
           if (mounted) {
             setState(() {
@@ -393,18 +356,23 @@ class _StandardAnalysisScreenState extends State<StandardAnalysisScreen> {
 
       if (mounted) {
         setState(() {
-          _handResult = result;
+          _handVideoAnalysis = analysis;
+          _handResult = analysis.summary;
+          _processedFrames = analysis.attemptedFrameCount;
+          _totalFrames = analysis.attemptedFrameCount;
+          _framesWithPose = analysis.validFrameCount;
         });
 
-        if (result == null) {
+        if (analysis.summary == null) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text('分析失敗:無法從影片偵測到手部')),
           );
         } else {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text('手部分析完成:${result.totalFrames} 幀,'
-                  '${result.estimatedReps} 次動作'),
+              content: Text('手部分析完成:${analysis.attemptedFrameCount} 幀,'
+                  '有效 ${analysis.validFrameCount} 幀,'
+                  '${analysis.summary!.estimatedReps} 次動作'),
             ),
           );
         }
@@ -420,35 +388,9 @@ class _StandardAnalysisScreenState extends State<StandardAnalysisScreen> {
     }
   }
 
-  Uint8List _imageToRgbBytes(img_lib.Image img) {
-    final int w = img.width;
-    final int h = img.height;
-    final Uint8List rgb = Uint8List(w * h * 3);
-    int idx = 0;
-    for (int y = 0; y < h; y++) {
-      for (int x = 0; x < w; x++) {
-        final pixel = img.getPixel(x, y);
-        rgb[idx++] = pixel.r.toInt();
-        rgb[idx++] = pixel.g.toInt();
-        rgb[idx++] = pixel.b.toInt();
-      }
-    }
-    return rgb;
-  }
-
-  // ══════════════════════════════════════════════════════════════
-  // 多維度特徵萃取(委派給 MotionFeatureExtractor)
-  // ══════════════════════════════════════════════════════════════
-
-  void _analyzeMultiDimensional() {
-    final result = MotionFeatureExtractor.extractFeatures(
-      framePoses: _framePoses,
-      frameScores: _frameScores,
-    );
-
+  void _applyBodySummary(MotionAnalysisResult result) {
     _mainJointIndices = result.mainJointIndices;
     _jointTotalMovement = result.jointTotalMovement;
-    _actionIntensity = result.actionIntensity;
     _estimatedReps = result.estimatedReps;
     _symmetryScore = result.symmetryScore;
     _stabilityScore = result.stabilityScore;
@@ -463,28 +405,43 @@ class _StandardAnalysisScreenState extends State<StandardAnalysisScreen> {
 
   Future<void> _saveAsTemplate() async {
     // 判斷是否有可儲存的分析結果
-    final bool hasBody = _analysisType == 'body' && _mainJointIndices.isNotEmpty;
-    final bool hasHand = _analysisType == 'hand' && _handResult != null;
+    final bool hasBody =
+        _analysisType == 'body' && _bodyVideoAnalysis?.summary != null;
+    final bool hasHand =
+        _analysisType == 'hand' && _handVideoAnalysis?.summary != null;
     if (!hasBody && !hasHand) return;
 
     // 讓使用者輸入模板名稱
-    final nameCtrl =
-        TextEditingController(text: '$_currentActionType 標準模板');
+    // 讓使用者輸入模板名稱。
+    // 不使用臨時 TextEditingController，避免 Dialog 關閉動畫期間
+    // controller 已 dispose 但 TextField 仍在 Widget tree 中。
+    final defaultTemplateName = '$_currentActionType 標準模板';
+    var pendingTemplateName = defaultTemplateName;
+
     final saveName = await showDialog<String>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('儲存為模板'),
-        content: TextField(
-          controller: nameCtrl,
+        content: TextFormField(
+          initialValue: defaultTemplateName,
           autofocus: true,
-          decoration: const InputDecoration(hintText: '模板名稱'),
+          decoration: const InputDecoration(
+            hintText: '模板名稱',
+          ),
+          onChanged: (value) {
+            pendingTemplateName = value;
+          },
         ),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('取消')),
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('取消'),
+          ),
           ElevatedButton(
-            onPressed: () => Navigator.pop(ctx, nameCtrl.text.trim()),
+            onPressed: () => Navigator.pop(
+              ctx,
+              pendingTemplateName.trim(),
+            ),
             child: const Text('儲存'),
           ),
         ],
@@ -495,57 +452,42 @@ class _StandardAnalysisScreenState extends State<StandardAnalysisScreen> {
 
     try {
       Map<String, dynamic> data;
+      final environment = EnvironmentMetadata(
+        cameraView: _cameraView,
+        supportType: _supportType,
+        supportSide: _supportSide,
+        movementSide: _movementSide,
+      );
+      final creatorId = AppSession.role == UserRole.therapist
+          ? AppSession.userId?.trim()
+          : null;
 
       if (hasBody) {
-        // ═══ 全身模板 ═══
-        data = {
-          'modelType': 'body',                     // ← 新增區分欄位
-          'templateName': saveName,
-          'actionType': _currentActionType,
-          'createdAt': DateTime.now().toIso8601String(),
-          'totalFrames': _framePoses.length,
-          'estimatedReps': _estimatedReps,
-          'symmetryScore': _symmetryScore,
-          'stabilityScore': _stabilityScore,
-          'mainJoints': _mainJointIndices
-              .map((idx) => {
-                    'index': idx,
-                    'name': _jointName(idx),
-                    'movement': _jointTotalMovement[idx] ?? 0,
-                  })
-              .toList(),
-          'actionIntensity': _actionIntensity,
-          'framePoses': _framePoses
-              .map((frame) => frame
-                  .map((offset) => {'x': offset.dx, 'y': offset.dy})
-                  .toList())
-              .toList(),
-          'frameScores': _frameScores,
-        };
+        final build = BodyMotionTemplate.build(
+          analysis: _bodyVideoAnalysis!,
+          templateName: saveName,
+          actionType: _currentActionType,
+          environment: environment,
+          createdByTherapistId: creatorId,
+        );
+        if (build.template == null) {
+          await _showQualityFailure(build.qualitySummary.messages);
+          return;
+        }
+        data = build.template!.toJson();
       } else {
-        // ═══ 手部模板 ═══
-        data = {
-          'modelType': 'hand',                     // ← 新增區分欄位
-          'templateName': saveName,
-          'actionType': _currentActionType,
-          'createdAt': DateTime.now().toIso8601String(),
-          'totalFrames': _handResult!.totalFrames,
-          'estimatedReps': _handResult!.estimatedReps,
-          'minPinchDistance': _handResult!.minPinchDistance,
-          'maxPinchDistance': _handResult!.maxPinchDistance,
-          'avgPinchDistance': _handResult!.avgPinchDistance,
-          'wristRotationRange': _handResult!.wristRotationRange,
-          'avgWristRotation': _handResult!.avgWristRotation,
-          'regularityScore': _handResult!.regularityScore,
-          'actionIntensity': _handResult!.actionIntensity,
-          'mainFingers': _handResult!.mainFingerIndices
-              .map((idx) => {
-                    'index': idx,
-                    'name': HandFeatureExtractor.fingerName(idx),
-                    'movement': _handResult!.fingerTotalMovement[idx] ?? 0,
-                  })
-              .toList(),
-        };
+        final build = HandMotionTemplate.build(
+          analysis: _handVideoAnalysis!,
+          templateName: saveName,
+          actionType: _currentActionType,
+          environment: environment,
+          createdByTherapistId: creatorId,
+        );
+        if (build.template == null) {
+          await _showQualityFailure(build.qualitySummary.messages);
+          return;
+        }
+        data = build.template!.toJson();
       }
 
       // 存到手機內部目錄
@@ -576,268 +518,401 @@ class _StandardAnalysisScreenState extends State<StandardAnalysisScreen> {
     }
   }
 
+  Future<void> _showQualityFailure(List<String> reasons) async {
+    if (!mounted) return;
+    await showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('無法建立標準模板'),
+        content: Text(reasons.map((reason) => '• $reason').join('\n')),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('重新選擇區段'),
+          ),
+        ],
+      ),
+    );
+  }
+
   // ═══════════════════════════════════════════════════════════════
 //  5. 已存模板管理(顯示清單 + 刪除)
 // ═══════════════════════════════════════════════════════════════
 
-Future<void> _showSavedTemplates() async {
-  final templates = await _loadAllTemplates();
+  Future<void> _showSavedTemplates() async {
+    final templates = await _loadAllTemplates();
 
-  if (!mounted) return;
+    if (!mounted) return;
 
-  await showModalBottomSheet(
-    context: context,
-    isScrollControlled: true,
-    backgroundColor: Colors.white,
-    shape: const RoundedRectangleBorder(
-      borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-    ),
-    builder: (ctx) => StatefulBuilder(
-      builder: (ctx, setSheetState) {
-        return DraggableScrollableSheet(
-          initialChildSize: 0.7,
-          maxChildSize: 0.9,
-          minChildSize: 0.4,
-          expand: false,
-          builder: (_, scrollCtrl) => Column(
+    await showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSheetState) {
+          return DraggableScrollableSheet(
+            initialChildSize: 0.7,
+            maxChildSize: 0.9,
+            minChildSize: 0.4,
+            expand: false,
+            builder: (_, scrollCtrl) => Column(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.all(20),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.folder_open, color: Color(0xFF4A65FF)),
+                      const SizedBox(width: 8),
+                      Text(
+                        '已存模板 (${templates.length})',
+                        style: const TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w800,
+                          color: Color(0xFF1A1D2E),
+                        ),
+                      ),
+                      const Spacer(),
+                      IconButton(
+                        icon: const Icon(Icons.close),
+                        onPressed: () => Navigator.pop(ctx),
+                      ),
+                    ],
+                  ),
+                ),
+                Expanded(
+                  child: templates.isEmpty
+                      ? const Center(
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(Icons.inbox_outlined,
+                                  size: 64, color: Color(0xFF9CA3AF)),
+                              SizedBox(height: 12),
+                              Text(
+                                '尚未儲存任何模板',
+                                style: TextStyle(
+                                    color: Color(0xFF6B7280), fontSize: 14),
+                              ),
+                            ],
+                          ),
+                        )
+                      : ListView.separated(
+                          controller: scrollCtrl,
+                          padding: const EdgeInsets.symmetric(horizontal: 20),
+                          itemCount: templates.length,
+                          separatorBuilder: (_, __) =>
+                              const SizedBox(height: 8),
+                          itemBuilder: (_, i) {
+                            final t = templates[i];
+                            return _buildTemplateCard(t, () async {
+                              final ok = await _confirmDelete(
+                                  ctx, t['templateName'] ?? '');
+                              if (ok == true) {
+                                await _deleteTemplate(t['_filePath']);
+                                setSheetState(() {
+                                  templates.removeAt(i);
+                                });
+                                if (mounted) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text('已刪除模板'),
+                                      backgroundColor: Color(0xFFF44336),
+                                    ),
+                                  );
+                                }
+                              }
+                            });
+                          },
+                        ),
+                ),
+                const SizedBox(height: 20),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  /// 讀取所有 JSON 模板(從手機內部目錄)
+  Future<List<Map<String, dynamic>>> _loadAllTemplates() async {
+    try {
+      final dir = await getApplicationDocumentsDirectory();
+      final templatesDir = Directory('${dir.path}/templates');
+      if (!await templatesDir.exists()) return [];
+
+      final files = templatesDir
+          .listSync()
+          .whereType<File>()
+          .where((f) => f.path.endsWith('.json'))
+          .toList();
+
+      // 依修改時間新到舊排序
+      files.sort(
+          (a, b) => b.statSync().modified.compareTo(a.statSync().modified));
+
+      final List<Map<String, dynamic>> results = [];
+      for (final f in files) {
+        try {
+          final content = await f.readAsString();
+          final data = jsonDecode(content) as Map<String, dynamic>;
+          data['_filePath'] = f.path;
+          results.add(data);
+        } catch (e) {
+          debugPrint('讀取模板失敗:${f.path} - $e');
+        }
+      }
+      return results;
+    } catch (e) {
+      debugPrint('列出模板失敗:$e');
+      return [];
+    }
+  }
+
+  /// 刪除模板檔
+  Future<void> _deleteTemplate(String path) async {
+    try {
+      final file = File(path);
+      if (await file.exists()) {
+        await file.delete();
+      }
+    } catch (e) {
+      debugPrint('刪除失敗:$e');
+    }
+  }
+
+  /// 刪除確認 dialog
+  Future<bool?> _confirmDelete(BuildContext ctx, String name) async {
+    return showDialog<bool>(
+      context: ctx,
+      builder: (c) => AlertDialog(
+        title: const Text('確定刪除?'),
+        content: Text('將永久刪除模板「$name」,無法復原'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(c, false),
+            child: const Text('取消'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(c, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFFF44336),
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('刪除'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 單一模板卡片
+  Widget _buildTemplateCard(Map<String, dynamic> t, VoidCallback onDelete) {
+    final name = t['templateName'] ?? '未命名';
+    final actionType = t['actionType'] ?? '未知動作';
+    final createdAt = t['createdAt'] ?? '';
+    final createdShort =
+        createdAt.length >= 10 ? createdAt.substring(0, 10) : createdAt;
+    final reps = t['estimatedReps'] ?? 0;
+    final sym = (t['symmetryScore'] ?? 0.0) as num;
+    final sta = (t['stabilityScore'] ?? 0.0) as num;
+    final frames = t['totalFrames'] ?? 0;
+    final isHand = t['modelType'] == HandMotionTemplate.modelType;
+    final sampleCount = t['sampleCount'] ?? 0;
+    final regularity = (t['regularityScore'] ?? 0.0) as num;
+
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF5F6FA),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFDDE0F0)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
             children: [
-              Padding(
-                padding: const EdgeInsets.all(20),
-                child: Row(
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Icon(Icons.folder_open, color: Color(0xFF4A65FF)),
-                    const SizedBox(width: 8),
                     Text(
-                      '已存模板 (${templates.length})',
+                      name,
                       style: const TextStyle(
-                        fontSize: 16,
+                        fontSize: 14,
                         fontWeight: FontWeight.w800,
                         color: Color(0xFF1A1D2E),
                       ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                     ),
-                    const Spacer(),
-                    IconButton(
-                      icon: const Icon(Icons.close),
-                      onPressed: () => Navigator.pop(ctx),
+                    const SizedBox(height: 2),
+                    Text(
+                      '$actionType · $createdShort',
+                      style:
+                          TextStyle(color: Colors.grey.shade600, fontSize: 11),
                     ),
                   ],
                 ),
               ),
-              Expanded(
-                child: templates.isEmpty
-                    ? const Center(
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(Icons.inbox_outlined,
-                                size: 64, color: Color(0xFF9CA3AF)),
-                            SizedBox(height: 12),
-                            Text(
-                              '尚未儲存任何模板',
-                              style: TextStyle(
-                                  color: Color(0xFF6B7280), fontSize: 14),
-                            ),
-                          ],
-                        ),
-                      )
-                    : ListView.separated(
-                        controller: scrollCtrl,
-                        padding: const EdgeInsets.symmetric(horizontal: 20),
-                        itemCount: templates.length,
-                        separatorBuilder: (_, __) => const SizedBox(height: 8),
-                        itemBuilder: (_, i) {
-                          final t = templates[i];
-                          return _buildTemplateCard(t, () async {
-                            final ok = await _confirmDelete(
-                                ctx, t['templateName'] ?? '');
-                            if (ok == true) {
-                              await _deleteTemplate(t['_filePath']);
-                              setSheetState(() {
-                                templates.removeAt(i);
-                              });
-                              if (mounted) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(
-                                    content: Text('已刪除模板'),
-                                    backgroundColor: Color(0xFFF44336),
-                                  ),
-                                );
-                              }
-                            }
-                          });
-                        },
-                      ),
+              IconButton(
+                icon:
+                    const Icon(Icons.delete_outline, color: Color(0xFFF44336)),
+                onPressed: onDelete,
               ),
-              const SizedBox(height: 20),
             ],
           ),
-        );
-      },
-    ),
-  );
-}
-
-/// 讀取所有 JSON 模板(從手機內部目錄)
-Future<List<Map<String, dynamic>>> _loadAllTemplates() async {
-  try {
-    final dir = await getApplicationDocumentsDirectory();
-    final templatesDir = Directory('${dir.path}/templates');
-    if (!await templatesDir.exists()) return [];
-
-    final files = templatesDir
-        .listSync()
-        .whereType<File>()
-        .where((f) => f.path.endsWith('.json'))
-        .toList();
-
-    // 依修改時間新到舊排序
-    files.sort(
-        (a, b) => b.statSync().modified.compareTo(a.statSync().modified));
-
-    final List<Map<String, dynamic>> results = [];
-    for (final f in files) {
-      try {
-        final content = await f.readAsString();
-        final data = jsonDecode(content) as Map<String, dynamic>;
-        data['_filePath'] = f.path;
-        results.add(data);
-      } catch (e) {
-        debugPrint('讀取模板失敗:${f.path} - $e');
-      }
-    }
-    return results;
-  } catch (e) {
-    debugPrint('列出模板失敗:$e');
-    return [];
-  }
-}
-
-/// 刪除模板檔
-Future<void> _deleteTemplate(String path) async {
-  try {
-    final file = File(path);
-    if (await file.exists()) {
-      await file.delete();
-    }
-  } catch (e) {
-    debugPrint('刪除失敗:$e');
-  }
-}
-
-/// 刪除確認 dialog
-Future<bool?> _confirmDelete(BuildContext ctx, String name) async {
-  return showDialog<bool>(
-    context: ctx,
-    builder: (c) => AlertDialog(
-      title: const Text('確定刪除?'),
-      content: Text('將永久刪除模板「$name」,無法復原'),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(c, false),
-          child: const Text('取消'),
-        ),
-        ElevatedButton(
-          onPressed: () => Navigator.pop(c, true),
-          style: ElevatedButton.styleFrom(
-            backgroundColor: const Color(0xFFF44336),
-            foregroundColor: Colors.white,
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 6,
+            runSpacing: 4,
+            children: [
+              _miniChip('$reps 次', const Color(0xFF4CAF50)),
+              if (isHand)
+                _miniChip('規律 ${(regularity * 100).toStringAsFixed(0)}%',
+                    const Color(0xFF4A65FF))
+              else ...[
+                _miniChip('對稱 ${(sym * 100).toStringAsFixed(0)}%',
+                    const Color(0xFF4A65FF)),
+                _miniChip('穩定 ${(sta * 100).toStringAsFixed(0)}%',
+                    const Color(0xFFFF9800)),
+              ],
+              _miniChip('$frames 幀', const Color(0xFF6B7280)),
+              if (sampleCount != 0)
+                _miniChip('$sampleCount 點模板', const Color(0xFF7C3AED)),
+            ],
           ),
-          child: const Text('刪除'),
-        ),
-      ],
-    ),
-  );
-}
-
-/// 單一模板卡片
-Widget _buildTemplateCard(Map<String, dynamic> t, VoidCallback onDelete) {
-  final name = t['templateName'] ?? '未命名';
-  final actionType = t['actionType'] ?? '未知動作';
-  final createdAt = t['createdAt'] ?? '';
-  final createdShort =
-      createdAt.length >= 10 ? createdAt.substring(0, 10) : createdAt;
-  final reps = t['estimatedReps'] ?? 0;
-  final sym = (t['symmetryScore'] ?? 0.0) as num;
-  final sta = (t['stabilityScore'] ?? 0.0) as num;
-  final frames = t['totalFrames'] ?? 0;
-
-  return Container(
-    padding: const EdgeInsets.all(14),
-    decoration: BoxDecoration(
-      color: const Color(0xFFF5F6FA),
-      borderRadius: BorderRadius.circular(12),
-      border: Border.all(color: const Color(0xFFDDE0F0)),
-    ),
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    name,
-                    style: const TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w800,
-                      color: Color(0xFF1A1D2E),
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    '$actionType · $createdShort',
-                    style: TextStyle(
-                        color: Colors.grey.shade600, fontSize: 11),
-                  ),
-                ],
-              ),
-            ),
-            IconButton(
-              icon: const Icon(Icons.delete_outline,
-                  color: Color(0xFFF44336)),
-              onPressed: onDelete,
-            ),
-          ],
-        ),
-        const SizedBox(height: 8),
-        Wrap(
-          spacing: 6,
-          runSpacing: 4,
-          children: [
-            _miniChip('$reps 次', const Color(0xFF4CAF50)),
-            _miniChip('對稱 ${(sym * 100).toStringAsFixed(0)}%',
-                const Color(0xFF4A65FF)),
-            _miniChip('穩定 ${(sta * 100).toStringAsFixed(0)}%',
-                const Color(0xFFFF9800)),
-            _miniChip('$frames 幀', const Color(0xFF6B7280)),
-          ],
-        ),
-      ],
-    ),
-  );
-}
-
-Widget _miniChip(String text, Color color) {
-  return Container(
-    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-    decoration: BoxDecoration(
-      color: color.withValues(alpha: 0.15),
-      borderRadius: BorderRadius.circular(10),
-    ),
-    child: Text(
-      text,
-      style: TextStyle(
-        color: color,
-        fontSize: 10,
-        fontWeight: FontWeight.w700,
+        ],
       ),
-    ),
-  );
-}
+    );
+  }
+
+  Widget _miniChip(String text, Color color) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.15),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Text(
+        text,
+        style: TextStyle(
+          color: color,
+          fontSize: 10,
+          fontWeight: FontWeight.w700,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildEnvironmentMetadataSection() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFFDDE0F0)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            '拍攝與動作資訊',
+            style: TextStyle(
+              color: Color(0xFF1A1D2E),
+              fontSize: 14,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: _metadataDropdown<CameraView>(
+                  label: '鏡頭視角',
+                  value: _cameraView,
+                  values: CameraView.values,
+                  valueLabel: (value) => value.label,
+                  onChanged: (value) => setState(() => _cameraView = value),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _metadataDropdown<SupportType>(
+                  label: '支撐物',
+                  value: _supportType,
+                  values: SupportType.values,
+                  valueLabel: (value) => value.label,
+                  onChanged: (value) => setState(() => _supportType = value),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: _metadataDropdown<BodySide>(
+                  label: '支撐側',
+                  value: _supportSide,
+                  values: BodySide.values,
+                  valueLabel: (value) => value.label,
+                  onChanged: (value) => setState(() => _supportSide = value),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _metadataDropdown<BodySide>(
+                  label: '動作側',
+                  value: _movementSide,
+                  values: BodySide.values,
+                  valueLabel: (value) => value.label,
+                  onChanged: (value) => setState(() => _movementSide = value),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _metadataDropdown<T>({
+    required String label,
+    required T value,
+    required List<T> values,
+    required String Function(T value) valueLabel,
+    required ValueChanged<T> onChanged,
+  }) {
+    return DropdownButtonFormField<T>(
+      initialValue: value,
+      isExpanded: true,
+      decoration: InputDecoration(
+        labelText: label,
+        border: const OutlineInputBorder(),
+        contentPadding:
+            const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+      ),
+      items: values
+          .map(
+            (item) => DropdownMenuItem<T>(
+              value: item,
+              child: Text(valueLabel(item), overflow: TextOverflow.ellipsis),
+            ),
+          )
+          .toList(),
+      onChanged: _isAnalyzing
+          ? null
+          : (newValue) {
+              if (newValue != null) onChanged(newValue);
+            },
+    );
+  }
 
   // ═══════════════════════════════════════════════════════════════
   //  UI
@@ -846,13 +921,12 @@ Widget _miniChip(String text, Color color) {
   @override
   Widget build(BuildContext context) {
     final bool hasVideo = _selectedVideoPath != null;
-    final String fileName =
-        hasVideo ? _selectedVideoPath!.split('/').last : '';
+    final String fileName = hasVideo ? _selectedVideoPath!.split('/').last : '';
 
     return Scaffold(
       backgroundColor: const Color(0xFFF5F6FA),
       appBar: AppBar(
-        title: const Text('動作標準分析'),
+        title: const Text('AI 標準模板管理'),
         backgroundColor: Colors.white,
         foregroundColor: const Color(0xFF1A1D2E),
         elevation: 0,
@@ -863,7 +937,7 @@ Widget _miniChip(String text, Color color) {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const Text(
-              '從治療師示範影片,建立動作標準模板',
+              '從治療師示範影片建立可驗證的 One-shot 動作模板',
               style: TextStyle(
                   color: Color(0xFF1A1D2E),
                   fontSize: 16,
@@ -871,7 +945,7 @@ Widget _miniChip(String text, Color color) {
             ),
             const SizedBox(height: 8),
             Text(
-              '選內建影片 or 自己的影片 → 逐幀分析 → 儲存為模板(供病人比對)',
+              '選擇影片與有效區段，填寫拍攝環境後再進行離線分析。',
               style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
             ),
 
@@ -887,7 +961,8 @@ Widget _miniChip(String text, Color color) {
                   foregroundColor: const Color(0xFF4A65FF),
                   side: const BorderSide(color: Color(0xFF4A65FF)),
                   padding: const EdgeInsets.symmetric(vertical: 12),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12)),
                 ),
               ),
             ),
@@ -906,14 +981,16 @@ Widget _miniChip(String text, Color color) {
             const SizedBox(height: 8),
             Row(
               children: [
-                Expanded(child: _buildAnalysisTypeCard(
+                Expanded(
+                    child: _buildAnalysisTypeCard(
                   type: 'body',
                   icon: Icons.accessibility_new,
                   title: '全身動作',
                   subtitle: 'RTMPose 133 點',
                 )),
                 const SizedBox(width: 12),
-                Expanded(child: _buildAnalysisTypeCard(
+                Expanded(
+                    child: _buildAnalysisTypeCard(
                   type: 'hand',
                   icon: Icons.back_hand,
                   title: '手部動作',
@@ -943,9 +1020,7 @@ Widget _miniChip(String text, Color color) {
                 child: Column(
                   children: [
                     Icon(
-                      hasVideo
-                          ? Icons.check_circle
-                          : Icons.video_call_outlined,
+                      hasVideo ? Icons.check_circle : Icons.video_call_outlined,
                       color: hasVideo
                           ? const Color(0xFF4CAF50)
                           : const Color(0xFF9CA3AF),
@@ -957,9 +1032,8 @@ Widget _miniChip(String text, Color color) {
                       style: TextStyle(
                         color: Colors.grey.shade700,
                         fontSize: 14,
-                        fontWeight: hasVideo
-                            ? FontWeight.w600
-                            : FontWeight.normal,
+                        fontWeight:
+                            hasVideo ? FontWeight.w600 : FontWeight.normal,
                       ),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
@@ -992,6 +1066,25 @@ Widget _miniChip(String text, Color color) {
               ),
             ),
 
+            if (hasVideo) ...[
+              const SizedBox(height: 16),
+              VideoSegmentSelector(
+                key: ValueKey(_selectedVideoPath),
+                videoPath: _selectedVideoPath!,
+                enabled: !_isAnalyzing,
+                onSegmentChanged: (segment) {
+                  if (!mounted) return;
+                  if (_selectedSegment == segment) return;
+                  setState(() {
+                    _resetAnalysisState();
+                    _selectedSegment = segment;
+                  });
+                },
+              ),
+              const SizedBox(height: 16),
+              _buildEnvironmentMetadataSection(),
+            ],
+
             const SizedBox(height: 20),
 
             // 分析按鈕
@@ -999,8 +1092,9 @@ Widget _miniChip(String text, Color color) {
               width: double.infinity,
               height: 52,
               child: ElevatedButton(
-                onPressed:
-                    !hasVideo || _isAnalyzing ? null : _startAnalysis,
+                onPressed: !hasVideo || _selectedSegment == null || _isAnalyzing
+                    ? null
+                    : _startAnalysis,
                 style: ElevatedButton.styleFrom(
                   backgroundColor: const Color(0xFF4A65FF),
                   disabledBackgroundColor: const Color(0xFFEDEFF7),
@@ -1036,15 +1130,21 @@ Widget _miniChip(String text, Color color) {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('進度:$_processedFrames / $_totalFrames 幀',
+                    Text(
+                        _isAnalyzing
+                            ? '分析進度：$_processedFrames%'
+                            : '分析完成：$_processedFrames / $_totalFrames 幀',
                         style: const TextStyle(
                             color: Color(0xFF1A1D2E),
                             fontSize: 14,
                             fontWeight: FontWeight.w700)),
                     const SizedBox(height: 4),
-                    Text('成功偵測到骨架:$_framesWithPose 幀',
-                        style: TextStyle(
-                            color: Colors.grey.shade600, fontSize: 12)),
+                    if (!_isAnalyzing)
+                      Text(
+                          '${_analysisType == "hand" ? "有效手部" : "有效骨架"}：'
+                          '$_framesWithPose 幀',
+                          style: TextStyle(
+                              color: Colors.grey.shade600, fontSize: 12)),
                     const SizedBox(height: 8),
                     LinearProgressIndicator(
                       value: _totalFrames == 0
@@ -1067,8 +1167,8 @@ Widget _miniChip(String text, Color color) {
                 decoration: BoxDecoration(
                   color: Colors.white,
                   borderRadius: BorderRadius.circular(12),
-                  border: Border.all(
-                      color: const Color(0xFF4A65FF), width: 1.5),
+                  border:
+                      Border.all(color: const Color(0xFF4A65FF), width: 1.5),
                 ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -1114,8 +1214,8 @@ Widget _miniChip(String text, Color color) {
                       }).toList(),
                     ),
                     const Divider(height: 24),
-                    _buildAngleStat('估算動作次數', '$_estimatedReps 次',
-                        const Color(0xFF4CAF50)),
+                    _buildAngleStat(
+                        '估算動作次數', '$_estimatedReps 次', const Color(0xFF4CAF50)),
                     const SizedBox(height: 8),
                     _buildAngleStat(
                       '左右對稱性',
@@ -1150,8 +1250,7 @@ Widget _miniChip(String text, Color color) {
                         icon: const Icon(Icons.save_alt, size: 18),
                         label: const Text('儲存為模板',
                             style: TextStyle(
-                                fontSize: 14,
-                                fontWeight: FontWeight.w700)),
+                                fontSize: 14, fontWeight: FontWeight.w700)),
                         style: ElevatedButton.styleFrom(
                           backgroundColor: const Color(0xFF4CAF50),
                           foregroundColor: Colors.white,
@@ -1163,8 +1262,8 @@ Widget _miniChip(String text, Color color) {
                     const SizedBox(height: 8),
                     Text(
                       '💡 儲存後可作為病人動作比對的參考模板',
-                      style: TextStyle(
-                          color: Colors.grey.shade600, fontSize: 11),
+                      style:
+                          TextStyle(color: Colors.grey.shade600, fontSize: 11),
                     ),
                   ],
                 ),
@@ -1180,7 +1279,8 @@ Widget _miniChip(String text, Color color) {
                 decoration: BoxDecoration(
                   color: Colors.white,
                   borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: const Color(0xFF4A65FF), width: 1.5),
+                  border:
+                      Border.all(color: const Color(0xFF4A65FF), width: 1.5),
                 ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -1188,7 +1288,8 @@ Widget _miniChip(String text, Color color) {
                     // ── 標題 ──
                     const Row(
                       children: [
-                        Icon(Icons.back_hand, color: Color(0xFF4A65FF), size: 18),
+                        Icon(Icons.back_hand,
+                            color: Color(0xFF4A65FF), size: 18),
                         SizedBox(width: 6),
                         Text(
                           '手部動作特徵分析',
@@ -1216,7 +1317,8 @@ Widget _miniChip(String text, Color color) {
                       spacing: 6,
                       runSpacing: 6,
                       children: _handResult!.mainFingerIndices.map((idx) {
-                        final movement = _handResult!.fingerTotalMovement[idx] ?? 0;
+                        final movement =
+                            _handResult!.fingerTotalMovement[idx] ?? 0;
                         return Container(
                           padding: const EdgeInsets.symmetric(
                               horizontal: 10, vertical: 4),
@@ -1275,7 +1377,7 @@ Widget _miniChip(String text, Color color) {
 
                     // ── 5. 手腕旋轉角度 ──
                     _buildAngleStat(
-                      '手腕旋轉角度範圍',
+                      '手腕 2D 方向代理範圍',
                       '${_handResult!.wristRotationRange.toStringAsFixed(1)}°',
                       const Color(0xFFFF9800),
                     ),
@@ -1299,7 +1401,7 @@ Widget _miniChip(String text, Color color) {
                       ),
                       child: Text(
                         '💡 手部復健指標:主要活動手指、動作次數、'
-                        '開合幅度(側捏/抓握指標)、手腕旋轉(翻掌指標)、'
+                        '開合幅度(側捏/抓握指標)、手腕 2D 方向代理(翻掌參考)、'
                         '動作規律性(復健穩定度)',
                         style: TextStyle(
                           color: Colors.grey.shade700,
@@ -1330,7 +1432,8 @@ Widget _miniChip(String text, Color color) {
                     const SizedBox(height: 8),
                     Text(
                       '💡 儲存後可作為手部訓練病人動作比對的參考模板',
-                      style: TextStyle(color: Colors.grey.shade600, fontSize: 11),
+                      style:
+                          TextStyle(color: Colors.grey.shade600, fontSize: 11),
                     ),
                   ],
                 ),
@@ -1390,7 +1493,8 @@ Widget _miniChip(String text, Color color) {
           color: isSelected ? const Color(0xFF4A65FF) : Colors.white,
           borderRadius: BorderRadius.circular(12),
           border: Border.all(
-            color: isSelected ? const Color(0xFF4A65FF) : const Color(0xFFDDE0F0),
+            color:
+                isSelected ? const Color(0xFF4A65FF) : const Color(0xFFDDE0F0),
             width: isSelected ? 2 : 1,
           ),
         ),
@@ -1416,7 +1520,7 @@ Widget _miniChip(String text, Color color) {
               style: TextStyle(
                 fontSize: 10,
                 color: isSelected
-                    ? Colors.white.withOpacity(0.8)
+                    ? Colors.white.withValues(alpha: 0.8)
                     : Colors.grey.shade600,
               ),
             ),

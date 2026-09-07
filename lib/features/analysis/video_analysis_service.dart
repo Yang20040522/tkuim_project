@@ -23,7 +23,44 @@ import 'package:video_player/video_player.dart';
 import 'package:video_thumbnail/video_thumbnail.dart';
 
 import '../../services/body_pose_engine.dart';
+import 'models/video_segment.dart';
 import 'motion_feature_extractor.dart';
+
+class BodyVideoFrameSample {
+  BodyVideoFrameSample({
+    required this.timestampMs,
+    List<Offset>? landmarks,
+    List<double>? scores,
+  })  : landmarks =
+            landmarks == null ? null : List<Offset>.unmodifiable(landmarks),
+        scores = scores == null ? null : List<double>.unmodifiable(scores);
+
+  final int timestampMs;
+  final List<Offset>? landmarks;
+  final List<double>? scores;
+
+  bool get isValid =>
+      landmarks != null && landmarks!.isNotEmpty && scores != null;
+}
+
+class BodyVideoAnalysisResult {
+  BodyVideoAnalysisResult({
+    required this.segment,
+    required List<BodyVideoFrameSample> attemptedFrames,
+    required this.summary,
+  }) : attemptedFrames =
+            List<BodyVideoFrameSample>.unmodifiable(attemptedFrames);
+
+  final VideoSegment segment;
+  final List<BodyVideoFrameSample> attemptedFrames;
+  final MotionAnalysisResult? summary;
+
+  int get attemptedFrameCount => attemptedFrames.length;
+  int get validFrameCount =>
+      attemptedFrames.where((frame) => frame.isValid).length;
+  double get validRatio =>
+      attemptedFrameCount == 0 ? 0 : validFrameCount / attemptedFrameCount;
+}
 
 class VideoAnalysisService {
   /// 對影片跑逐幀骨架偵測 + 多維度分析
@@ -37,49 +74,83 @@ class VideoAnalysisService {
   static Future<MotionAnalysisResult?> analyzeVideo({
     required String videoPath,
     void Function(double progress)? onProgress,
-    bool Function()? shouldCancel,   // ← 新加:取消檢查
+    bool Function()? shouldCancel,
     int fps = 2,
     int maxAnalyzeSec = 60,
+    Duration? startTime,
+    Duration? endTime,
   }) async {
+    final result = await analyzeVideoDetailed(
+      videoPath: videoPath,
+      onProgress: onProgress,
+      shouldCancel: shouldCancel,
+      fps: fps,
+      maxAnalyzeSec: maxAnalyzeSec,
+      startTime: startTime,
+      endTime: endTime,
+    );
+    return result.summary;
+  }
+
+  /// 離線 Body 影片的完整分析資料。
+  ///
+  /// 每個嘗試時間點都會保留，即使該幀沒有偵測到骨架也不會壓縮時間軸。
+  static Future<BodyVideoAnalysisResult> analyzeVideoDetailed({
+    required String videoPath,
+    void Function(double progress)? onProgress,
+    bool Function()? shouldCancel,
+    int fps = 2,
+    int maxAnalyzeSec = 60,
+    Duration? startTime,
+    Duration? endTime,
+  }) async {
+    if (fps <= 0) throw ArgumentError.value(fps, 'fps', '必須大於 0');
+
+    final videoCtrl = VideoPlayerController.file(File(videoPath));
+    late final Duration videoDuration;
+    try {
+      await videoCtrl.initialize();
+      videoDuration = videoCtrl.value.duration;
+    } finally {
+      await videoCtrl.dispose();
+    }
+
+    final segment = VideoSegment.resolve(
+      videoDuration: videoDuration,
+      startTime: startTime,
+      endTime: endTime,
+      maximumDuration: Duration(seconds: maxAnalyzeSec),
+    );
+    final timestamps = _sampleTimestamps(segment, fps);
     final engine = BodyPoseEngine();
     debugPrint('🎬 初始化引擎中...');
-    await engine.init().timeout(
-      const Duration(seconds: 30),
-      onTimeout: () => throw Exception('引擎初始化超時(30秒)'),
-    );
-    debugPrint('🎬 引擎初始化完成');
 
     try {
-      // ── 讀影片實際長度 ──
-      final videoCtrl = VideoPlayerController.file(File(videoPath));
-      await videoCtrl.initialize();
-      final double videoDurationSec =
-          videoCtrl.value.duration.inMilliseconds / 1000.0;
-      await videoCtrl.dispose();
+      await engine.initForExternalFrames().timeout(
+            const Duration(seconds: 30),
+            onTimeout: () => throw Exception('引擎初始化超時(30秒)'),
+          );
+      debugPrint('🎬 引擎初始化完成（離線影片模式，不啟動相機）');
 
-      // ── 決定要抽多少幀 ──
-      final double actualSec =
-          math.min(videoDurationSec, maxAnalyzeSec.toDouble());
-      final int totalFrames = (fps * actualSec).ceil();
-
-      debugPrint('📹 影片長度: ${videoDurationSec.toStringAsFixed(1)} 秒, '
-          '將分析前 ${actualSec.toStringAsFixed(1)} 秒 = $totalFrames 幀');
+      debugPrint('📹 分析區段: ${segment.startMs}ms → ${segment.endMs}ms, '
+          '預計 ${timestamps.length} 幀');
 
       final List<List<Offset>> framePoses = [];
       final List<List<double>> frameScores = [];
+      final attemptedFrames = <BodyVideoFrameSample>[];
 
       // ── 逐幀分析 ──
       int successFrames = 0;
       int failedFrames = 0;
 
-      for (int i = 0; i < totalFrames; i++) {
+      for (int i = 0; i < timestamps.length; i++) {
         // 檢查是否被取消
         if (shouldCancel?.call() == true) {
           debugPrint('🛑 使用者取消分析');
           break;
         }
-        
-        final int timeMs = i * (1000 ~/ fps);
+
+        final timeMs = timestamps[i];
 
         // (a) 截圖(加 10 秒 timeout)
         Uint8List? jpegBytes;
@@ -93,7 +164,8 @@ class VideoAnalysisService {
         } catch (e) {
           debugPrint('⚠️ 第 $i 幀截圖失敗/超時: $e');
           failedFrames++;
-          onProgress?.call((i + 1) / totalFrames);
+          attemptedFrames.add(BodyVideoFrameSample(timestampMs: timeMs));
+          onProgress?.call((i + 1) / timestamps.length);
           if (failedFrames > 5) {
             debugPrint('❌ 連續失敗超過 5 次,終止分析');
             break;
@@ -103,14 +175,17 @@ class VideoAnalysisService {
 
         if (jpegBytes == null) {
           failedFrames++;
-          onProgress?.call((i + 1) / totalFrames);
+          attemptedFrames.add(BodyVideoFrameSample(timestampMs: timeMs));
+          onProgress?.call((i + 1) / timestamps.length);
           continue;
         }
 
         // (b) JPEG 解碼
         final img_lib.Image? decoded = img_lib.decodeJpg(jpegBytes);
         if (decoded == null) {
-          onProgress?.call((i + 1) / totalFrames);
+          failedFrames++;
+          attemptedFrames.add(BodyVideoFrameSample(timestampMs: timeMs));
+          onProgress?.call((i + 1) / timestamps.length);
           continue;
         }
 
@@ -118,47 +193,83 @@ class VideoAnalysisService {
         final Uint8List rgbBytes = _imageToRgbBytes(decoded);
 
         // (d) ONNX 推論(加 5 秒 timeout)
+        final previousPose = engine.poseNotifier.value;
         try {
-          await engine.processExternalFrame(
-            rgbBytes,
-            decoded.width,
-            decoded.height,
-            isMirror: false,
-          ).timeout(const Duration(seconds: 5));
+          await engine
+              .processExternalFrame(
+                rgbBytes,
+                decoded.width,
+                decoded.height,
+                isMirror: false,
+              )
+              .timeout(const Duration(seconds: 5));
         } catch (e) {
           debugPrint('⚠️ 第 $i 幀推論失敗/超時: $e');
-          onProgress?.call((i + 1) / totalFrames);
+          failedFrames++;
+          attemptedFrames.add(BodyVideoFrameSample(timestampMs: timeMs));
+          onProgress?.call((i + 1) / timestamps.length);
           continue;
         }
 
         // (e) 收集結果
         final pose = engine.poseNotifier.value;
-        if (pose.keypoints.isNotEmpty) {
-          framePoses.add(List<Offset>.from(pose.keypoints));
-          frameScores.add(List<double>.from(pose.scores));
+        if (!identical(pose, previousPose) && pose.keypoints.isNotEmpty) {
+          final landmarks = List<Offset>.from(pose.keypoints);
+          final scores = List<double>.from(pose.scores);
+          framePoses.add(landmarks);
+          frameScores.add(scores);
+          attemptedFrames.add(BodyVideoFrameSample(
+            timestampMs: timeMs,
+            landmarks: landmarks,
+            scores: scores,
+          ));
           successFrames++;
+          failedFrames = 0;
+        } else {
+          failedFrames++;
+          attemptedFrames.add(BodyVideoFrameSample(timestampMs: timeMs));
         }
 
-        onProgress?.call((i + 1) / totalFrames);
-        
+        onProgress?.call((i + 1) / timestamps.length);
+
         // 每 5 幀 log 一次進度
         if ((i + 1) % 5 == 0) {
-          debugPrint('🎬 已處理 ${i + 1}/$totalFrames 幀,成功 $successFrames 幀');
+          debugPrint(
+              '🎬 已處理 ${i + 1}/${timestamps.length} 幀,成功 $successFrames 幀');
         }
       }
-      debugPrint('🎬 分析完成:總 $totalFrames 幀,成功 $successFrames 幀,失敗 $failedFrames 幀');
-
-      // ── 幀數不足 ──
-      if (framePoses.length < 3) return null;
+      debugPrint('🎬 分析完成:嘗試 ${attemptedFrames.length} 幀,'
+          '成功 $successFrames 幀');
 
       // ── 委派給共用特徵萃取器 ──
-      return MotionFeatureExtractor.extractFeatures(
-        framePoses: framePoses,
-        frameScores: frameScores,
+      final summary = framePoses.length < 3
+          ? null
+          : MotionFeatureExtractor.extractFeatures(
+              framePoses: framePoses,
+              frameScores: frameScores,
+            );
+      return BodyVideoAnalysisResult(
+        segment: segment,
+        attemptedFrames: attemptedFrames,
+        summary: summary,
       );
     } finally {
       await engine.dispose();
     }
+  }
+
+  static List<int> _sampleTimestamps(VideoSegment segment, int fps) {
+    final intervalMs = math.max(1, (1000 / fps).round());
+    final timestamps = <int>[];
+    for (var timeMs = segment.startMs;
+        timeMs <= segment.endMs;
+        timeMs += intervalMs) {
+      timestamps.add(timeMs);
+    }
+    if (timestamps.isEmpty || timestamps.last != segment.endMs) {
+      timestamps.add(segment.endMs);
+    }
+    return timestamps;
   }
 
   /// 讀取所有已存的治療師模板 JSON

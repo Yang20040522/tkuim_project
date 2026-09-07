@@ -40,7 +40,7 @@ class HandAnalysisResult {
   final double maxPinchDistance;
   final double avgPinchDistance;
 
-  /// 手腕旋轉角度範圍(度)
+  /// 影像平面中的 2D wrist orientation proxy，並非真實 3D 前臂旋轉角度。
   final double wristRotationRange;
   final double avgWristRotation;
 
@@ -49,6 +49,10 @@ class HandAnalysisResult {
 
   /// 動作強度曲線(隨時間變化)
   final List<double> actionIntensity;
+
+  /// 建立 one-shot template 所需的逐幀特徵。
+  final List<double> pinchDistanceSeries;
+  final List<double> wristOrientation2dSeries;
 
   /// 總分析幀數
   final int totalFrames;
@@ -64,6 +68,8 @@ class HandAnalysisResult {
     required this.avgWristRotation,
     required this.regularityScore,
     required this.actionIntensity,
+    required this.pinchDistanceSeries,
+    required this.wristOrientation2dSeries,
     required this.totalFrames,
   });
 
@@ -78,6 +84,8 @@ class HandAnalysisResult {
         avgWristRotation: 0,
         regularityScore: 0,
         actionIntensity: [],
+        pinchDistanceSeries: [],
+        wristOrientation2dSeries: [],
         totalFrames: 0,
       );
 }
@@ -88,7 +96,7 @@ class HandFeatureExtractor {
   static const int wrist = 0;
   static const int thumbTip = 4;
   static const int indexTip = 8;
-  static const int middleMcp = 9;   // 中指指根(手腕方向參考)
+  static const int middleMcp = 9; // 中指指根(手腕方向參考)
 
   /// 主要入口
   static HandAnalysisResult extractFeatures({
@@ -165,7 +173,8 @@ class HandFeatureExtractor {
       avgPinch = pinchDistances.reduce((a, b) => a + b) / pinchDistances.length;
     }
 
-    // ── 6. 手腕旋轉角度(手腕 → 中指指根 的向量角度) ──
+    // ── 6. 2D wrist orientation proxy(手腕 → 中指指根 的影像平面角度) ──
+    // 這不是人體真實的 3D 前臂旋轉角度。
     final wristAngles = <double>[];
     for (final frame in frameHandLandmarks) {
       if (frame.length <= math.max(wrist, middleMcp)) continue;
@@ -198,6 +207,8 @@ class HandFeatureExtractor {
       avgWristRotation: avgWrist,
       regularityScore: regularity,
       actionIntensity: intensity,
+      pinchDistanceSeries: pinchDistances,
+      wristOrientation2dSeries: wristAngles,
       totalFrames: numFrames,
     );
   }
@@ -209,10 +220,9 @@ class HandFeatureExtractor {
     if (intensity.length < 3) return 0;
 
     final mean = intensity.reduce((a, b) => a + b) / intensity.length;
-    final variance = intensity
-            .map((v) => (v - mean) * (v - mean))
-            .reduce((a, b) => a + b) /
-        intensity.length;
+    final variance =
+        intensity.map((v) => (v - mean) * (v - mean)).reduce((a, b) => a + b) /
+            intensity.length;
     final std = math.sqrt(variance);
     final threshold = mean + std * 0.3;
 
@@ -234,10 +244,9 @@ class HandFeatureExtractor {
     if (intensity.length < 3) return 0;
 
     final mean = intensity.reduce((a, b) => a + b) / intensity.length;
-    final variance = intensity
-            .map((v) => (v - mean) * (v - mean))
-            .reduce((a, b) => a + b) /
-        intensity.length;
+    final variance =
+        intensity.map((v) => (v - mean) * (v - mean)).reduce((a, b) => a + b) /
+            intensity.length;
     final std = math.sqrt(variance);
     final threshold = mean + std * 0.3;
 
