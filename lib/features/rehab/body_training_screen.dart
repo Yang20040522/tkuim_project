@@ -35,6 +35,21 @@
 //        導致畫面上「完成次數」會把前面難度的次數一起累加顯示
 //        (例如初級 1 下 + 中級 1 下 → 顯示 2)。已在自動升級與手動確認
 //        升級兩個路徑都補上 _repCount = 0。
+//
+//  🆕 2026-09-06:新增「選患側 → 選簡單/困難版」的選腳畫面
+//     - 站姿抬腳式(StandingKneeRaiseAction)、側跨步(LateralStepAction)
+//       都改成需要先選腳才會開始偵測(legAndModeSelected),但畫面原本
+//       完全沒有對應的選腳 UI,導致這兩個動作永遠卡在「請先選擇...」,
+//       完成次數永遠 0。
+//     - 新增 _waitingLegSelect,寫法比照既有的 _waitingHandSelect
+//       (ReachAction 選手流程):偵測到 action 是 LegRoleSelectable 且
+//       還沒選完,就在畫面上蓋一層選擇 UI 擋住偵測,選完自動消失。
+//     - 兩個下肢動作都實作同一個 LegRoleSelectable 介面,所以這裡完全
+//       不用分辨底下是哪一個動作類別,共用同一套按鈕邏輯。
+//
+//  🔀 2026-09-07:合併組員版本,補回站姿抬腳式的 AI 動作品質分析功能
+//     - 補回 _usesStandingKneeRaiseAi / AI 相關 fields、_buildAiQualityCard、
+//       trajectory collector 在 _onPoseUpdate 及各重置點的呼叫。
 // ══════════════════════════════════════════════════════════════════
 
 import 'dart:io';
@@ -66,6 +81,12 @@ import '../../actions/sit_to_stand_action.dart';
 import '../../actions/lateral_step_action.dart';
 import '../../features/account/app_session.dart';
 import '../../features/plan/plan_repository.dart';
+import '../../features/analysis/body/body_motion_template.dart';
+import '../../features/analysis/body/body_motion_template_repository.dart';
+import '../../features/analysis/body/body_rep_trajectory_collector.dart';
+import '../../features/analysis/body/body_template_analyzer.dart';
+import '../../features/analysis/body/body_template_selector.dart';
+import '../../features/analysis/models/environment_metadata.dart';
 
 // 🖥️ 電視投放新增
 import 'dart:async';
@@ -174,9 +195,34 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
   int _currentLevelTargetReps = 0; // 🆕 追蹤「目前這一階」實際的目標次數(含自訂值)
   RehabDifficulty _previousLevel = RehabDifficulty.easy;
 
+  // Passive Phase 2 analysis. Existing action remains authoritative for reps.
+  final BodyRepTrajectoryCollector _aiTrajectoryCollector =
+      BodyRepTrajectoryCollector();
+  final BodyTemplateAnalyzer _bodyTemplateAnalyzer =
+      const BodyTemplateAnalyzer();
+  final BodyMotionTemplateRepository _motionTemplateRepository =
+      BodyMotionTemplateRepository();
+  final Stopwatch _aiSessionClock = Stopwatch();
+  List<BodyMotionTemplate> _standingKneeRaiseTemplates = const [];
+  BodyTemplateAnalysisResult? _lastAiAnalysis;
+  BodySide? _selectedAiMovementSide;
+  bool _aiTemplateLoadFinished = false;
+  int _aiLoadGeneration = 0;
+
+  bool get _usesStandingKneeRaiseAi =>
+      !widget.isDisplay &&
+      widget.action is StandingKneeRaiseAction &&
+      (widget.trainingActionMeta == null ||
+          widget.trainingActionMeta!.type == ActionType.wipeBody);
+
   bool get _waitingHandSelect =>
       widget.action is ReachAction &&
       !(widget.action as ReachAction).handSelected;
+
+  // 🆕 選腳:站姿抬腳式、側跨步都實作 LegRoleSelectable,共用同一套選腳畫面
+  bool get _waitingLegSelect =>
+      widget.action is LegRoleSelectable &&
+      !(widget.action as LegRoleSelectable).legAndModeSelected;
 
   @override
   void initState() {
@@ -187,6 +233,10 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
       widget.difficultyMeta?.level ?? DifficultyLevel.level1,
     );
     VoiceService.init();
+    if (_usesStandingKneeRaiseAi) {
+      _aiSessionClock.start();
+      _loadStandingKneeRaiseTemplates();
+    }
     _start();
 
     // 🖥️ 電視投放:只有真的連了電視才初始化,沒連就完全跳過(省效能)
@@ -214,6 +264,17 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
         _serverService.sendMessage(startMsg);
       }
     }
+  }
+
+  Future<void> _loadStandingKneeRaiseTemplates() async {
+    final generation = ++_aiLoadGeneration;
+    final templates = await _motionTemplateRepository.loadTemplates();
+    if (!mounted || generation != _aiLoadGeneration) return;
+    setState(() {
+      _standingKneeRaiseTemplates =
+          BodyTemplateSelector.standingKneeRaiseCandidates(templates);
+      _aiTemplateLoadFinished = true;
+    });
   }
 
   Future<void> _start() async {
@@ -252,7 +313,45 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
     final visible = data.scores[5] > _scoreThreshold &&
         data.scores[6] > _scoreThreshold;
 
+    int? aiTimestampMs;
+    if (_usesStandingKneeRaiseAi) {
+      aiTimestampMs = _aiSessionClock.elapsedMilliseconds;
+      _aiTrajectoryCollector.addFrame(
+        timestampMs: aiTimestampMs,
+        landmarks: data.keypoints,
+        scores: data.scores,
+      );
+    }
+
     final fb = widget.action.update(frame);
+    BodyTemplateAnalysisResult? completedRepAnalysis;
+    if (_usesStandingKneeRaiseAi && fb.scored) {
+      // Always retain the authoritative scored frame even if it falls inside
+      // the normal 100 ms sampling interval.
+      _aiTrajectoryCollector.addFrame(
+        timestampMs: aiTimestampMs!,
+        landmarks: data.keypoints,
+        scores: data.scores,
+        force: true,
+      );
+      final completedRep = _aiTrajectoryCollector.takeCompletedRep();
+      if (_aiTemplateLoadFinished) {
+        try {
+          completedRepAnalysis = _bodyTemplateAnalyzer.analyzeBestMatching(
+            templates: _standingKneeRaiseTemplates,
+            patientSamples: completedRep,
+            currentCameraView: CameraView.front,
+            movementSide: _selectedAiMovementSide,
+          );
+        } catch (error) {
+          debugPrint('站姿抬腳 AI 模板分析失敗：$error');
+          completedRepAnalysis = BodyTemplateAnalysisResult.unavailable(
+            enoughData: false,
+            reason: '本次 AI 動作品質暫時無法分析。',
+          );
+        }
+      }
+    }
 
     bool justReachedLevelUp = false;
 
@@ -264,6 +363,9 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
           _currentLevelReps++;
         }
         if (fb.prompt != null) _feedback = fb.prompt!;
+        if (completedRepAnalysis != null) {
+          _lastAiAnalysis = completedRepAnalysis;
+        }
 
         if (fb.leveledUp) {
           justReachedLevelUp = true;
@@ -276,7 +378,7 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
         final controllable =
             action is LevelUpControllable ? action as LevelUpControllable : null;
 
-                if (widget.autoLevelUp) {
+        if (widget.autoLevelUp) {
           // 先判斷目前這階之後還有沒有下一階(跟手動模式同一套算法)
           final currentMeta = widget.trainingActionMeta ??
               kTrainingActions.firstWhere(
@@ -508,6 +610,7 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
 
   Future<void> _switchCamera() async {
     if (_isSwitchingCameraUI) return; // 🆕 UI層直接擋,連進到engine都不用
+    _resetAiForSourceChange();
     setState(() => _isSwitchingCameraUI = true); // 🆕
 
     if (_isExternalCamera) {
@@ -525,6 +628,7 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
     final ip = await showPiIpDialog(context, initialIp: _lastPiIp);
     if (ip == null || ip.isEmpty) return;
     _lastPiIp = ip;
+    _resetAiForSourceChange();
 
     // 手機鏡頭串流先停掉,避免兩邊同時餵畫面給同一個 engine
     try {
@@ -549,6 +653,7 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
 
   // 🚀 樹莓派新增:切回手機內建鏡頭
   Future<void> _disableExternalCamera() async {
+    _resetAiForSourceChange();
     await _piCamera?.stop();
     _piCamera?.dispose();
     _piCamera = null;
@@ -575,6 +680,7 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
   Future<void> _handleStopButtonTap() async {
     if (_completionShown || _isPaused) return;
 
+    _aiTrajectoryCollector.reset();
     setState(() => _isPaused = true);
     VoiceService.stop();
 
@@ -599,6 +705,7 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
 
   Future<void> _handleRealEnd() async {
     _completionShown = true;
+    _aiTrajectoryCollector.reset();
 
     final videoPath = await ScreenRecorderService.stopRecording();
 
@@ -684,6 +791,7 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
 
   Future<void> _navigateToAction(
       TrainingAction action, DifficultyOption difficulty, bool autoLevelUp) async { // 🆕 多一個參數
+    _aiTrajectoryCollector.reset();
     _engine.poseNotifier.removeListener(_onPoseUpdate); // 🆕 先停止監聽,避免dispose過程中還觸發更新
     _piCamera?.dispose();
     _piHand?.dispose(); // 🚀 樹莓派新增:離開畫面前記得釋放
@@ -806,6 +914,9 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
 
   @override
   void dispose() {
+    _aiLoadGeneration++;
+    _aiSessionClock.stop();
+    _aiTrajectoryCollector.reset();
     if (_recordingStarted && !_completionShown) {
       ScreenRecorderService.stopRecording().then((path) {
         if (path != null) {
@@ -848,6 +959,7 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
                   )
                 else
                   _buildCoachCard(),
+                if (_usesStandingKneeRaiseAi) _buildAiQualityCard(),
                 if (widget.isDisplay)
                   ValueListenableBuilder<RehabSessionState>(
                     valueListenable: _remoteState,
@@ -1171,6 +1283,17 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
                   ),
                 ),
               ),
+            // 🆕 選腳:站姿抬腳式 / 側跨步共用的「選患側 → 選簡單/困難版」畫面
+            if (_waitingLegSelect)
+              Container(
+                color: Colors.black.withValues(alpha: 0.65),
+                child: Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: _buildLegSelectContent(),
+                  ),
+                ),
+              ),
             if (_isPaused)
               Container(
                 color: Colors.black.withValues(alpha: 0.4),
@@ -1228,6 +1351,159 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
     );
   }
 
+  // 🆕 選腳畫面內容:依「患側是否已選」分兩步顯示不同的按鈕組。
+  //    寫在同一個 getter/method 裡,不用額外的狀態變數追蹤「第幾步」,
+  //    完全靠 action 本身(LegRoleSelectable)的狀態算出來要顯示哪一步。
+  List<Widget> _buildLegSelectContent() {
+    final legAction = widget.action as LegRoleSelectable;
+
+    if (!legAction.trainedLegSelected) {
+      // 第一步:選患側
+      return [
+        const Text(
+          '請選擇患側是哪一隻腳',
+          style: TextStyle(
+            color: Colors.white,
+            fontSize: 22,
+            fontWeight: FontWeight.w700,
+            shadows: [Shadow(blurRadius: 8, color: Colors.black)],
+          ),
+        ),
+        const SizedBox(height: 36),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            _legButton('左腳', () {
+              setState(() {
+                legAction.selectTrainedLeg(isLeft: true);
+                if (_usesStandingKneeRaiseAi) {
+                  _selectedAiMovementSide = BodySide.left;
+                  _aiTrajectoryCollector.reset();
+                }
+              });
+            }),
+            const SizedBox(width: 28),
+            _legButton('右腳', () {
+              setState(() {
+                legAction.selectTrainedLeg(isLeft: false);
+                if (_usesStandingKneeRaiseAi) {
+                  _selectedAiMovementSide = BodySide.right;
+                  _aiTrajectoryCollector.reset();
+                }
+              });
+            }),
+          ],
+        ),
+      ];
+    }
+
+    // 第二步:患側已選,選簡單版/困難版
+    return [
+      const Text(
+        '請選擇訓練模式',
+        style: TextStyle(
+          color: Colors.white,
+          fontSize: 22,
+          fontWeight: FontWeight.w700,
+          shadows: [Shadow(blurRadius: 8, color: Colors.black)],
+        ),
+      ),
+      const SizedBox(height: 36),
+      Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          _modeButton('簡單版\n患側動．好腳撐', () {
+            setState(() {
+              legAction.selectSimpleMode();
+              _feedback = '已選擇簡單版';
+              _instruction = widget.action.initialHint;
+            });
+          }),
+          const SizedBox(width: 20),
+          _modeButton('困難版\n患側撐．好腳動', () {
+            setState(() {
+              legAction.selectHardMode();
+              _feedback = '已選擇困難版';
+              _instruction = widget.action.initialHint;
+            });
+          }),
+        ],
+      ),
+    ];
+  }
+
+  // 🆕 選腳按鈕(第一步用),樣式比照 _handButton
+  Widget _legButton(String label, VoidCallback onTap) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: 120,
+        height: 120,
+        decoration: BoxDecoration(
+          color: const Color(0xFF4A65FF),
+          borderRadius: BorderRadius.circular(20),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.35),
+              blurRadius: 16,
+              offset: const Offset(0, 6),
+            ),
+          ],
+        ),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(Icons.directions_walk, color: Colors.white, size: 42),
+            const SizedBox(height: 10),
+            Text(
+              label,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 20,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // 🆕 簡單版/困難版按鈕(第二步用)
+  Widget _modeButton(String label, VoidCallback onTap) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: 150,
+        height: 130,
+        padding: const EdgeInsets.symmetric(horizontal: 8),
+        decoration: BoxDecoration(
+          color: const Color(0xFF4A65FF),
+          borderRadius: BorderRadius.circular(20),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.35),
+              blurRadius: 16,
+              offset: const Offset(0, 6),
+            ),
+          ],
+        ),
+        child: Center(
+          child: Text(
+            label,
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 16,
+              fontWeight: FontWeight.w700,
+              height: 1.4,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildCoachCard() {
     return Container(
       margin: const EdgeInsets.fromLTRB(16, 8, 16, 0),
@@ -1266,6 +1542,77 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
         ],
       ),
     );
+  }
+
+  Widget _buildAiQualityCard() {
+    String value = '--';
+    String? detail;
+    if (!_aiTemplateLoadFinished) {
+      value = '載入中';
+    } else if (_standingKneeRaiseTemplates.isEmpty) {
+      value = '尚無標準模板';
+    } else if (_lastAiAnalysis?.valid == true) {
+      value = '${_lastAiAnalysis!.overallScore!.round()} 分';
+    } else if (_lastAiAnalysis?.unavailableReason != null) {
+      detail = _lastAiAnalysis!.unavailableReason;
+    }
+
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF5F6FA),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFFDDE0F0)),
+      ),
+      child: Row(
+        children: [
+          const Expanded(
+            child: Text(
+              '本次 AI 動作品質',
+              style: TextStyle(
+                color: Color(0xFF6B7280),
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+          Flexible(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Text(
+                  value,
+                  textAlign: TextAlign.right,
+                  style: const TextStyle(
+                    color: Color(0xFF1A1D2E),
+                    fontSize: 15,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                if (detail != null)
+                  Text(
+                    detail,
+                    textAlign: TextAlign.right,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: Color(0xFF8A8D9F),
+                      fontSize: 10,
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _resetAiForSourceChange() {
+    _aiTrajectoryCollector.reset();
+    _lastAiAnalysis = null;
   }
 
   // 🖥️ 電視投放:顯示端教練卡,讀遠端傳來的 feedback/instruction

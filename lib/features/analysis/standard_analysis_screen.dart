@@ -10,7 +10,6 @@
 //    ✅ 儲存為 JSON 模板(給未來病人動作比對用)
 // ══════════════════════════════════════════════════════════════════
 
-import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -24,6 +23,7 @@ import 'hand/hand_motion_template.dart';
 import 'models/environment_metadata.dart';
 import 'models/video_segment.dart';
 import 'motion_feature_extractor.dart';
+import 'storage/local_motion_template_repository.dart';
 import 'hand_analysis_service.dart';
 import 'hand_feature_extractor.dart';
 import 'video_analysis_service.dart';
@@ -37,6 +37,9 @@ class StandardAnalysisScreen extends StatefulWidget {
 }
 
 class _StandardAnalysisScreenState extends State<StandardAnalysisScreen> {
+  final LocalMotionTemplateRepository _templateRepository =
+      LocalMotionTemplateRepository();
+
   // ── 預設影片清單 ──
   static const List<Map<String, String>> _presetVideos = [
     {
@@ -490,15 +493,7 @@ class _StandardAnalysisScreenState extends State<StandardAnalysisScreen> {
         data = build.template!.toJson();
       }
 
-      // 存到手機內部目錄
-      final dir = await getApplicationDocumentsDirectory();
-      final templatesDir = Directory('${dir.path}/templates');
-      if (!await templatesDir.exists()) {
-        await templatesDir.create(recursive: true);
-      }
-      final timestamp = DateTime.now().millisecondsSinceEpoch;
-      final file = File('${templatesDir.path}/template_$timestamp.json');
-      await file.writeAsString(jsonEncode(data));
+      final file = await _templateRepository.saveTemplateJson(data);
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -638,51 +633,12 @@ class _StandardAnalysisScreenState extends State<StandardAnalysisScreen> {
   }
 
   /// 讀取所有 JSON 模板(從手機內部目錄)
-  Future<List<Map<String, dynamic>>> _loadAllTemplates() async {
-    try {
-      final dir = await getApplicationDocumentsDirectory();
-      final templatesDir = Directory('${dir.path}/templates');
-      if (!await templatesDir.exists()) return [];
-
-      final files = templatesDir
-          .listSync()
-          .whereType<File>()
-          .where((f) => f.path.endsWith('.json'))
-          .toList();
-
-      // 依修改時間新到舊排序
-      files.sort(
-          (a, b) => b.statSync().modified.compareTo(a.statSync().modified));
-
-      final List<Map<String, dynamic>> results = [];
-      for (final f in files) {
-        try {
-          final content = await f.readAsString();
-          final data = jsonDecode(content) as Map<String, dynamic>;
-          data['_filePath'] = f.path;
-          results.add(data);
-        } catch (e) {
-          debugPrint('讀取模板失敗:${f.path} - $e');
-        }
-      }
-      return results;
-    } catch (e) {
-      debugPrint('列出模板失敗:$e');
-      return [];
-    }
-  }
+  Future<List<Map<String, dynamic>>> _loadAllTemplates() =>
+      _templateRepository.listTemplateJson();
 
   /// 刪除模板檔
-  Future<void> _deleteTemplate(String path) async {
-    try {
-      final file = File(path);
-      if (await file.exists()) {
-        await file.delete();
-      }
-    } catch (e) {
-      debugPrint('刪除失敗:$e');
-    }
-  }
+  Future<void> _deleteTemplate(String path) =>
+      _templateRepository.deleteTemplate(path);
 
   /// 刪除確認 dialog
   Future<bool?> _confirmDelete(BuildContext ctx, String name) async {

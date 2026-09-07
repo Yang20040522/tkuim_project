@@ -11,20 +11,19 @@
 //    - 未來的 body_training_screen(訓練完自動分析)
 // ══════════════════════════════════════════════════════════════════
 
-import 'dart:convert';
 import 'dart:io';
 import 'dart:math' as math;
 import 'dart:ui';
 
 import 'package:flutter/foundation.dart';
 import 'package:image/image.dart' as img_lib;
-import 'package:path_provider/path_provider.dart';
 import 'package:video_player/video_player.dart';
 import 'package:video_thumbnail/video_thumbnail.dart';
 
 import '../../services/body_pose_engine.dart';
 import 'models/video_segment.dart';
 import 'motion_feature_extractor.dart';
+import 'storage/local_motion_template_repository.dart';
 
 class BodyVideoFrameSample {
   BodyVideoFrameSample({
@@ -273,39 +272,8 @@ class VideoAnalysisService {
   }
 
   /// 讀取所有已存的治療師模板 JSON
-  static Future<List<Map<String, dynamic>>> loadAllTemplates() async {
-    try {
-      final dir = await getApplicationDocumentsDirectory();
-      final templatesDir = Directory('${dir.path}/templates');
-      if (!await templatesDir.exists()) return [];
-
-      final files = templatesDir
-          .listSync()
-          .whereType<File>()
-          .where((f) => f.path.endsWith('.json'))
-          .toList();
-
-      // 新到舊
-      files.sort(
-          (a, b) => b.statSync().modified.compareTo(a.statSync().modified));
-
-      final List<Map<String, dynamic>> results = [];
-      for (final f in files) {
-        try {
-          final content = await f.readAsString();
-          final data = jsonDecode(content) as Map<String, dynamic>;
-          data['_filePath'] = f.path;
-          results.add(data);
-        } catch (e) {
-          debugPrint('讀取模板失敗:${f.path} - $e');
-        }
-      }
-      return results;
-    } catch (e) {
-      debugPrint('列出模板失敗:$e');
-      return [];
-    }
-  }
+  static Future<List<Map<String, dynamic>>> loadAllTemplates() =>
+      LocalMotionTemplateRepository().listTemplateJson();
 
   // ─────────────────────────────────────────────────────────────
   //  Private

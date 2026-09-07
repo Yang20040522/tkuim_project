@@ -12,30 +12,141 @@
 // 🩺 2026-08-21 治療師回饋:
 //   支撐腳(留在原地那隻)容錯值原本不分難度,一律 145°。
 //   改成三階分級:初階更寬鬆(容許支撐腳稍微彎),高階更嚴格(要求完全打直)。
+//
+// 🩺 2026-09-06 治療師回饋(重大改動):
+//   1. 側跨步的難度深度(140°/110°/90°)之前是照抄坐站訓練的數字,
+//      治療師說側跨步要「修小一點」，範圍不該跟蹲站共用同一組角度。
+//      這次先把三階角度都調小、動作幅度縮小,實際數字仍需治療師實測校正。
+//   2. 原本完全靠「自動偵測哪隻腳先彎」來判斷跨步腳,沒辦法讓使用者
+//      指定要練哪一腳。改成跟站姿抬腳式一致的直接選腳 API：
+//        selectTrainedLeg(isLeft:)  → 選患側是左腳/右腳(標記用,決定
+//                                      提示文字要講「患側」還是「好腳」)
+//        selectSupportLeg(isLeft:)  → 直接選哪隻腳當支撐腳,另一隻腳
+//                                      自動變成跨步(動)的那隻腳
+//      支撐腳選的剛好是患側 → 困難版；選的是好腳 → 簡單版，這是算出來
+//      的結果,不是另外選的選項。兩個都選了才開始偵測，不再自動猜。
+//   3. 困難版多了「支撐腳(患側)有沒有晃動」的平衡偵測 —— 跟站姿抬腳式
+//      困難版一樣，這是額外的、簡單版沒有的判定邏輯。
+//
+// 🆕 2026-09-06 治療師回饋(2)—— 補上 LegRoleSelectable 介面:
+//   讓 body_training_screen 能用統一的「選患側 → 選簡單/困難版」
+//   兩步驟選腳畫面來驅動這個動作,寫法跟 standing_knee_raise_action
+//   完全一致。
 
 import 'dart:math' as math;
 import 'package:flutter/painting.dart';
 import '../models/body_frame.dart';
 import 'body_rehab_action.dart';
-//import 'wipe_body_action.dart' show RehabDifficulty;
 
 enum _StepState { standing, steppingOut, holding, returning }
 
-class LateralStepAction implements BodyRehabAction, LevelUpControllable {
+class LateralStepAction
+    implements BodyRehabAction, LevelUpControllable, LegRoleSelectable {
   RehabDifficulty difficulty;
   int _successCount = 0;
   int _targetCount = 8;
 
   _StepState _state = _StepState.standing;
-  String? _activeSide; // 'LEFT' / 'RIGHT' / null
   DateTime _lastSpeakTime = DateTime.fromMillisecondsSinceEpoch(0);
   DateTime _holdStartTime = DateTime.now();
   bool _pendingLevelUp = false;
+
+  // ── 患側腳 + 支撐腳選擇(取代原本的自動偵測) ─────────────────────
+  bool? _trainedLegIsLeft; // 患側是左腳(true)還是右腳(false),null = 未選(標記用)
+  bool? _supportLegIsLeft; // 🆕 支撐腳是左腳(true)還是右腳(false),null = 未選(直接決定判定)
+
+  RehabJoint? _movingHip;
+  RehabJoint? _movingKnee;
+  RehabJoint? _movingAnkle;
+
+  RehabJoint? _supportHip;
+  RehabJoint? _supportKnee;
+  RehabJoint? _supportAnkle;
+
+  // 🆕 困難版:支撐腳(患側)水平位置的最近幾幀歷史,用來判斷有沒有晃動
+  final List<double> _supportHipXHistory = [];
+  static const int _supportHistoryFrames = 12;
+  static const double _supportSwayTolerance = 0.05;
 
   LateralStepAction({
     this.difficulty = RehabDifficulty.easy,
     int targetCount = 8,
   }) : _targetCount = targetCount;
+
+  // ── 供 UI 呼叫：選患側腳(標記用) + 直接選支撐腳(決定判定) ──────────
+  bool get legAndModeSelected => _trainedLegIsLeft != null && _supportLegIsLeft != null;
+
+  @override
+  bool get trainedLegSelected => _trainedLegIsLeft != null; // 🆕
+
+  /// 選患側是左腳還是右腳(單純標記,決定提示文字要講「患側」還是「好腳」)
+  @override
+  void selectTrainedLeg({required bool isLeft}) {
+    _trainedLegIsLeft = isLeft;
+  }
+
+  /// 🆕 直接選哪隻腳當支撐腳,另一隻腳自動變成「跨步(動)」的那隻腳。
+  ///    支撐腳選的剛好是患側 → 困難版；選的是好腳 → 簡單版。
+  void selectSupportLeg({required bool isLeft}) {
+    _supportLegIsLeft = isLeft;
+    _applyLegMapping();
+  }
+
+  /// 🆕 簡單版:患側跨步、好腳撐 —— 支撐腳自動選「非患側」那隻
+  @override
+  void selectSimpleMode() {
+    if (_trainedLegIsLeft == null) return;
+    selectSupportLeg(isLeft: !_trainedLegIsLeft!);
+  }
+
+  /// 🆕 困難版:患側撐、好腳跨步 —— 支撐腳自動選「患側」那隻
+  @override
+  void selectHardMode() {
+    if (_trainedLegIsLeft == null) return;
+    selectSupportLeg(isLeft: _trainedLegIsLeft!);
+  }
+
+  void _applyLegMapping() {
+    if (_supportLegIsLeft == null) return;
+    final supportIsLeft = _supportLegIsLeft!;
+
+    if (supportIsLeft) {
+      _supportHip = RehabJoint.leftHip;
+      _supportKnee = RehabJoint.leftKnee;
+      _supportAnkle = RehabJoint.leftAnkle;
+      _movingHip = RehabJoint.rightHip;
+      _movingKnee = RehabJoint.rightKnee;
+      _movingAnkle = RehabJoint.rightAnkle;
+    } else {
+      _supportHip = RehabJoint.rightHip;
+      _supportKnee = RehabJoint.rightKnee;
+      _supportAnkle = RehabJoint.rightAnkle;
+      _movingHip = RehabJoint.leftHip;
+      _movingKnee = RehabJoint.leftKnee;
+      _movingAnkle = RehabJoint.leftAnkle;
+    }
+
+    // 換腳後重置狀態,避免拿舊的判定結果誤判
+    _state = _StepState.standing;
+    _supportHipXHistory.clear();
+  }
+
+  /// 目前是簡單版(患側跨步)還是困難版(患側撐),算出來的,不是直接選的
+  @override
+  TrainingLegRole get role {
+    if (_trainedLegIsLeft == null || _supportLegIsLeft == null) {
+      return TrainingLegRole.moveTrainedLeg;
+    }
+    return _supportLegIsLeft == _trainedLegIsLeft
+        ? TrainingLegRole.supportOnTrainedLeg
+        : TrainingLegRole.moveTrainedLeg;
+  }
+
+  /// 簡單版/困難版的顯示文字,給 UI 顯示用
+  @override
+  String get roleLabel => role == TrainingLegRole.moveTrainedLeg
+      ? '簡單版(患側跨步,好腳撐)'
+      : '困難版(患側撐,好腳跨步)';
 
   // ── BodyRehabAction 合約 ────────────────────────────
 
@@ -43,7 +154,11 @@ class LateralStepAction implements BodyRehabAction, LevelUpControllable {
   String get title => '側跨步訓練';
 
   @override
-  String get initialHint => '請扶穩支撐物,雙腳與肩同寬站立';
+  String get initialHint => legAndModeSelected
+      ? (role == TrainingLegRole.moveTrainedLeg
+          ? '請扶穩支撐物,雙腳與肩同寬站立,準備用患側腳跨步'
+          : '請扶穩支撐物,雙腳與肩同寬站立,這次換好腳跨步,患側腳負責站穩支撐')
+      : '請先選擇患側是左腳／右腳,再選擇要用哪隻腳支撐';
 
   @override
   String get difficultyLabel => switch (difficulty) {
@@ -59,61 +174,85 @@ class LateralStepAction implements BodyRehabAction, LevelUpControllable {
         RehabDifficulty.hard => 152.0,
       };
 
+  // 🩺 2026-09-06:範圍修小,不再跟坐站訓練共用同一組角度。
+  //    這組數字是先縮小的估計值,實際門檻仍需治療師實測校正。
+  double get _targetBendAngle => switch (difficulty) {
+        RehabDifficulty.easy => 155.0,   // 原本 140.0,幅度縮小
+        RehabDifficulty.medium => 135.0, // 原本 110.0
+        RehabDifficulty.hard => 118.0,   // 原本 90.0
+      };
+
   @override
   RehabFeedback update(BodyFrame frame) {
-    if (_pendingLevelUp) return RehabFeedback.none;
-    // 取下肢關節
-    final lHip = frame.joints[RehabJoint.leftHip];
-    final lKnee = frame.joints[RehabJoint.leftKnee];
-    final lAnkle = frame.joints[RehabJoint.leftAnkle];
-    final rHip = frame.joints[RehabJoint.rightHip];
-    final rKnee = frame.joints[RehabJoint.rightKnee];
-    final rAnkle = frame.joints[RehabJoint.rightAnkle];
+    if (_pendingLevelUp) return const RehabFeedback();
+    // 尚未選好患側腳 + 模式 → 等待 UI 按鈕，不做任何偵測
+    if (!legAndModeSelected) return const RehabFeedback();
 
-    if (lHip == null || lKnee == null || lAnkle == null ||
-        rHip == null || rKnee == null || rAnkle == null) {
+    final movingHip = frame.joints[_movingHip!];
+    final movingKnee = frame.joints[_movingKnee!];
+    final movingAnkle = frame.joints[_movingAnkle!];
+    final supportHip = frame.joints[_supportHip!];
+    final supportKnee = frame.joints[_supportKnee!];
+    final supportAnkle = frame.joints[_supportAnkle!];
+
+    if (movingHip == null || movingKnee == null || movingAnkle == null ||
+        supportHip == null || supportKnee == null || supportAnkle == null) {
       return const RehabFeedback();
     }
 
-    final leftKneeAngle = _angle(lHip, lKnee, lAnkle);
-    final rightKneeAngle = _angle(rHip, rKnee, rAnkle);
+    final movingKneeAngle = _angle(movingHip, movingKnee, movingAnkle);
+    final supportKneeAngle = _angle(supportHip, supportKnee, supportAnkle);
 
     const standingThreshold = 160.0;
-    final targetBendAngle = switch (difficulty) {
-      RehabDifficulty.easy => 140.0,
-      RehabDifficulty.medium => 110.0,
-      RehabDifficulty.hard => 90.0,
-    };
+    final targetBendAngle = _targetBendAngle;
 
     final now = DateTime.now();
 
+    // 🆕 困難版:支撐腳(患側)平衡偵測 —— 全程都要檢查,不只 steppingOut 才查
+    if (role == TrainingLegRole.supportOnTrainedLeg &&
+        _state != _StepState.standing) {
+      _supportHipXHistory.add(supportHip.dx);
+      if (_supportHipXHistory.length > _supportHistoryFrames) {
+        _supportHipXHistory.removeAt(0);
+      }
+      if (_supportHipXHistory.length >= 6) {
+        final minX = _supportHipXHistory.reduce(math.min);
+        final maxX = _supportHipXHistory.reduce(math.max);
+        final sway = maxX - minX;
+        if (sway > _supportSwayTolerance) {
+          return RehabFeedback(
+              prompt: _throttled('支撐腳(患側)晃動太大,請站穩後再繼續'));
+        }
+      }
+    } else {
+      _supportHipXHistory.clear();
+    }
+
     switch (_state) {
       case _StepState.standing:
-        // 偵測哪隻腳開始彎曲 = 跨出腳
-        if (leftKneeAngle < 150.0 && rightKneeAngle > standingThreshold) {
-          _activeSide = 'LEFT';
+        // 等待「動」的那隻腳開始彎曲(不再自動偵測是哪一腳,已經固定好了)
+        if (movingKneeAngle < 150.0 && supportKneeAngle > standingThreshold) {
           _state = _StepState.steppingOut;
-          return RehabFeedback(prompt: _throttled('左腳跨出,重心慢慢轉移'));
-        } else if (rightKneeAngle < 150.0 && leftKneeAngle > standingThreshold) {
-          _activeSide = 'RIGHT';
-          _state = _StepState.steppingOut;
-          return RehabFeedback(prompt: _throttled('右腳跨出,重心慢慢轉移'));
+          return RehabFeedback(
+              prompt: _throttled(role == TrainingLegRole.moveTrainedLeg
+                  ? '患側腳跨出,重心慢慢轉移'
+                  : '好腳跨出,患側腳請站穩'));
+        }
+        // 提醒:如果反而是支撐腳先彎了,代表用錯腳跨步
+        if (supportKneeAngle < 150.0 && movingKneeAngle > standingThreshold) {
+          return RehabFeedback(
+              prompt: _throttled('請用指定的那隻腳跨步,另一隻腳負責站穩支撐'));
         }
         break;
 
       case _StepState.steppingOut:
-        final activeAngle =
-            _activeSide == 'LEFT' ? leftKneeAngle : rightKneeAngle;
-        final inactiveAngle =
-            _activeSide == 'LEFT' ? rightKneeAngle : leftKneeAngle;
-
-        // 防代償:留在原地的腳不能彎(容忍度依難度分級)
-        if (inactiveAngle < _inactiveLegTolerance) {
+        // 防代償:留在原地(支撐)的腳不能彎(容忍度依難度分級)
+        if (supportKneeAngle < _inactiveLegTolerance) {
           return RehabFeedback(
-              prompt: _throttled('留在原地的腳請保持伸直,不要跟著彎'));
+              prompt: _throttled('支撐腳請保持伸直,不要跟著彎'));
         }
 
-        if (activeAngle <= targetBendAngle) {
+        if (movingKneeAngle <= targetBendAngle) {
           if (difficulty == RehabDifficulty.hard) {
             _state = _StepState.holding;
             _holdStartTime = now;
@@ -126,10 +265,7 @@ class LateralStepAction implements BodyRehabAction, LevelUpControllable {
         break;
 
       case _StepState.holding:
-        final activeAngle =
-            _activeSide == 'LEFT' ? leftKneeAngle : rightKneeAngle;
-
-        if (activeAngle > targetBendAngle + 15.0) {
+        if (movingKneeAngle > targetBendAngle + 15.0) {
           _state = _StepState.steppingOut;
           return RehabFeedback(prompt: _throttled('太早站起來了,請再蹲深一點'));
         }
@@ -141,14 +277,13 @@ class LateralStepAction implements BodyRehabAction, LevelUpControllable {
 
       case _StepState.returning:
         // 兩腳都回站直 = 完成一次
-        if (leftKneeAngle >= standingThreshold &&
-            rightKneeAngle >= standingThreshold) {
+        if (movingKneeAngle >= standingThreshold &&
+            supportKneeAngle >= standingThreshold) {
           _successCount++;
           _state = _StepState.standing;
-          _activeSide = null;
 
           if (_successCount >= _targetCount) {
-            _pendingLevelUp = true; // 🆕
+            _pendingLevelUp = true;
             return const RehabFeedback(
               scored: true,
               leveledUp: true,
@@ -157,7 +292,7 @@ class LateralStepAction implements BodyRehabAction, LevelUpControllable {
           }
           return const RehabFeedback(
             scored: true,
-            prompt: '完成一次,請換腳或繼續跨步',
+            prompt: '完成一次,請繼續跨步',
           );
         }
         break;
@@ -189,7 +324,7 @@ class LateralStepAction implements BodyRehabAction, LevelUpControllable {
   bool _upgrade() {
     _successCount = 0;
     _state = _StepState.standing;
-    _activeSide = null;
+    _supportHipXHistory.clear();
     if (difficulty == RehabDifficulty.easy) {
       difficulty = RehabDifficulty.medium;
       return true;
@@ -217,6 +352,6 @@ class LateralStepAction implements BodyRehabAction, LevelUpControllable {
     _pendingLevelUp = false;
     _successCount = 0;
     _state = _StepState.standing;
-    _activeSide = null;
+    _supportHipXHistory.clear();
   }
 }
