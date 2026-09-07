@@ -18,6 +18,7 @@
 import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/training_action.dart';
+import 'exercise_api_service.dart'; // 🆕 治療師唯讀遠端 repository 用
 
 abstract class HistoryRepository {
   Future<List<TrainingRecord>> getHistory();
@@ -34,6 +35,10 @@ abstract class HistoryRepository {
 
   /// 🆕 把指定 timestamp 的那一筆紀錄標記為「已上傳」(isSynced = true)。
   Future<void> markAsSynced(String timestamp);
+
+  /// 🆕 把一批紀錄合併進儲存空間,timestamp 已存在的略過,回傳實際新增筆數。
+  ///    給「病患從雲端把自己的紀錄拉回本機」用(換手機/重裝後救回)。
+  Future<int> mergeRecords(List<TrainingRecord> incoming);
 }
 
 /// ============ 本地 SharedPreferences 儲存 ============
@@ -110,6 +115,81 @@ class LocalHistoryRepository implements HistoryRepository {
     await prefs.setString(
         _key, jsonEncode(history.map((e) => e.toJson()).toList()));
   }
+
+  @override
+  Future<int> mergeRecords(List<TrainingRecord> incoming) async {
+    if (incoming.isEmpty) return 0;
+    final prefs = await SharedPreferences.getInstance();
+    final history = await getHistory();
+    final existing = history.map((r) => r.timestamp).toSet();
+
+    int added = 0;
+    for (final record in incoming) {
+      if (!existing.contains(record.timestamp)) {
+        history.add(record);
+        existing.add(record.timestamp);
+        added++;
+      }
+    }
+
+    if (added > 0) {
+      await prefs.setString(
+          _key, jsonEncode(history.map((e) => e.toJson()).toList()));
+    }
+    return added;
+  }
 }
 
 final HistoryRepository historyRepository = LocalHistoryRepository();
+
+/// ============ 唯讀遠端儲存(治療師看指定病患用) ============
+///
+/// 只從後端 GET /api/training-history/{userId} 讀某個病患的紀錄,
+/// 不寫入任何東西(治療師不應該改病患的紀錄)。第一次讀取後會快取,
+/// 所以就算數據頁上有多張卡片各自呼叫 getHistory(),也只打一次網路。
+class RemoteHistoryRepository implements HistoryRepository {
+  RemoteHistoryRepository({required this.userId});
+
+  /// 要查看的病患的使用者 id。
+  final int userId;
+
+  List<TrainingRecord>? _cache;
+
+  @override
+  Future<List<TrainingRecord>> getHistory() async {
+    final cached = _cache;
+    if (cached != null) return cached;
+
+    final rows = await ExerciseApiService.fetchTrainingHistory(userId: userId);
+    final records = rows.map((e) => TrainingRecord.fromJson(e)).toList();
+    _cache = records;
+    return records;
+  }
+
+  // ↓ 以下都是唯讀:治療師端不該改病患紀錄,呼叫到就明確報錯。
+  @override
+  Future<void> saveRecord(TrainingRecord record) =>
+      throw UnsupportedError('唯讀:治療師端不能新增病患紀錄');
+
+  @override
+  Future<void> updateLastRecordsVideoPath(int count, String? videoPath) =>
+      throw UnsupportedError('唯讀:治療師端不能修改病患紀錄');
+
+  @override
+  Future<void> removeByTimestamp(String timestamp) =>
+      throw UnsupportedError('唯讀:治療師端不能刪除病患紀錄');
+
+  @override
+  Future<void> clearHistory() =>
+      throw UnsupportedError('唯讀:治療師端不能清除病患紀錄');
+
+  @override
+  Future<List<TrainingRecord>> getUnsyncedRecords() async => const [];
+
+  @override
+  Future<void> markAsSynced(String timestamp) async {}
+
+  @override
+  Future<int> mergeRecords(List<TrainingRecord> incoming) =>
+      throw UnsupportedError('唯讀:治療師端不能寫入病患紀錄');
+}

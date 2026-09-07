@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import '../../core/ui/app_colors.dart';
 import '../../models/training_action.dart';
 import '../../services/history_service.dart';
-import '../../services/exercise_api_service.dart'; // 🆕 雲端讀取
 import '../account/app_session.dart'; // 🆕 取得目前登入者 ID
 import 'video_playback_screen.dart';
 import '../analysis/comparison_report_screen.dart';
@@ -120,30 +119,18 @@ class _HistoryScreenState extends State<HistoryScreen> {
     setState(() => _loadingCloud = true);
 
     try {
-      final rows = await ExerciseApiService.fetchTrainingHistory(userId: userId);
-      final cloudRecords =
-          rows.map((e) => TrainingRecord.fromJson(e)).toList();
+      // syncFromCloud 會把雲端紀錄「合併寫進本機」(以 timestamp 去重),
+      // 不像之前只是暫時顯示。寫進本機後,重新讀本機即可,而且數據頁
+      // 那些卡片(都在聽 HistoryService)也會自動跟著更新。
+      final added = await _historyService.syncFromCloud(userId: userId);
+
+      await _loadHistory();
 
       if (!mounted) return;
-
-      final existing = _allRecords.map((r) => r.timestamp).toSet();
-      final merged = <TrainingRecord>[..._allRecords];
-      int added = 0;
-      for (final r in cloudRecords) {
-        if (!existing.contains(r.timestamp)) {
-          merged.add(r);
-          added++;
-        }
-      }
-      merged.sort((a, b) => a.timestamp.compareTo(b.timestamp));
-
-      setState(() {
-        _allRecords = merged;
-        _loadingCloud = false;
-      });
+      setState(() => _loadingCloud = false);
 
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('已從雲端載入,新增 $added 筆')),
+        SnackBar(content: Text('已從雲端同步,新增 $added 筆')),
       );
     } catch (e) {
       if (!mounted) return;

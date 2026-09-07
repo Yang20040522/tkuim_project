@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../core/ui/app_colors.dart';
 import '../../models/therapist_patient.dart';
 import '../history/training_result_history_page.dart';
+import '../stats/therapist_patient_stats_screen.dart';
 import '../custom_exercise/services/custom_exercise_api_client.dart';
 import 'bind_patient_page.dart';
 import 'repositories/therapist_patient_repository.dart';
@@ -117,6 +118,17 @@ class _PatientManagementPageState extends State<PatientManagementPage> {
     Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => TrainingResultHistoryPage(
+          patientId: patient.patientId,
+          patientName: patient.patientName,
+        ),
+      ),
+    );
+  }
+
+  void _openStats(TherapistPatient patient) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => TherapistPatientStatsScreen(
           patientId: patient.patientId,
           patientName: patient.patientName,
         ),
@@ -256,6 +268,11 @@ class _PatientManagementPageState extends State<PatientManagementPage> {
             Column(
               mainAxisSize: MainAxisSize.min,
               children: [
+                TextButton(
+                  key: Key('patient-stats-${patient.patientId}'),
+                  onPressed: () => _openStats(patient),
+                  child: const Text('數據'),
+                ),
                 TextButton(
                   key: Key('patient-training-results-${patient.patientId}'),
                   onPressed: () => _openTrainingResults(patient),

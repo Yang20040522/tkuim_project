@@ -175,4 +175,18 @@ class _CountingHistoryRepository implements HistoryRepository {
       records[index] = records[index].copyWithSynced(true);
     }
   }
+
+  @override
+  Future<int> mergeRecords(List<TrainingRecord> incoming) async {
+    final existing = records.map((record) => record.timestamp).toSet();
+    var added = 0;
+    for (final record in incoming) {
+      if (!existing.contains(record.timestamp)) {
+        records.add(record);
+        existing.add(record.timestamp);
+        added++;
+      }
+    }
+    return added;
+  }
 }

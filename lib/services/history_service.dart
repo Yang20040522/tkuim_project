@@ -20,18 +20,14 @@
 //    內部直接重用 _uploadSingleRecord() 這個私有方法,跟整批上傳
 //    共用同一套「轉換欄位 → 呼叫後端 → 標記同步」邏輯,避免邏輯重複。
 //
-//    ⚠️ TODO(欄位對接):目前後端提供的 ExerciseApiService.saveResult()
-//    需要的欄位(userId, exerciseId, repCount, accuracy, progress,
-//    speedState, isComplete)跟 TrainingRecord 現有欄位(timestamp,
-//    actionName, difficulty, durationSeconds, mistakeLogs, videoPath,
-//    targetReps)沒有完全對應,尤其是:
-//      - exerciseId:需要「動作名稱 → exerciseId」的對照表(尚未建立)
-//      - userId:需要串接目前登入使用者的 ID(尚未串接來源)
-//      - difficulty / videoPath / mistakeLogs 沒有對應欄位,上傳後
-//        這些資訊在後端資料庫裡會遺失,治療師端目前看不到
-//    在跟後端確認並補齊這些欄位之前,_uploadSingleRecord() 裡的呼叫
-//    先用最合理的方式湊出請求,並在關鍵缺口處用 TODO 標注清楚,
-//    避免之後忘記要回頭調整。
+//    上傳目標:後端 POST /api/training-history(專為自由訓練紀錄新增的表),
+//    欄位直接對齊 TrainingRecord,不需要 exerciseId 對照表,difficulty /
+//    durationSeconds / targetReps / mistakeLogs 都會完整存進資料庫。
+//    userId 由呼叫端(UI)提供,目前來源是登入者 AppSession.userId。
+//    唯一沒上傳的是 videoPath(手機本機路徑,治療師端開不了)。
+//
+// 🆕 syncFromCloud():病患從雲端把自己的紀錄拉回本機(換手機/重裝後救回)。
+//    因為數據頁的卡片都聽這個 ChangeNotifier,同步完會自動重算顯示。
 
 import '../models/training_action.dart';
 import '../features/notification/notification_service.dart';
@@ -66,6 +62,10 @@ class HistoryService extends ChangeNotifier {
 
   @visibleForTesting
   HistoryService.withRepository(this._repository);
+
+  /// 🆕 給「治療師查看某病患數據」用:注入一個唯讀的遠端 repository,
+  /// 產生一個獨立(非單例)的 HistoryService,只讀不寫。
+  HistoryService.readOnly(this._repository);
 
   final HistoryRepository _repository;
 
@@ -173,6 +173,23 @@ class HistoryService extends ChangeNotifier {
       debugPrint('上傳單筆訓練紀錄失敗(${record.timestamp}): $e');
       return false;
     }
+  }
+
+  /// 🆕 從雲端把這個使用者的紀錄同步下來、合併進本機。
+  ///
+  /// 給病患「換手機/重裝 app 後把自己的歷史救回來」用:呼叫後端
+  /// GET /api/training-history/{userId} 拿到雲端紀錄,用 timestamp 去重
+  /// 後合併進本機儲存,回傳實際新增的筆數。因為數據頁的卡片都聽這個
+  /// ChangeNotifier,有新增時 notifyListeners() 會讓它們自動重算。
+  ///
+  /// 需要有網路 + 已登入(userId 由呼叫端提供)。任何一步失敗都會往外丟
+  /// Exception,由呼叫端(UI)決定要顯示什麼提示。
+  Future<int> syncFromCloud({required int userId}) async {
+    final rows = await ExerciseApiService.fetchTrainingHistory(userId: userId);
+    final cloud = rows.map((e) => TrainingRecord.fromJson(e)).toList();
+    final added = await _repository.mergeRecords(cloud);
+    if (added > 0) notifyListeners();
+    return added;
   }
 
   /// 把單筆 TrainingRecord 送到後端 /api/training-history。

@@ -438,4 +438,7 @@ class _CountingHistoryRepository implements HistoryRepository {
 
   @override
   Future<void> markAsSynced(String timestamp) async {}
+
+  @override
+  Future<int> mergeRecords(List<TrainingRecord> incoming) async => 0;
 }
