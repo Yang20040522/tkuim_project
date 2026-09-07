@@ -14,12 +14,131 @@ void main() {
     AppSession.userId = '15';
     AppSession.customExerciseToken = 'signed-token';
     AppSession.role = UserRole.patient;
+    AppSession.name = '測試使用者';
   });
 
   tearDown(() {
     AppSession.userId = null;
     AppSession.customExerciseToken = null;
     AppSession.role = null;
+    AppSession.name = null;
+  });
+
+  testWidgets('therapist chat shows video entry before existing refresh',
+      (tester) async {
+    final backend = FakeChatBackend();
+    await tester.pumpWidget(
+      MaterialApp(
+        home: RemoteChatScreen(
+          backend: backend,
+          conversationId: '123',
+          otherUserId: '25',
+          otherUserName: '治療師',
+          conversationType: ConversationType.therapist,
+        ),
+      ),
+    );
+    await tester.pump();
+
+    final video = find.byKey(const ValueKey('remote-chat-video-call'));
+    final refresh = find.byKey(const ValueKey('remote-chat-refresh'));
+    expect(video, findsOneWidget);
+    expect(refresh, findsOneWidget);
+    expect(tester.getCenter(video).dx, lessThan(tester.getCenter(refresh).dx));
+
+    await tester.pumpWidget(const SizedBox());
+    backend.dispose();
+  });
+
+  testWidgets('missing ZEGO credentials shows safe localized message',
+      (tester) async {
+    final backend = FakeChatBackend();
+    await tester.pumpWidget(
+      MaterialApp(
+        home: RemoteChatScreen(
+          backend: backend,
+          conversationId: '123',
+          otherUserId: '25',
+          otherUserName: '治療師',
+          conversationType: ConversationType.therapist,
+          videoCallConfigured: false,
+        ),
+      ),
+    );
+    await tester.tap(find.byKey(const ValueKey('remote-chat-video-call')));
+    await tester.pump();
+
+    expect(find.text('視訊通話尚未完成設定'), findsOneWidget);
+    expect(backend.refreshCalls, 0);
+
+    await tester.pumpWidget(const SizedBox());
+    backend.dispose();
+  });
+
+  testWidgets('configured video entry launches deterministic room without RTC',
+      (tester) async {
+    final backend = FakeChatBackend();
+    String? capturedCallId;
+    String? capturedCurrentUserId;
+    String? capturedCurrentUserName;
+    var launches = 0;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: RemoteChatScreen(
+          backend: backend,
+          conversationId: '123',
+          otherUserId: 'user-3',
+          otherUserName: '治療師',
+          conversationType: ConversationType.therapist,
+          videoCallConfigured: true,
+          videoCallLauncher: (
+            context, {
+            required String callId,
+            required String currentUserId,
+            required String currentUserName,
+          }) async {
+            launches++;
+            capturedCallId = callId;
+            capturedCurrentUserId = currentUserId;
+            capturedCurrentUserName = currentUserName;
+          },
+        ),
+      ),
+    );
+    await tester.tap(find.byKey(const ValueKey('remote-chat-video-call')));
+    await tester.pump();
+
+    expect(launches, 1);
+    expect(capturedCallId, 'rehab_call_15_user_3');
+    expect(capturedCurrentUserId, '15');
+    expect(capturedCurrentUserName, '測試使用者');
+    expect(backend.refreshCalls, 0);
+
+    await tester.pumpWidget(const SizedBox());
+    backend.dispose();
+  });
+
+  testWidgets('peer chat remains unchanged without video entry',
+      (tester) async {
+    final backend = FakeChatBackend();
+    await tester.pumpWidget(
+      MaterialApp(
+        home: RemoteChatScreen(
+          backend: backend,
+          conversationId: '123',
+          otherUserId: '25',
+          otherUserName: '病友',
+          conversationType: ConversationType.peer,
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.byKey(const ValueKey('remote-chat-video-call')), findsNothing);
+    expect(find.byKey(const ValueKey('remote-chat-refresh')), findsOneWidget);
+
+    await tester.pumpWidget(const SizedBox());
+    backend.dispose();
   });
 
   testWidgets('own and other messages use right and left alignment',

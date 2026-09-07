@@ -4,9 +4,19 @@ import 'package:flutter/material.dart';
 
 import '../account/app_session.dart';
 import '../account/remote_avatar_cache.dart';
+import '../call/video_call_screen.dart';
+import '../call/zego_call_config.dart';
+import '../call/zego_call_id.dart';
 import 'chat_user_avatar.dart';
 import 'chat_backend.dart';
 import 'chat_models.dart';
+
+typedef VideoCallLauncher = Future<void> Function(
+  BuildContext context, {
+  required String callId,
+  required String currentUserId,
+  required String currentUserName,
+});
 
 class RemoteChatScreen extends StatefulWidget {
   const RemoteChatScreen({
@@ -17,6 +27,8 @@ class RemoteChatScreen extends StatefulWidget {
     required this.otherUserName,
     required this.conversationType,
     this.avatarCache,
+    this.videoCallLauncher,
+    this.videoCallConfigured,
   });
 
   final ChatBackend backend;
@@ -25,6 +37,8 @@ class RemoteChatScreen extends StatefulWidget {
   final String otherUserId;
   final String otherUserName;
   final ConversationType conversationType;
+  final VideoCallLauncher? videoCallLauncher;
+  final bool? videoCallConfigured;
 
   @override
   State<RemoteChatScreen> createState() => _RemoteChatScreenState();
@@ -114,6 +128,61 @@ class _RemoteChatScreenState extends State<RemoteChatScreen>
     unawaited(_markAsRead());
   }
 
+  Future<void> _openVideoCall() async {
+    final userId = _myUserId;
+    if (userId == null) {
+      _showVideoCallError('找不到登入使用者，請重新登入。');
+      return;
+    }
+    if (!(widget.videoCallConfigured ?? ZegoCallConfig.isConfigured)) {
+      _showVideoCallError('視訊通話尚未完成設定');
+      return;
+    }
+
+    try {
+      final zegoUserId = buildZegoUserId(userId);
+      final callId = buildOneToOneCallId(userId, widget.otherUserId);
+      final sessionName = AppSession.name?.trim();
+      final userName = sessionName == null || sessionName.isEmpty
+          ? '使用者 $userId'
+          : sessionName;
+      await (widget.videoCallLauncher ?? _launchVideoCall)(
+        context,
+        callId: callId,
+        currentUserId: zegoUserId,
+        currentUserName: userName,
+      );
+    } on FormatException {
+      _showVideoCallError('使用者資料無效，無法啟動視訊通話。');
+    } on Object {
+      _showVideoCallError('無法啟動視訊通話，請稍後再試。');
+    }
+  }
+
+  Future<void> _launchVideoCall(
+    BuildContext context, {
+    required String callId,
+    required String currentUserId,
+    required String currentUserName,
+  }) async {
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        builder: (_) => VideoCallScreen(
+          callId: callId,
+          currentUserId: currentUserId,
+          currentUserName: currentUserName,
+        ),
+      ),
+    );
+  }
+
+  void _showVideoCallError(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message)),
+    );
+  }
+
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
@@ -198,6 +267,13 @@ class _RemoteChatScreenState extends State<RemoteChatScreen>
           ],
         ),
         actions: [
+          if (widget.conversationType == ConversationType.therapist)
+            IconButton(
+              key: const ValueKey('remote-chat-video-call'),
+              tooltip: '開始視訊通話',
+              onPressed: _openVideoCall,
+              icon: const Icon(Icons.videocam_rounded),
+            ),
           IconButton(
             key: const ValueKey('remote-chat-refresh'),
             tooltip: '重新整理訊息',
