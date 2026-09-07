@@ -75,12 +75,13 @@ void main() {
     backend.dispose();
   });
 
-  testWidgets('configured video entry launches deterministic room without RTC',
+  testWidgets(
+      'configured video entry sends deterministic invitation without RTC',
       (tester) async {
     final backend = FakeChatBackend();
     String? capturedCallId;
-    String? capturedCurrentUserId;
-    String? capturedCurrentUserName;
+    String? capturedTargetUserId;
+    String? capturedTargetUserName;
     var launches = 0;
     await tester.pumpWidget(
       MaterialApp(
@@ -91,16 +92,16 @@ void main() {
           otherUserName: '治療師',
           conversationType: ConversationType.therapist,
           videoCallConfigured: true,
-          videoCallLauncher: (
-            context, {
+          callInvitationLauncher: ({
             required String callId,
-            required String currentUserId,
-            required String currentUserName,
+            required String targetUserId,
+            required String targetUserName,
           }) async {
             launches++;
             capturedCallId = callId;
-            capturedCurrentUserId = currentUserId;
-            capturedCurrentUserName = currentUserName;
+            capturedTargetUserId = targetUserId;
+            capturedTargetUserName = targetUserName;
+            return true;
           },
         ),
       ),
@@ -110,8 +111,8 @@ void main() {
 
     expect(launches, 1);
     expect(capturedCallId, 'rehab_call_15_user_3');
-    expect(capturedCurrentUserId, '15');
-    expect(capturedCurrentUserName, '測試使用者');
+    expect(capturedTargetUserId, 'user_3');
+    expect(capturedTargetUserName, '治療師');
     expect(backend.refreshCalls, 0);
 
     await tester.pumpWidget(const SizedBox());
@@ -136,6 +137,46 @@ void main() {
 
     expect(find.byKey(const ValueKey('remote-chat-video-call')), findsNothing);
     expect(find.byKey(const ValueKey('remote-chat-refresh')), findsOneWidget);
+
+    await tester.pumpWidget(const SizedBox());
+    backend.dispose();
+  });
+
+  testWidgets('invitation in progress prevents duplicate sends',
+      (tester) async {
+    final backend = FakeChatBackend();
+    final invitation = Completer<bool>();
+    var sends = 0;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: RemoteChatScreen(
+          backend: backend,
+          conversationId: '123',
+          otherUserId: '25',
+          otherUserName: '治療師',
+          conversationType: ConversationType.therapist,
+          videoCallConfigured: true,
+          callInvitationLauncher: ({
+            required String callId,
+            required String targetUserId,
+            required String targetUserName,
+          }) {
+            sends++;
+            return invitation.future;
+          },
+        ),
+      ),
+    );
+
+    final video = find.byKey(const ValueKey('remote-chat-video-call'));
+    await tester.tap(video);
+    await tester.pump();
+    await tester.tap(video, warnIfMissed: false);
+    await tester.pump();
+
+    expect(sends, 1);
+    invitation.complete(true);
+    await tester.pump();
 
     await tester.pumpWidget(const SizedBox());
     backend.dispose();

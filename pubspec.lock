@@ -1667,7 +1667,7 @@ packages:
     source: hosted
     version: "4.24.4"
   zego_uikit_signaling_plugin:
-    dependency: transitive
+    dependency: "direct main"
     description:
       name: zego_uikit_signaling_plugin
       sha256: eafd359636abe61199611fe0edb8d89d10c229232a24de9cd5a8712b157ba8e7

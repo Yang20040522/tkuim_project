@@ -2,6 +2,7 @@
 // 目前的登入狀態。登入時寫入記憶體 + 本機儲存(shared_preferences),
 // 這樣下次開 App 時可以讀回來,不用每次都重新選身分、重新登入。
 import 'package:shared_preferences/shared_preferences.dart';
+import '../call/zego_call_invitation_service.dart';
 import 'user_role.dart';
 
 class AppSession {
@@ -44,6 +45,10 @@ class AppSession {
     bindingCode = prefs.getString(_keyBindingCode);
     friendCode = prefs.getString(_keyFriendCode);
     customExerciseToken = prefs.getString(_keyCustomExerciseToken);
+    await ZegoCallInvitationService.instance.synchronizeSession(
+      userId: userId,
+      userName: name,
+    );
   }
 
   /// 登入成功時呼叫,同時寫進記憶體跟本機儲存。
@@ -91,10 +96,15 @@ class AppSession {
     } else {
       await prefs.remove(_keyCustomExerciseToken);
     }
+    await ZegoCallInvitationService.instance.synchronizeSession(
+      userId: userId,
+      userName: name,
+    );
   }
 
   /// 登出時呼叫,同時清掉記憶體跟本機儲存。
   static Future<void> clear() async {
+    await ZegoCallInvitationService.instance.synchronizeSession();
     role = null;
     userId = null;
     name = null;

@@ -4,18 +4,17 @@ import 'package:flutter/material.dart';
 
 import '../account/app_session.dart';
 import '../account/remote_avatar_cache.dart';
-import '../call/video_call_screen.dart';
 import '../call/zego_call_config.dart';
+import '../call/zego_call_invitation_service.dart';
 import '../call/zego_call_id.dart';
 import 'chat_user_avatar.dart';
 import 'chat_backend.dart';
 import 'chat_models.dart';
 
-typedef VideoCallLauncher = Future<void> Function(
-  BuildContext context, {
+typedef CallInvitationLauncher = Future<bool> Function({
   required String callId,
-  required String currentUserId,
-  required String currentUserName,
+  required String targetUserId,
+  required String targetUserName,
 });
 
 class RemoteChatScreen extends StatefulWidget {
@@ -27,7 +26,7 @@ class RemoteChatScreen extends StatefulWidget {
     required this.otherUserName,
     required this.conversationType,
     this.avatarCache,
-    this.videoCallLauncher,
+    this.callInvitationLauncher,
     this.videoCallConfigured,
   });
 
@@ -37,7 +36,7 @@ class RemoteChatScreen extends StatefulWidget {
   final String otherUserId;
   final String otherUserName;
   final ConversationType conversationType;
-  final VideoCallLauncher? videoCallLauncher;
+  final CallInvitationLauncher? callInvitationLauncher;
   final bool? videoCallConfigured;
 
   @override
@@ -53,6 +52,7 @@ class _RemoteChatScreenState extends State<RemoteChatScreen>
   List<RemoteChatMessage> _messages = const [];
   bool _loading = true;
   bool _sending = false;
+  bool _invitationSending = false;
   bool _markingRead = false;
   bool _appIsActive = true;
   String? _error;
@@ -129,6 +129,7 @@ class _RemoteChatScreenState extends State<RemoteChatScreen>
   }
 
   Future<void> _openVideoCall() async {
+    if (_invitationSending) return;
     final userId = _myUserId;
     if (userId == null) {
       _showVideoCallError('找不到登入使用者，請重新登入。');
@@ -140,39 +141,39 @@ class _RemoteChatScreenState extends State<RemoteChatScreen>
     }
 
     try {
-      final zegoUserId = buildZegoUserId(userId);
+      buildZegoUserId(userId);
+      final targetUserId = buildZegoUserId(widget.otherUserId);
       final callId = buildOneToOneCallId(userId, widget.otherUserId);
-      final sessionName = AppSession.name?.trim();
-      final userName = sessionName == null || sessionName.isEmpty
-          ? '使用者 $userId'
-          : sessionName;
-      await (widget.videoCallLauncher ?? _launchVideoCall)(
-        context,
+      final peerName = widget.otherUserName.trim();
+      final targetUserName =
+          peerName.isEmpty ? '使用者 ${widget.otherUserId}' : peerName;
+      if (mounted) setState(() => _invitationSending = true);
+      final sent = await (widget.callInvitationLauncher ?? _sendInvitation)(
         callId: callId,
-        currentUserId: zegoUserId,
-        currentUserName: userName,
+        targetUserId: targetUserId,
+        targetUserName: targetUserName,
       );
+      if (!sent) {
+        _showVideoCallError('目前無法發起視訊通話，請稍後再試。');
+      }
     } on FormatException {
       _showVideoCallError('使用者資料無效，無法啟動視訊通話。');
     } on Object {
-      _showVideoCallError('無法啟動視訊通話，請稍後再試。');
+      _showVideoCallError('無法發起視訊通話，請稍後再試。');
+    } finally {
+      if (mounted) setState(() => _invitationSending = false);
     }
   }
 
-  Future<void> _launchVideoCall(
-    BuildContext context, {
+  Future<bool> _sendInvitation({
     required String callId,
-    required String currentUserId,
-    required String currentUserName,
-  }) async {
-    await Navigator.of(context).push<void>(
-      MaterialPageRoute(
-        builder: (_) => VideoCallScreen(
-          callId: callId,
-          currentUserId: currentUserId,
-          currentUserName: currentUserName,
-        ),
-      ),
+    required String targetUserId,
+    required String targetUserName,
+  }) {
+    return ZegoCallInvitationService.instance.sendVideoInvitation(
+      targetUserId: targetUserId,
+      targetUserName: targetUserName,
+      callId: callId,
     );
   }
 
@@ -271,7 +272,7 @@ class _RemoteChatScreenState extends State<RemoteChatScreen>
             IconButton(
               key: const ValueKey('remote-chat-video-call'),
               tooltip: '開始視訊通話',
-              onPressed: _openVideoCall,
+              onPressed: _invitationSending ? null : _openVideoCall,
               icon: const Icon(Icons.videocam_rounded),
             ),
           IconButton(

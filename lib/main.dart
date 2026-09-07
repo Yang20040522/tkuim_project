@@ -5,9 +5,13 @@ import 'package:flutter_localizations/flutter_localizations.dart'; // ← 新增
 import 'features/splash/splash_screen.dart';
 import 'features/notification/notification_service.dart';
 import 'core/ui/app_theme.dart';
+import 'features/call/zego_call_invitation_service.dart';
 
 import 'package:provider/provider.dart';
 import 'services/history_service.dart';
+
+final rootNavigatorKey = GlobalKey<NavigatorState>();
+final rootScaffoldMessengerKey = GlobalKey<ScaffoldMessengerState>();
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -17,6 +21,9 @@ void main() async {
     statusBarIconBrightness: Brightness.light,
   ));
   await NotificationService().init();
+  ZegoCallInvitationService.instance
+    ..setNavigatorKey(rootNavigatorKey)
+    ..setScaffoldMessengerKey(rootScaffoldMessengerKey);
   //runApp(const RehabAssistApp());
   runApp(
     ChangeNotifierProvider.value(
@@ -32,6 +39,8 @@ class RehabAssistApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
+      navigatorKey: rootNavigatorKey,
+      scaffoldMessengerKey: rootScaffoldMessengerKey,
       title: 'RehabAssist',
       debugShowCheckedModeBanner: false,
       // ↓ 新增這三塊
