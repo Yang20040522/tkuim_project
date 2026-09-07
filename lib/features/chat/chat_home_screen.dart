@@ -13,10 +13,12 @@ import 'package:flutter/material.dart';
 
 import '../../core/ui/app_colors.dart';
 import '../account/app_session.dart';
+import '../account/remote_avatar_cache.dart';
 import '../account/user_role.dart';
 import '../friends/friend_management_screen.dart';
 import 'chat_backend.dart';
 import 'chat_models.dart';
+import 'chat_user_avatar.dart';
 import 'chat_screen.dart';
 import 'remote_chat_screen.dart';
 import 'rest_chat_backend.dart';
@@ -28,9 +30,11 @@ class ChatHomeScreen extends StatefulWidget {
     super.key,
     this.backend,
     this.friendManagementBuilder,
+    this.avatarCache,
   });
 
   final ChatBackend? backend;
+  final RemoteAvatarCache? avatarCache;
   final FriendManagementBuilder? friendManagementBuilder;
 
   @override
@@ -178,6 +182,7 @@ class _ChatHomeScreenState extends State<ChatHomeScreen>
         MaterialPageRoute(
           builder: (_) => RemoteChatScreen(
             backend: _backend,
+            avatarCache: widget.avatarCache,
             conversationId: conversationId,
             otherUserId: contact.userId,
             otherUserName: contact.name,
@@ -427,7 +432,11 @@ class _ChatHomeScreenState extends State<ChatHomeScreen>
         decoration: _cardDecoration(),
         child: Row(
           children: [
-            _avatar(contact.name),
+            ChatUserAvatar(
+              userId: contact.userId,
+              name: contact.name,
+              cache: widget.avatarCache,
+            ),
             const SizedBox(width: 12),
             Expanded(
               child: Column(
@@ -498,44 +507,6 @@ class _ChatHomeScreenState extends State<ChatHomeScreen>
   }
 
   // ── 共用小元件 ──
-  Widget _avatar(String text,
-      {bool online = false, Color avatarColor = const Color(0xFF4A65FF)}) {
-    return Stack(
-      children: [
-        Container(
-          width: 50,
-          height: 50,
-          decoration: BoxDecoration(
-            color: avatarColor.withValues(alpha: 0.12),
-            shape: BoxShape.circle,
-          ),
-          alignment: Alignment.center,
-          child: Text(
-            text.trim().isEmpty ? '?' : text.trim().substring(0, 1),
-            style: TextStyle(
-              color: avatarColor,
-              fontSize: 20,
-              fontWeight: FontWeight.w800,
-            ),
-          ),
-        ),
-        if (online)
-          Positioned(
-            right: 0,
-            bottom: 0,
-            child: Container(
-              width: 14,
-              height: 14,
-              decoration: BoxDecoration(
-                color: const Color(0xFF10B981),
-                shape: BoxShape.circle,
-                border: Border.all(color: Colors.white, width: 2),
-              ),
-            ),
-          ),
-      ],
-    );
-  }
 
   Widget _tag(String text) => Container(
         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),

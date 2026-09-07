@@ -3,6 +3,8 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../account/app_session.dart';
+import '../account/remote_avatar_cache.dart';
+import 'chat_user_avatar.dart';
 import 'chat_backend.dart';
 import 'chat_models.dart';
 
@@ -14,9 +16,11 @@ class RemoteChatScreen extends StatefulWidget {
     required this.otherUserId,
     required this.otherUserName,
     required this.conversationType,
+    this.avatarCache,
   });
 
   final ChatBackend backend;
+  final RemoteAvatarCache? avatarCache;
   final String conversationId;
   final String otherUserId;
   final String otherUserName;
@@ -172,16 +176,25 @@ class _RemoteChatScreenState extends State<RemoteChatScreen>
     return Scaffold(
       backgroundColor: const Color(0xFFF5F6FA),
       appBar: AppBar(
-        title: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+        title: Row(
           children: [
-            Text(widget.otherUserName),
-            Text(
-              widget.conversationType == ConversationType.therapist
-                  ? '照護對話'
-                  : '好友對話',
-              style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w400),
-            ),
+            _peerAvatar(36),
+            const SizedBox(width: 10),
+            Expanded(
+                child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(widget.otherUserName,
+                    maxLines: 1, overflow: TextOverflow.ellipsis),
+                Text(
+                  widget.conversationType == ConversationType.therapist
+                      ? '照護對話'
+                      : '好友對話',
+                  style: const TextStyle(
+                      fontSize: 11, fontWeight: FontWeight.w400),
+                ),
+              ],
+            )),
           ],
         ),
         actions: [
@@ -236,51 +249,69 @@ class _RemoteChatScreenState extends State<RemoteChatScreen>
 
   Widget _buildBubble(RemoteChatMessage message) {
     final mine = message.senderId == _myUserId;
+    final bubble = Container(
+      constraints: const BoxConstraints(maxWidth: 300),
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.fromLTRB(14, 10, 14, 8),
+      decoration: BoxDecoration(
+        color: mine ? const Color(0xFF4A65FF) : Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: mine
+            ? null
+            : [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.04),
+                  blurRadius: 6,
+                  offset: const Offset(0, 2),
+                ),
+              ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          Text(
+            message.text,
+            style: TextStyle(
+              color: mine ? Colors.white : const Color(0xFF1A1D2E),
+              fontSize: 15,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            _messageMetadata(message, mine),
+            style: TextStyle(
+              color: mine
+                  ? Colors.white.withValues(alpha: 0.75)
+                  : const Color(0xFF9CA3AF),
+              fontSize: 10,
+            ),
+          ),
+        ],
+      ),
+    );
     return Align(
       key: ValueKey('remote-message-${message.id}-${mine ? 'mine' : 'other'}'),
       alignment: mine ? Alignment.centerRight : Alignment.centerLeft,
-      child: Container(
-        constraints: const BoxConstraints(maxWidth: 300),
-        margin: const EdgeInsets.only(bottom: 10),
-        padding: const EdgeInsets.fromLTRB(14, 10, 14, 8),
-        decoration: BoxDecoration(
-          color: mine ? const Color(0xFF4A65FF) : Colors.white,
-          borderRadius: BorderRadius.circular(16),
-          boxShadow: mine
-              ? null
-              : [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.04),
-                    blurRadius: 6,
-                    offset: const Offset(0, 2),
-                  ),
-                ],
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.end,
-          children: [
-            Text(
-              message.text,
-              style: TextStyle(
-                color: mine ? Colors.white : const Color(0xFF1A1D2E),
-                fontSize: 15,
-              ),
+      child: mine
+          ? bubble
+          : Row(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _peerAvatar(32),
+                const SizedBox(width: 8),
+                Flexible(child: bubble),
+              ],
             ),
-            const SizedBox(height: 4),
-            Text(
-              _messageMetadata(message, mine),
-              style: TextStyle(
-                color: mine
-                    ? Colors.white.withValues(alpha: 0.75)
-                    : const Color(0xFF9CA3AF),
-                fontSize: 10,
-              ),
-            ),
-          ],
-        ),
-      ),
     );
   }
+
+  Widget _peerAvatar(double size) => ChatUserAvatar(
+        userId: widget.otherUserId,
+        name: widget.otherUserName,
+        size: size,
+        cache: widget.avatarCache,
+      );
 
   Widget _buildComposer() {
     return SafeArea(
