@@ -31,7 +31,6 @@ import 'training_preview_screen.dart';
 // 🖥️ 電視投放新增
 import '../tv_cast/socket_client_service.dart';
 import '../tv_cast/socket_server_service.dart';
-import '../tv_cast/remote_controller_screen.dart';
 
 // 手部動作清單
 final _handActions = [
@@ -231,18 +230,6 @@ class _ActionListScreenState extends State<ActionListScreen>
     final customReps = int.tryParse(_repsController.text);
     if (customReps != null && customReps > 0) {
       diff = diff.copyWithReps(customReps);
-    }
-
-    // 🖥️ 電視投放新增:偵測是否連線中
-    if (_clientService.isConnected && _isBodyAction(act.type)) {
-      Navigator.of(context).push(MaterialPageRoute(
-        builder: (_) => RemoteControllerScreen(
-          action: act,
-          difficulty: diff!,
-          rehabAction: _createBodyRehabAction(act, diff),
-        ),
-      ));
-      return;
     }
 
     final templateSelection = await MotionTemplateTrainingPicker.choose(
@@ -1057,42 +1044,6 @@ class _ActionListScreenState extends State<ActionListScreen>
         return RehabDifficulty.medium;
       case DifficultyLevel.level3:
         return RehabDifficulty.hard;
-    }
-  }
-
-  // 🖥️ 下列為電視投放所需的輔助方法
-  bool _isBodyAction(ActionType type) {
-    return type == ActionType.wipeBody ||
-        type == ActionType.drawCircle ||
-        type == ActionType.reach ||
-        type == ActionType.raiseBothArms ||
-        type == ActionType.elbowForward ||
-        type == ActionType.sitToStand ||
-        type == ActionType.lateralStep;
-  }
-
-  BodyRehabAction _createBodyRehabAction(
-      TrainingAction act, DifficultyOption diff) {
-    final d = _mapDifficulty(diff.level);
-    switch (act.type) {
-      case ActionType.wipeBody:
-        return StandingKneeRaiseAction(
-            difficulty: d, targetCount: diff.targetReps);
-      case ActionType.drawCircle:
-        return DrawCircleAction(difficulty: d, targetCount: diff.targetReps);
-      case ActionType.reach:
-        return ReachAction(difficulty: d, targetCount: diff.targetReps);
-      case ActionType.raiseBothArms:
-        return RaiseBothArmsAction(difficulty: d, targetCount: diff.targetReps);
-      case ActionType.elbowForward:
-        return ElbowForwardAction(difficulty: d, targetCount: diff.targetReps);
-      case ActionType.sitToStand:
-        return SitToStandAction(difficulty: d, targetCount: diff.targetReps);
-      case ActionType.lateralStep:
-        return LateralStepAction(difficulty: d, targetCount: diff.targetReps);
-      default:
-        return StandingKneeRaiseAction(
-            difficulty: d, targetCount: diff.targetReps);
     }
   }
 }

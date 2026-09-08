@@ -82,11 +82,13 @@ class MediaPipeService {
     required String actionType,
     required int difficulty,
     bool useFrontCamera = false,
+    bool enableImageStream = false,
   }) async {
     await _channel.invokeMethod('startDetection', {
       'actionType': actionType,
       'difficulty': difficulty,
       'useFrontCamera': useFrontCamera,
+      'enableImageStream': enableImageStream,
     });
     _subscribeLandmarks();
     _subscribeTraining();

@@ -11,6 +11,7 @@
 //    樹莓派模式角度算反(偏差顯示接近 180 度)。
 
 import 'dart:async';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 
 import '../actions/base_rehab_action.dart';
@@ -23,6 +24,8 @@ import '../models/training_action.dart';
 import '../services/mediapipe_service.dart';
 import '../services/pose_model_interface.dart';
 import '../services/pi_pose_model.dart'; // 🚀 新增:判斷是否為樹莓派來源
+import '../features/tv_cast/socket_client_service.dart';
+import '../features/tv_cast/socket_server_service.dart';
 
 // ── Session 狀態快照 ──────────────────────────────────────────────
 class RehabSessionState {
@@ -50,6 +53,7 @@ class RehabSessionState {
   final bool pendingLevelUp;   // 🆕 是否正等待使用者確認升級
   final int pendingNextLevel;  // 🆕 等待確認的下一階是第幾階
   final String pendingNextLevelLabel; // 🆕 等待確認的下一階標籤文字
+  final Uint8List? imageBytes;
 
   const RehabSessionState({
     this.handLandmarks = const [],
@@ -68,6 +72,7 @@ class RehabSessionState {
     this.durationSeconds = 0,
     this.mistakeLogs = const [],
     this.targetReps = 10,   // ← 新增
+    this.imageBytes,
     this.currentLevelLabel = '',    // ✅ 加這行(預設值)
     this.currentLevel = 1,   // ✅ 新增
     this.pendingLevelUp = false,   // 🆕
@@ -92,6 +97,7 @@ class RehabSessionState {
     int? durationSeconds,
     List<String>? mistakeLogs,
     int? targetReps,   // ← 新增
+    Uint8List? imageBytes,
     String? currentLevelLabel,      // ✅ 加這行(copyWith 參數)
     int? currentLevel,   // ✅ 新增
     bool? pendingLevelUp,   // 🆕
@@ -115,6 +121,7 @@ class RehabSessionState {
       durationSeconds: durationSeconds ?? this.durationSeconds,
       mistakeLogs: mistakeLogs ?? this.mistakeLogs,
       targetReps: targetReps ?? this.targetReps,   // ← 新增
+      imageBytes: imageBytes ?? this.imageBytes,
       currentLevelLabel: currentLevelLabel ?? this.currentLevelLabel,  // ✅ 加這行(組裝新物件)
       currentLevel: currentLevel ?? this.currentLevel,   // ✅ 新增
       pendingLevelUp: pendingLevelUp ?? this.pendingLevelUp,   // 🆕
@@ -207,10 +214,16 @@ class RehabSessionController implements RehabActionCallback {
     String actionCode = 'SECOND_ACTION';
     if (action.type == ActionType.turnPalm) actionCode = 'TURN_PALM';
 
+    final socketClient = SocketClientService();
+    final socketServer = SocketServerService();
+    final bool tvConnected =
+        socketClient.isConnected || socketServer.isClientConnected;
+
     await model.start(PoseModelConfig(
       actionType: actionCode,
       difficulty: diffIdx,
       useFrontCamera: true,
+      enableImageStream: tvConnected,
     ));
 
     // 只訂閱 frameStream，不再訂閱 trainingStream
@@ -221,6 +234,7 @@ class RehabSessionController implements RehabActionCallback {
         handLandmarks: frame.handLandmarks,
         handDetected: frame.handDetected,
         bodyLandmarks: frame.standardJoints.values.toList(),
+        imageBytes: frame.imageBytes,
       ));
 
       // 動作判斷全部交給 Dart action

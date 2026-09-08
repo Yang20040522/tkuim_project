@@ -180,6 +180,7 @@ class BodyPoseEngine {
   OrtRunOptions? _runOpts;
   bool _processing = false;
   bool _isFrontCamera = true;
+  int _sensorOrientation = 0;
   bool _isSwitchingCamera = false;
 
   // 🚀 修正新增:區分「手機相機幀」與「外部畫面幀(樹莓派/影片分析)」,
@@ -244,6 +245,7 @@ class BodyPoseEngine {
       orElse: () => cameras.first,
     );
     _isFrontCamera = cam.lensDirection == CameraLensDirection.front;
+    _sensorOrientation = cam.sensorOrientation;
 
     final ctrl = CameraController(
       cam,
@@ -311,6 +313,7 @@ class BodyPoseEngine {
       orElse: () => cameras.first,
     );
     _isFrontCamera = next.lensDirection == CameraLensDirection.front;
+    _sensorOrientation = next.sensorOrientation;
 
     final ctrl = CameraController(
       next,
@@ -380,7 +383,11 @@ class BodyPoseEngine {
     try {
       final int width = image.width;
       final int height = image.height;
-      final img.Image result = img.Image(width: height, height: width);
+      final int orientation = _sensorOrientation % 360;
+      final bool swapsDimensions = orientation == 90 || orientation == 270;
+      final img.Image result = swapsDimensions
+          ? img.Image(width: height, height: width)
+          : img.Image(width: width, height: height);
 
       final Uint8List yPlane = image.planes[0].bytes;
       final Uint8List uPlane = image.planes[1].bytes;
@@ -404,8 +411,21 @@ class BodyPoseEngine {
               (yVal - 0.344136 * uVal - 0.714136 * vVal).toInt().clamp(0, 255);
           int b = (yVal + 1.772 * uVal).toInt().clamp(0, 255);
 
-          // 順時針轉 90 度:(x, y) -> (y, width - 1 - x)
-          result.setPixelRgb(y, width - 1 - x, r, g, b);
+          switch (orientation) {
+            case 90:
+              result.setPixelRgb(height - 1 - y, x, r, g, b);
+              break;
+            case 180:
+              result.setPixelRgb(width - 1 - x, height - 1 - y, r, g, b);
+              break;
+            case 270:
+              result.setPixelRgb(y, width - 1 - x, r, g, b);
+              break;
+            case 0:
+            default:
+              result.setPixelRgb(x, y, r, g, b);
+              break;
+          }
         }
       }
 

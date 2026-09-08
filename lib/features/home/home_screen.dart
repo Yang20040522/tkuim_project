@@ -38,6 +38,7 @@ import 'dart:async';
 import '../tv_cast/webrtc_service.dart';
 import '../tv_cast/socket_server_service.dart';
 import '../tv_cast/socket_client_service.dart';
+import '../tv_cast/remote_controller_screen.dart';
 import '../rehab/body_training_screen.dart';
 import '../rehab/training_screen.dart'; // 🖥️ 電視投放新增:手部動作顯示端要用
 import '../../actions/standing_knee_raise_action.dart';
@@ -362,13 +363,17 @@ class _HomeScreenState extends State<HomeScreen> {
 
     if (type != 'START_TRAINING') return;
 
+    final actionType = msg['actionType'] as String?;
     final actionName = msg['actionName'] as String?;
     final levelName = msg['difficultyLevel'] as String?;
-    if (actionName == null) return;
+    if (actionType == null && actionName == null) return;
 
     final action = kTrainingActions.firstWhere(
-      (a) => a.name == actionName,
-      orElse: () => kTrainingActions.first,
+      (a) => a.type.name == actionType,
+      orElse: () => kTrainingActions.firstWhere(
+        (a) => a.name == actionName,
+        orElse: () => kTrainingActions.first,
+      ),
     );
     final difficulty = action.difficulties.firstWhere(
       (d) => d.level.name == levelName,
@@ -380,11 +385,11 @@ class _HomeScreenState extends State<HomeScreen> {
       _rtcService.init(isController: false);
 
       Navigator.of(context).push(MaterialPageRoute(
-        builder: (_) => BodyTrainingScreen(
-          action: _createBodyRehabAction(action, difficulty),
-          trainingActionMeta: action,
-          difficultyMeta: difficulty,
-          isDisplay: true, // ← 電視顯示端
+        builder: (_) => RemoteControllerScreen(
+          action: action,
+          difficulty: difficulty,
+          rehabAction: _createBodyRehabAction(action, difficulty),
+          isDisplay: true,
         ),
       ));
     } else {

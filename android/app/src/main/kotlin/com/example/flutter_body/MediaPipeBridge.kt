@@ -19,7 +19,8 @@ import java.util.concurrent.Executors
 class MediaPipeBridge(
     private val context: Context,
     private var useFrontCamera: Boolean,
-    private val previewView: PreviewView?
+    private val previewView: PreviewView?,
+    private val enableImageStream: Boolean = false
 ) {
     var landmarkEventSink: EventChannel.EventSink? = null
 
@@ -33,6 +34,9 @@ class MediaPipeBridge(
     private val SMOOTHING_FACTOR = 0.65f
     private var lastEventSendTime = 0L
     private val reusableMatrix = android.graphics.Matrix()
+
+    private var latestImageBase64: String? = null
+    private var lastImageCaptureTime = 0L
 
     // 收尾旗標:設為 true 後相機幀不再送入 MediaPipe,避免 race condition
     @Volatile
@@ -119,6 +123,48 @@ class MediaPipeBridge(
                             val rotation = imageProxy.imageInfo.rotationDegrees
                             val bitmap = imageProxy.toBitmap()
                             val rotated = rotateBitmap(bitmap, rotation)
+
+                            if (enableImageStream) {
+                                val now = SystemClock.uptimeMillis()
+                                if (now - lastImageCaptureTime > 40) {
+                                    lastImageCaptureTime = now
+
+                                    val imageForStream =
+                                        if (useFrontCamera) {
+                                            val matrix = android.graphics.Matrix()
+                                            matrix.postScale(
+                                                -1f,
+                                                1f,
+                                                rotated.width / 2f,
+                                                rotated.height / 2f
+                                            )
+                                            android.graphics.Bitmap.createBitmap(
+                                                rotated,
+                                                0,
+                                                0,
+                                                rotated.width,
+                                                rotated.height,
+                                                matrix,
+                                                true
+                                            )
+                                        } else {
+                                            rotated
+                                        }
+
+                                    val outputStream = java.io.ByteArrayOutputStream()
+                                    imageForStream.compress(
+                                        android.graphics.Bitmap.CompressFormat.JPEG,
+                                        40,
+                                        outputStream
+                                    )
+                                    val jpegBytes = outputStream.toByteArray()
+                                    latestImageBase64 = android.util.Base64.encodeToString(
+                                        jpegBytes,
+                                        android.util.Base64.NO_WRAP
+                                    )
+                                }
+                            }
+
                             val mpImage = BitmapImageBuilder(rotated).build()
                             // 再次檢查 + 包 try-catch,雙重保險
                             if (!isClosing) {
@@ -175,7 +221,8 @@ class MediaPipeBridge(
                     if (!isClosing) {
                         landmarkEventSink?.success(mapOf(
                             "landmarks" to emptyList<Map<String, Float>>(),
-                            "handDetected" to false
+                            "handDetected" to false,
+                            "imageBase64" to latestImageBase64
                         ))
                     }
                 }
@@ -215,7 +262,8 @@ class MediaPipeBridge(
                 if (!isClosing) {
                     landmarkEventSink?.success(mapOf(
                         "landmarks" to landmarkList,
-                        "handDetected" to true
+                        "handDetected" to true,
+                        "imageBase64" to latestImageBase64
                     ))
                 }
             }

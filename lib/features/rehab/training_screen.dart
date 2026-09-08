@@ -74,6 +74,7 @@
 
 import 'dart:async';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
@@ -119,8 +120,6 @@ import 'package:permission_handler/permission_handler.dart';
 import '../training/training_preview_screen.dart';
 import '../analysis/widgets/template_training_mode_dialog.dart';
 
-
-
 class TrainingScreen extends StatefulWidget {
   final TrainingAction action;
   final DifficultyOption difficulty;
@@ -143,7 +142,6 @@ enum _PauseChoice { resume, end }
 
 class _TrainingScreenState extends State<TrainingScreen>
     with TickerProviderStateMixin {
-
   late RehabSessionController _controller;
 
   // 🚀 樹莓派新增:是否使用外接來源、記住上次輸入的 IP
@@ -161,7 +159,8 @@ class _TrainingScreenState extends State<TrainingScreen>
 
   bool _showingLevelUpOverlay = false; // 🆕
   bool _levelUpJustHandled = false; // 🆕 使用者剛按過按鈕,忽略接下來殘留的pending訊號
-  final TextEditingController _levelUpRepsController = TextEditingController(); // 🆕
+  final TextEditingController _levelUpRepsController =
+      TextEditingController(); // 🆕
 
   // 停止錄影後、使用者尚未決定去留前的暫存路徑
   String? _pendingVideoPath;
@@ -222,8 +221,22 @@ class _TrainingScreenState extends State<TrainingScreen>
       _initRtc();
       if (_clientService.isConnected) {
         _socketSub = _clientService.messages.listen(_handleRemoteCommand);
+
+        _clientService.binaryMessages.listen((data) {
+          if (mounted && widget.isDisplay) {
+            _remoteState.value =
+                _remoteState.value.copyWith(imageBytes: data);
+          }
+        });
       } else if (_serverService.isClientConnected) {
         _socketSub = _serverService.messages.listen(_handleRemoteCommand);
+
+        _serverService.binaryMessages.listen((data) {
+          if (mounted && widget.isDisplay) {
+            _remoteState.value =
+                _remoteState.value.copyWith(imageBytes: data);
+          }
+        });
       }
     }
 
@@ -231,6 +244,7 @@ class _TrainingScreenState extends State<TrainingScreen>
     if (!widget.isDisplay) {
       final startMsg = {
         'type': 'START_TRAINING',
+        'actionType': widget.action.type.name,
         'actionName': widget.action.name,
         'difficultyLevel': widget.difficulty.level.name,
       };
@@ -288,13 +302,23 @@ class _TrainingScreenState extends State<TrainingScreen>
         if (_clientService.isConnected) {
           _clientService.sendCommand(poseMsg);
           _clientService.sendCommand(statusMsg);
+
+          if (state.imageBytes != null) {
+            _clientService.sendBinary(state.imageBytes!);
+          }
         } else {
           _serverService.sendMessage(poseMsg);
           _serverService.sendMessage(statusMsg);
+
+          if (state.imageBytes != null) {
+            _serverService.sendBinary(state.imageBytes!);
+          }
         }
       }
 
-      if (state.pendingLevelUp && !_showingLevelUpOverlay && !_levelUpJustHandled) {
+      if (state.pendingLevelUp &&
+          !_showingLevelUpOverlay &&
+          !_levelUpJustHandled) {
         if (widget.autoLevelUp) {
           _levelUpJustHandled = true; // 🆕 鎖住,避免同一次達標連續觸發好幾次confirmLevelUp
           _saveCurrentLevelRecord(state); // 🆕 升級前,先把這一階累積到的次數存成一筆獨立紀錄
@@ -328,9 +352,10 @@ class _TrainingScreenState extends State<TrainingScreen>
   // 跟訓練時畫面顯示的次數對不上。
   void _saveCurrentLevelRecord(RehabSessionState state) {
     final levelIdx = state.currentLevel - 1;
-    final levelDifficulty = (levelIdx >= 0 && levelIdx < widget.action.difficulties.length)
-        ? widget.action.difficulties[levelIdx]
-        : widget.difficulty;
+    final levelDifficulty =
+        (levelIdx >= 0 && levelIdx < widget.action.difficulties.length)
+            ? widget.action.difficulties[levelIdx]
+            : widget.difficulty;
 
     HistoryService().saveRecord(TrainingRecord(
       timestamp: DateTime.now().toString().substring(0, 19),
@@ -469,7 +494,8 @@ class _TrainingScreenState extends State<TrainingScreen>
       barrierDismissible: false,
       builder: (dialogContext) {
         return AlertDialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
           title: const Text('需要相機權限'),
           content: const Text('手部訓練需要使用相機才能進行動作偵測,\n請到系統設定中開啟相機權限。'),
           actions: [
@@ -532,9 +558,10 @@ class _TrainingScreenState extends State<TrainingScreen>
 
     // ✅ 用 currentLevel 去查出真正對應的 DifficultyOption
     final levelIdx = state.currentLevel - 1;
-    final displayDifficulty = (levelIdx >= 0 && levelIdx < widget.action.difficulties.length)
-        ? widget.action.difficulties[levelIdx]
-        : widget.difficulty;
+    final displayDifficulty =
+        (levelIdx >= 0 && levelIdx < widget.action.difficulties.length)
+            ? widget.action.difficulties[levelIdx]
+            : widget.difficulty;
 
     final result = await showDialog<_CompletionResult>(
       context: context,
@@ -545,15 +572,14 @@ class _TrainingScreenState extends State<TrainingScreen>
         mistakeLogs: state.mistakeLogs,
         currentAction: widget.action,
         //currentDifficulty: widget.difficulty,
-        currentDifficulty: displayDifficulty,   // ✅ 改這行(原本是 widget.difficulty)
+        currentDifficulty: displayDifficulty, // ✅ 改這行(原本是 widget.difficulty)
         hasVideo: _pendingVideoPath != null,
         onVideoDecision: _handleVideoDecision,
-        onRetry: () =>
-            Navigator.of(dialogCtx).pop(_CompletionResult.retry()),
-        onHome: () =>
-            Navigator.of(dialogCtx).pop(_CompletionResult.home()),
+        onRetry: () => Navigator.of(dialogCtx).pop(_CompletionResult.retry()),
+        onHome: () => Navigator.of(dialogCtx).pop(_CompletionResult.home()),
         onStartNew: (a, d, autoLvl) => // 🆕 3 參數,對齊 completion_dialog.dart
-            Navigator.of(dialogCtx).pop(_CompletionResult.startNew(a, d, autoLvl)),
+            Navigator.of(dialogCtx)
+                .pop(_CompletionResult.startNew(a, d, autoLvl)),
       ),
     );
 
@@ -598,7 +624,8 @@ class _TrainingScreenState extends State<TrainingScreen>
         Navigator.of(context).pop();
         break;
       case _CompletionKind.startNew:
-        _navigateToAction(result.action!, result.difficulty!, result.autoLevelUp!); // 🆕
+        _navigateToAction(
+            result.action!, result.difficulty!, result.autoLevelUp!); // 🆕
         break;
     }
   }
@@ -608,7 +635,8 @@ class _TrainingScreenState extends State<TrainingScreen>
     _saveCurrentLevelRecord(_controller.currentState); // 🆕 確認升級前,先把這一階存成一筆獨立紀錄
     final customReps = int.tryParse(_levelUpRepsController.text);
     _controller.confirmLevelUp(
-      customTargetReps: (customReps != null && customReps > 0) ? customReps : null,
+      customTargetReps:
+          (customReps != null && customReps > 0) ? customReps : null,
     );
     setState(() => _showingLevelUpOverlay = false);
 
@@ -666,10 +694,10 @@ class _TrainingScreenState extends State<TrainingScreen>
 
     // ✅ 新增:算出真正要顯示的難度
     final levelIdx = state.currentLevel - 1;
-    final displayDifficulty = (levelIdx >= 0 && levelIdx < widget.action.difficulties.length)
-        ? widget.action.difficulties[levelIdx]
-        : widget.difficulty;
-
+    final displayDifficulty =
+        (levelIdx >= 0 && levelIdx < widget.action.difficulties.length)
+            ? widget.action.difficulties[levelIdx]
+            : widget.difficulty;
 
     final result = await showDialog<_CompletionResult>(
       context: context,
@@ -681,15 +709,14 @@ class _TrainingScreenState extends State<TrainingScreen>
         mistakeLogs: state.mistakeLogs,
         currentAction: widget.action,
         //currentDifficulty: widget.difficulty,
-        currentDifficulty: displayDifficulty,   // ✅ 改這行
+        currentDifficulty: displayDifficulty, // ✅ 改這行
         hasVideo: _pendingVideoPath != null,
         onVideoDecision: _handleVideoDecision,
-        onRetry: () =>
-            Navigator.of(dialogCtx).pop(_CompletionResult.retry()),
-        onHome: () =>
-            Navigator.of(dialogCtx).pop(_CompletionResult.home()),
+        onRetry: () => Navigator.of(dialogCtx).pop(_CompletionResult.retry()),
+        onHome: () => Navigator.of(dialogCtx).pop(_CompletionResult.home()),
         onStartNew: (a, d, autoLvl) => // 🆕 3 參數,對齊 completion_dialog.dart
-            Navigator.of(dialogCtx).pop(_CompletionResult.startNew(a, d, autoLvl)),
+            Navigator.of(dialogCtx)
+                .pop(_CompletionResult.startNew(a, d, autoLvl)),
       ),
     );
 
@@ -732,7 +759,8 @@ class _TrainingScreenState extends State<TrainingScreen>
         Navigator.of(context).pop();
         break;
       case _CompletionKind.startNew:
-        _navigateToAction(result.action!, result.difficulty!, result.autoLevelUp!); // 🆕
+        _navigateToAction(
+            result.action!, result.difficulty!, result.autoLevelUp!); // 🆕
         break;
     }
   }
@@ -748,8 +776,8 @@ class _TrainingScreenState extends State<TrainingScreen>
 
   /// 根據動作類型導航到對應畫面
   /// 🆕 加上 autoLevelUp 參數,把使用者換動作時選的升級模式一併帶過去
-  Future<void> _navigateToAction(
-      TrainingAction action, DifficultyOption difficulty, bool autoLevelUp) async {
+  Future<void> _navigateToAction(TrainingAction action,
+      DifficultyOption difficulty, bool autoLevelUp) async {
     await WidgetsBinding.instance.endOfFrame;
     if (!mounted) return;
 
@@ -761,13 +789,14 @@ class _TrainingScreenState extends State<TrainingScreen>
 
     await _controller.disposeAsync();
     if (!mounted) return;
-    
+
     Widget screen;
     final diff = _mapDifficulty(difficulty.level);
     switch (action.type) {
       case ActionType.wipeBody:
         screen = BodyTrainingScreen(
-          action: StandingKneeRaiseAction(difficulty: diff, targetCount: difficulty.targetReps),
+          action: StandingKneeRaiseAction(
+              difficulty: diff, targetCount: difficulty.targetReps),
           trainingActionMeta: action,
           difficultyMeta: difficulty,
           selectedTemplate: templateSelection.selectedBodyTemplate,
@@ -775,42 +804,48 @@ class _TrainingScreenState extends State<TrainingScreen>
         );
       case ActionType.drawCircle:
         screen = BodyTrainingScreen(
-          action: DrawCircleAction(difficulty: diff, targetCount: difficulty.targetReps),
+          action: DrawCircleAction(
+              difficulty: diff, targetCount: difficulty.targetReps),
           trainingActionMeta: action,
           difficultyMeta: difficulty,
           autoLevelUp: autoLevelUp, // 🆕
         );
       case ActionType.reach:
         screen = BodyTrainingScreen(
-          action: ReachAction(difficulty: diff, targetCount: difficulty.targetReps),
+          action:
+              ReachAction(difficulty: diff, targetCount: difficulty.targetReps),
           trainingActionMeta: action,
           difficultyMeta: difficulty,
           autoLevelUp: autoLevelUp, // 🆕
         );
       case ActionType.raiseBothArms:
         screen = BodyTrainingScreen(
-          action: RaiseBothArmsAction(difficulty: diff, targetCount: difficulty.targetReps),
+          action: RaiseBothArmsAction(
+              difficulty: diff, targetCount: difficulty.targetReps),
           trainingActionMeta: action,
           difficultyMeta: difficulty,
           autoLevelUp: autoLevelUp, // 🆕
         );
       case ActionType.elbowForward:
         screen = BodyTrainingScreen(
-          action: ElbowForwardAction(difficulty: diff, targetCount: difficulty.targetReps),
+          action: ElbowForwardAction(
+              difficulty: diff, targetCount: difficulty.targetReps),
           trainingActionMeta: action,
           difficultyMeta: difficulty,
           autoLevelUp: autoLevelUp, // 🆕
         );
       case ActionType.sitToStand: // 🆕 補上,原本漏掉
         screen = BodyTrainingScreen(
-          action: SitToStandAction(difficulty: diff, targetCount: difficulty.targetReps),
+          action: SitToStandAction(
+              difficulty: diff, targetCount: difficulty.targetReps),
           trainingActionMeta: action,
           difficultyMeta: difficulty,
           autoLevelUp: autoLevelUp,
         );
       case ActionType.lateralStep: // 🆕 補上,原本漏掉
         screen = BodyTrainingScreen(
-          action: LateralStepAction(difficulty: diff, targetCount: difficulty.targetReps),
+          action: LateralStepAction(
+              difficulty: diff, targetCount: difficulty.targetReps),
           trainingActionMeta: action,
           difficultyMeta: difficulty,
           autoLevelUp: autoLevelUp,
@@ -822,7 +857,7 @@ class _TrainingScreenState extends State<TrainingScreen>
           autoLevelUp: autoLevelUp, // 🆕
         );
     }
-    
+
     if (!mounted) return;
 
     // 有 3D 示範的動作 → 先進示範頁;沒有的 → 直接進訓練
@@ -874,131 +909,140 @@ class _TrainingScreenState extends State<TrainingScreen>
     return Stack(
       children: [
         Scaffold(
-      backgroundColor: const Color(0xFFFFFFFF),
-      body: SafeArea(
-        child: Column(
-          children: [
-            _TrainingTopBarWithPi(
-              actionName: widget.action.name,
-              difficultyDesc: s.currentLevelLabel.isNotEmpty
-                  ? s.currentLevelLabel
-                  : widget.difficulty.description,
-              onBack: () => Navigator.of(context).pop(),
-              onFlipCamera: _flipCamera,
-              isExternalCamera: _isExternalCamera,
-              onTogglePi: _isExternalCamera
-                  ? _disableExternalCamera
-                  : _enableExternalCamera,
-            ),
-            AspectRatio(
-              aspectRatio: 3 / 4,
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(24),
-                  child: Stack(
-                    fit: StackFit.expand,
-                    children: [
-                      // 🚀 樹莓派新增:外接來源時顯示 Pi 傳來的 JPEG 畫面
-                      if (_isExternalCamera)
-                        _PiHandVideoView(controller: _controller)
-                      else if (_hasCameraPermission == true)
-                        PlatformViewLink(
-                          viewType: 'com.rehabassist/camera_preview',
-                          surfaceFactory: (context, controller) {
-                            return AndroidViewSurface(
-                              controller: controller as AndroidViewController,
-                              gestureRecognizers: const {},
-                              hitTestBehavior: PlatformViewHitTestBehavior.opaque,
-                            );
-                          },
-                          onCreatePlatformView: (params) {
-                            final ctrl = PlatformViewsService.initExpensiveAndroidView(
-                              id: params.id,
+          backgroundColor: const Color(0xFFFFFFFF),
+          body: SafeArea(
+            child: Column(
+              children: [
+                _TrainingTopBarWithPi(
+                  actionName: widget.action.name,
+                  difficultyDesc: s.currentLevelLabel.isNotEmpty
+                      ? s.currentLevelLabel
+                      : widget.difficulty.description,
+                  onBack: () => Navigator.of(context).pop(),
+                  onFlipCamera: _flipCamera,
+                  isExternalCamera: _isExternalCamera,
+                  onTogglePi: _isExternalCamera
+                      ? _disableExternalCamera
+                      : _enableExternalCamera,
+                ),
+                AspectRatio(
+                  aspectRatio: 3 / 4,
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(24),
+                      child: Stack(
+                        fit: StackFit.expand,
+                        children: [
+                          // 🚀 樹莓派新增:外接來源時顯示 Pi 傳來的 JPEG 畫面
+                          if (_isExternalCamera)
+                            _PiHandVideoView(controller: _controller)
+                          else if (_hasCameraPermission == true)
+                            PlatformViewLink(
                               viewType: 'com.rehabassist/camera_preview',
-                              layoutDirection: TextDirection.ltr,
-                              onFocus: () => params.onFocusChanged(true),
-                            );
-                            ctrl.addOnPlatformViewCreatedListener(params.onPlatformViewCreated);
-                            ctrl.addOnPlatformViewCreatedListener((_) => _onPlatformViewCreated());
-                            ctrl.create();
-                            return ctrl;
-                          },
-                        )
-                      else if (_hasCameraPermission == false)
-                        Container(
-                          color: Colors.black,
-                          child: const Center(
-                            child: Text(
-                              '需要相機權限才能繼續\n請點選上方對話框「前往設定」開啟',
-                              textAlign: TextAlign.center,
-                              style: TextStyle(color: Colors.white, fontSize: 14),
+                              surfaceFactory: (context, controller) {
+                                return AndroidViewSurface(
+                                  controller:
+                                      controller as AndroidViewController,
+                                  gestureRecognizers: const {},
+                                  hitTestBehavior:
+                                      PlatformViewHitTestBehavior.opaque,
+                                );
+                              },
+                              onCreatePlatformView: (params) {
+                                final ctrl = PlatformViewsService
+                                    .initExpensiveAndroidView(
+                                  id: params.id,
+                                  viewType: 'com.rehabassist/camera_preview',
+                                  layoutDirection: TextDirection.ltr,
+                                  onFocus: () => params.onFocusChanged(true),
+                                );
+                                ctrl.addOnPlatformViewCreatedListener(
+                                    params.onPlatformViewCreated);
+                                ctrl.addOnPlatformViewCreatedListener(
+                                    (_) => _onPlatformViewCreated());
+                                ctrl.create();
+                                return ctrl;
+                              },
+                            )
+                          else if (_hasCameraPermission == false)
+                            Container(
+                              color: Colors.black,
+                              child: const Center(
+                                child: Text(
+                                  '需要相機權限才能繼續\n請點選上方對話框「前往設定」開啟',
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(
+                                      color: Colors.white, fontSize: 14),
+                                ),
+                              ),
+                            )
+                          else
+                            const Center(
+                                child: CircularProgressIndicator()), // 權限檢查中
+                          if (s.handLandmarks.isNotEmpty)
+                            HandOverlayWidget(
+                              landmarks: s.handLandmarks,
+                              isMirrored: false,
+                              showStickGuide: _showStickGuide && !s.isComplete,
+                              showPinchGuide: _showPinchGuide && !s.isComplete,
+                              progress: s.progress,
+                              speedState: s.speedState,
+                              // 🚀 新增:樹莓派模式下傳入原始 JPEG 尺寸,
+                              // 讓骨架點位跟 Image.memory(fit: BoxFit.cover)
+                              // 的裁切/縮放對齊。手機鏡頭維持 null 不受影響。
+                              sourceSize: _currentPiSourceSize(),
                             ),
-                          ),
-                        )
-                      else
-                        const Center(child: CircularProgressIndicator()), // 權限檢查中
-                      if (s.handLandmarks.isNotEmpty)
-                        HandOverlayWidget(
-                          landmarks: s.handLandmarks,
-                          isMirrored: false,
-                          showStickGuide: _showStickGuide && !s.isComplete,
-                          showPinchGuide: _showPinchGuide && !s.isComplete,
-                          progress: s.progress,
-                          speedState: s.speedState,
-                          // 🚀 新增:樹莓派模式下傳入原始 JPEG 尺寸,
-                          // 讓骨架點位跟 Image.memory(fit: BoxFit.cover)
-                          // 的裁切/縮放對齊。手機鏡頭維持 null 不受影響。
-                          sourceSize: _currentPiSourceSize(),
-                        ),
-                      if (!_isInitialized) const LoadingOverlay(),
-                      if (_isInitialized &&
-                          !s.handDetected &&
-                          s.handLandmarks.isEmpty)
-                        NoHandOverlay(pulseAnim: _pulseAnim),
-                      if (s.isCountingDown && !s.countdownDone)
-                        CountdownOverlay(seconds: s.countdownSeconds),
-                      if (_isPaused)
-                        Container(
-                          color: Colors.black.withOpacity(0.4),
-                          child: const Center(
-                            child: Text(
-                              '⏸ 已暫停',
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontSize: 20,
-                                fontWeight: FontWeight.w700,
-                                shadows: [Shadow(blurRadius: 8, color: Colors.black)],
+                          if (!_isInitialized) const LoadingOverlay(),
+                          if (_isInitialized &&
+                              !s.handDetected &&
+                              s.handLandmarks.isEmpty)
+                            NoHandOverlay(pulseAnim: _pulseAnim),
+                          if (s.isCountingDown && !s.countdownDone)
+                            CountdownOverlay(seconds: s.countdownSeconds),
+                          if (_isPaused)
+                            Container(
+                              color: Colors.black.withOpacity(0.4),
+                              child: const Center(
+                                child: Text(
+                                  '⏸ 已暫停',
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 20,
+                                    fontWeight: FontWeight.w700,
+                                    shadows: [
+                                      Shadow(blurRadius: 8, color: Colors.black)
+                                    ],
+                                  ),
+                                ),
                               ),
                             ),
-                          ),
-                        ),
-                    ],
+                        ],
+                      ),
+                    ),
                   ),
                 ),
-              ),
+                CoachCard(
+                  feedback: s.feedback,
+                  instruction: s.instruction,
+                ),
+                SlideTransition(
+                  position: _slideAnim,
+                  child: TrainingStatsPanel(
+                    isCountingDown: s.isCountingDown,
+                    countdownDone: s.countdownDone,
+                    countdownSeconds: s.countdownSeconds,
+                    actionType: widget.action.type,
+                    repCount: s.repCount,
+                    targetReps: s.targetReps, // ← 新增
+                    accuracy: s.accuracy,
+                    onStopPressed: _handleStopButtonTap,
+                  ),
+                ),
+              ],
             ),
-            CoachCard(
-              feedback: s.feedback,
-              instruction: s.instruction,
-            ),
-            SlideTransition(
-              position: _slideAnim,
-              child: TrainingStatsPanel(
-                isCountingDown: s.isCountingDown,
-                countdownDone: s.countdownDone,
-                countdownSeconds: s.countdownSeconds,
-                actionType: widget.action.type,
-                repCount: s.repCount,
-                targetReps: s.targetReps,   // ← 新增
-                accuracy: s.accuracy,
-                onStopPressed: _handleStopButtonTap,
-              ),
-            ),
-          ],
+          ),
         ),
-      ),
-    ),
         if (_showingLevelUpOverlay) _buildLevelUpOverlay(), // 🆕
       ],
     );
@@ -1037,7 +1081,8 @@ class _TrainingScreenState extends State<TrainingScreen>
                 const SizedBox(height: 6),
                 Text(
                   '要挑戰下一階「${s.pendingNextLevelLabel}」嗎？',
-                  style: const TextStyle(color: Color(0xFF6B7280), fontSize: 13),
+                  style:
+                      const TextStyle(color: Color(0xFF6B7280), fontSize: 13),
                   textAlign: TextAlign.center,
                 ),
                 const SizedBox(height: 16),
@@ -1064,20 +1109,25 @@ class _TrainingScreenState extends State<TrainingScreen>
                             color: Color(0xFF1A1D2E)),
                         decoration: InputDecoration(
                           isDense: true,
-                          contentPadding: const EdgeInsets.symmetric(vertical: 8),
+                          contentPadding:
+                              const EdgeInsets.symmetric(vertical: 8),
                           border: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(8),
-                            borderSide: const BorderSide(color: Color(0xFFDDE0F0)),
+                            borderSide:
+                                const BorderSide(color: Color(0xFFDDE0F0)),
                           ),
                           focusedBorder: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(8),
-                            borderSide: const BorderSide(color: Color(0xFF4A65FF)),
+                            borderSide:
+                                const BorderSide(color: Color(0xFF4A65FF)),
                           ),
                         ),
                       ),
                     ),
                     const SizedBox(width: 4),
-                    const Text('下', style: TextStyle(color: Color(0xFF6B7280), fontSize: 13)),
+                    const Text('下',
+                        style:
+                            TextStyle(color: Color(0xFF6B7280), fontSize: 13)),
                   ],
                 ),
                 const SizedBox(height: 22),
@@ -1088,11 +1138,15 @@ class _TrainingScreenState extends State<TrainingScreen>
                     onPressed: _confirmLevelUp,
                     style: ElevatedButton.styleFrom(
                       backgroundColor: const Color(0xFF4A65FF),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14)),
                     ),
                     child: const Text(
                       '💪 挑戰下一階',
-                      style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w700),
+                      style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 16,
+                          fontWeight: FontWeight.w700),
                     ),
                   ),
                 ),
@@ -1104,11 +1158,15 @@ class _TrainingScreenState extends State<TrainingScreen>
                     onPressed: _declineLevelUp,
                     style: OutlinedButton.styleFrom(
                       side: const BorderSide(color: Color(0xFFDDE0F0)),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14)),
                     ),
                     child: const Text(
                       '結束訓練',
-                      style: TextStyle(color: Color(0xFF374151), fontSize: 15, fontWeight: FontWeight.w600),
+                      style: TextStyle(
+                          color: Color(0xFF374151),
+                          fontSize: 15,
+                          fontWeight: FontWeight.w600),
                     ),
                   ),
                 ),
@@ -1152,8 +1210,8 @@ class _TrainingScreenState extends State<TrainingScreen>
                         decoration: BoxDecoration(
                           color: Colors.green.withOpacity(0.15),
                           borderRadius: BorderRadius.circular(8),
-                          border: Border.all(
-                              color: Colors.green.withOpacity(0.4)),
+                          border:
+                              Border.all(color: Colors.green.withOpacity(0.4)),
                         ),
                         child: const Row(
                           mainAxisSize: MainAxisSize.min,
@@ -1184,9 +1242,17 @@ class _TrainingScreenState extends State<TrainingScreen>
                         child: Stack(
                           fit: StackFit.expand,
                           children: [
-                            if (remote.handLandmarks.isNotEmpty)
+                            if (remote.imageBytes != null)
+                              Image.memory(
+                                remote.imageBytes!,
+                                gaplessPlayback: true,
+                                fit: BoxFit.cover,
+                              )
+                            else if (remote.handLandmarks.isNotEmpty)
                               HandOverlayWidget(
                                 landmarks: remote.handLandmarks,
+                                showStickGuide: _showStickGuide,
+                                showPinchGuide: _showPinchGuide,
                                 progress: remote.progress,
                                 speedState: remote.speedState,
                               )
@@ -1195,6 +1261,17 @@ class _TrainingScreenState extends State<TrainingScreen>
                                 child: CircularProgressIndicator(
                                     color: Color(0xFF4A65FF)),
                               ),
+
+                            if (remote.imageBytes != null &&
+                                remote.handLandmarks.isNotEmpty)
+                              HandOverlayWidget(
+                                landmarks: remote.handLandmarks,
+                                showStickGuide: _showStickGuide,
+                                showPinchGuide: _showPinchGuide,
+                                progress: remote.progress,
+                                speedState: remote.speedState,
+                              ),
+
                             if (remote.isCountingDown)
                               CountdownOverlay(
                                   seconds: remote.countdownSeconds),
@@ -1231,6 +1308,7 @@ class _TrainingScreenState extends State<TrainingScreen>
 // 🖥️ 電視投放新增:顯示端用來裝遠端手部狀態的容器
 class _RemoteHandState {
   final List<Landmark> handLandmarks;
+  final Uint8List? imageBytes;
   final String feedback;
   final String instruction;
   final int repCount;
@@ -1242,6 +1320,7 @@ class _RemoteHandState {
 
   const _RemoteHandState({
     this.handLandmarks = const [],
+    this.imageBytes,
     this.feedback = '等待連線中...',
     this.instruction = '',
     this.repCount = 0,
@@ -1254,6 +1333,7 @@ class _RemoteHandState {
 
   _RemoteHandState copyWith({
     List<Landmark>? handLandmarks,
+    Uint8List? imageBytes,
     String? feedback,
     String? instruction,
     int? repCount,
@@ -1265,6 +1345,7 @@ class _RemoteHandState {
   }) {
     return _RemoteHandState(
       handLandmarks: handLandmarks ?? this.handLandmarks,
+      imageBytes: imageBytes ?? this.imageBytes,
       feedback: feedback ?? this.feedback,
       instruction: instruction ?? this.instruction,
       repCount: repCount ?? this.repCount,
@@ -1378,8 +1459,8 @@ class _TrainingTopBarWithPi extends StatelessWidget {
                 ),
                 Text(
                   difficultyDesc,
-                  style: const TextStyle(
-                      color: Color(0xFF6B7280), fontSize: 12),
+                  style:
+                      const TextStyle(color: Color(0xFF6B7280), fontSize: 12),
                 ),
               ],
             ),
@@ -1400,7 +1481,8 @@ class _TrainingTopBarWithPi extends StatelessWidget {
               ),
               child: Icon(
                 Icons.videocam,
-                color: isExternalCamera ? Colors.white : const Color(0xFF374151),
+                color:
+                    isExternalCamera ? Colors.white : const Color(0xFF374151),
                 size: 20,
               ),
             ),
@@ -1515,7 +1597,8 @@ class _CompletionResult {
   final TrainingAction? action;
   final DifficultyOption? difficulty;
   final bool? autoLevelUp; // 🆕
-  const _CompletionResult._(this.kind, this.action, this.difficulty, this.autoLevelUp);
+  const _CompletionResult._(
+      this.kind, this.action, this.difficulty, this.autoLevelUp);
   factory _CompletionResult.retry() =>
       const _CompletionResult._(_CompletionKind.retry, null, null, null);
   factory _CompletionResult.home() =>

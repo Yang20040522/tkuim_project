@@ -48,11 +48,13 @@ class PoseModelConfig {
   final String actionType;
   final int difficulty;
   final bool useFrontCamera;
+  final bool enableImageStream;
 
   const PoseModelConfig({
     required this.actionType,
     required this.difficulty,
     this.useFrontCamera = false,
+    this.enableImageStream = false,
   });
 }
 

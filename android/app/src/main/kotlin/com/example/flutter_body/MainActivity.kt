@@ -76,10 +76,12 @@ class MainActivity : FlutterActivity() {
                 when (call.method) {
                     "startDetection" -> {
                         val useFront = call.argument<Boolean>("useFrontCamera") ?: false
+                        val enableImageStream = call.argument<Boolean>("enableImageStream") ?: false
                         mediaPipeBridge = MediaPipeBridge(
                             context = this,
                             useFrontCamera = useFront,
-                            previewView = cameraPreviewView?.previewView
+                            previewView = cameraPreviewView?.previewView,
+                            enableImageStream = enableImageStream
                         )
                         mediaPipeBridge?.landmarkEventSink = landmarkEventSink
                         mediaPipeBridge?.start()
