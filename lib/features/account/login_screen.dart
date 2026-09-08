@@ -1,3 +1,5 @@
+import '../../core/platform/app_platform.dart';
+import '../tv/tv_login_form.dart';
 // lib/features/account/login_screen.dart
 import 'package:flutter/material.dart';
 
@@ -125,6 +127,13 @@ class _LoginScreenState extends State<LoginScreen> {
 
   @override
   Widget build(BuildContext context) {
+    if (AppPlatform.current.isTv) {
+      return TvLoginForm(
+      formKey: _formKey, identifier: _emailController, password: _passwordController,
+      validateIdentifier: _validateIdentifier, validatePassword: _validatePassword,
+      login: _handleLogin, loading: _isLoading,
+    );
+    }
     return Scaffold(
       backgroundColor: const Color(0xFFF5F6FA),
       body: SafeArea(

@@ -1,0 +1,20 @@
+{
+  "pubGetExit": 0,
+  "analyzeExit": 1,
+  "buildExit": 0,
+  "testExit": 0,
+  "cleanExit": 0,
+  "testsPassed": 394,
+  "tvTestsAdded": 16,
+  "analyzerErrors": 0,
+  "analyzerExistingWarnings": 1,
+  "analyzerExistingInfos": 44,
+  "analyzerNewFindings": 0,
+  "apkPath": "E:\\tkuim_project-tv\\build\\app\\outputs\\flutter-apk\\app-debug.apk",
+  "apkBytes": 593409913,
+  "apkSha256": "553e37bdf11491284ba1e6fc7e9cb98ddcd2aa4f4d1f63a84428eae0eb659307",
+  "realDevice": "NEEDS REAL DEVICE VALIDATION",
+  "raspberryPiEndToEnd": "NEEDS REAL HARDWARE VALIDATION",
+  "apkOptionalHardwareVerified": true,
+  "apkBothLaunchersVerified": true
+}

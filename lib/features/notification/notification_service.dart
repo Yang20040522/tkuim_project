@@ -1,3 +1,4 @@
+import '../../core/platform/app_platform.dart';
 // lib/features/notification/notification_service.dart
 //
 // 通知服務 — 管理 App 內通知列表 + 本地排程推播 + 全域開關
@@ -26,7 +27,7 @@ class NotificationService {
 
   // ═══ 初始化 ═════════════════════════════════════════════
   Future<void> init() async {
-    if (_inited) return;
+    if (!AppPlatform.current.supportsNotifications || _inited) return;
     tz.initializeTimeZones();
 
     const androidInit = AndroidInitializationSettings('@mipmap/ic_launcher');
@@ -41,11 +42,13 @@ class NotificationService {
   // ═══ 全域通知開關 ═══════════════════════════════════════
   // 預設關,使用者要自己開
   Future<bool> isEnabled() async {
+    if (!AppPlatform.current.supportsNotifications) return false;
     final prefs = await SharedPreferences.getInstance();
     return prefs.getBool(_enabledKey) ?? false;
   }
 
   Future<void> setEnabled(bool value) async {
+    if (!AppPlatform.current.supportsNotifications) return;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_enabledKey, value);
 

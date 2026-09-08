@@ -27,6 +27,12 @@ import 'package:web_socket_channel/web_socket_channel.dart';
 
 import 'body_pose_engine.dart';
 
+enum PiConnectionStatus {
+  disconnected('未連線'), connecting('連線中'), connected('已連線'), failed('連線失敗，請重新連線');
+  final String label;
+  const PiConnectionStatus(this.label);
+}
+
 class PiCameraSource {
   final String ip;
   final int port;
@@ -36,6 +42,15 @@ class PiCameraSource {
   StreamSubscription? _sub;
   bool _processing = false;
   bool _disposed = false;
+  bool _running = false;
+  Uint8List? _latestPending;
+  final ValueNotifier<PiConnectionStatus> status = ValueNotifier(PiConnectionStatus.disconnected);
+
+  void _setStatus(PiConnectionStatus value) {
+    if (_disposed) return;
+    status.value = value;
+    connected.value = value == PiConnectionStatus.connected;
+  }
 
   final ValueNotifier<bool> connected = ValueNotifier(false);
   final ValueNotifier<Uint8List?> latestJpeg = ValueNotifier(null);
@@ -49,14 +64,16 @@ class PiCameraSource {
   });
 
   Future<void> start() async {
-    if (_disposed) return;
+    if (_disposed || _running) return;
+    _running = true;
+    _setStatus(PiConnectionStatus.connecting);
 
     final uri = Uri.parse('ws://$ip:$port');
     try {
       _channel = WebSocketChannel.connect(uri);
     } catch (e) {
       debugPrint('PiCameraSource 連線失敗: $e');
-      connected.value = false;
+      _setStatus(PiConnectionStatus.failed);
       return;
     }
 
@@ -64,30 +81,41 @@ class PiCameraSource {
       _onData,
       onError: (e) {
         debugPrint('PiCameraSource stream 錯誤: $e');
-        connected.value = false;
+        _setStatus(PiConnectionStatus.failed);
       },
       onDone: () {
-        debugPrint('PiCameraSource 連線已關閉');
-        connected.value = false;
+        if (_running && status.value != PiConnectionStatus.failed) _setStatus(PiConnectionStatus.disconnected);
       },
       cancelOnError: false,
     );
 
-    connected.value = true;
+    try {
+      await _channel!.ready.timeout(const Duration(seconds: 8));
+      if (_running) _setStatus(PiConnectionStatus.connected);
+    } catch (error) {
+      debugPrint('Pi WebSocket handshake failed: $error');
+      _setStatus(PiConnectionStatus.failed);
+      await _sub?.cancel().timeout(const Duration(seconds: 1), onTimeout: () {});
+      await _channel?.sink.close().timeout(const Duration(seconds: 1), onTimeout: () {});
+      _running = false;
+    }
   }
 
   void _onData(dynamic data) {
-    if (_disposed) return;
+    if (_disposed || !_running) return;
     if (data is! Uint8List) return;
 
-    // 🚀 修正:推論忙碌時「直接丟棄這一幀」,不更新 latestJpeg。
+    // Keep at most one pending JPEG; newer frames replace it while inference runs.
     // 寧可跳過幾幀讓畫面稍微不那麼即時,也不能讓畫面先跑掉、
     // 骨架卻停在舊的一幀 —— 那才是「對不上」的真正成因。
-    if (_processing) return;
+    if (_processing) { _latestPending = data; return; }
     _processing = true;
 
     _decodeAndInferThenDisplay(data).whenComplete(() {
       _processing = false;
+      final next = _latestPending;
+      _latestPending = null;
+      if (next != null && _running && !_disposed) _onData(next);
     });
   }
 
@@ -111,7 +139,7 @@ class PiCameraSource {
       // 確保畫面永遠跟 poseNotifier 剛更新的骨架是同一幀,徹底消除時間差。
       // 🚀 新增:frameSize 在 latestJpeg 之前寫入,確保 latestJpeg 的
       // listener 觸發時,frameSize.value 一定已經是同一幀的最新值。
-      if (!_disposed) {
+      if (!_disposed && _running) {
         frameSize.value =
             Size(rgbImage.width.toDouble(), rgbImage.height.toDouble());
         latestJpeg.value = jpegBytes;
@@ -122,16 +150,21 @@ class PiCameraSource {
   }
 
   Future<void> stop() async {
-    await _sub?.cancel();
-    await _channel?.sink.close();
+    _running = false;
+    _latestPending = null;
+    _setStatus(PiConnectionStatus.disconnected);
+    await _sub?.cancel().timeout(const Duration(seconds: 1), onTimeout: () {});
+    await _channel?.sink.close().timeout(const Duration(seconds: 1), onTimeout: () {});
     _sub = null;
     _channel = null;
-    connected.value = false;
+    if (!_disposed) connected.value = false;
   }
 
   void dispose() {
+    if (_disposed) return;
     _disposed = true;
     stop();
+    status.dispose();
     connected.dispose();
     latestJpeg.dispose();
     frameSize.dispose(); // 🚀 新增

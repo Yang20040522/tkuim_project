@@ -1,3 +1,4 @@
+import '../core/platform/app_platform.dart';
 // lib/services/screen_recorder_service.dart
 //
 // 封裝原生端 com.rehabassist/screen_recorder MethodChannel
@@ -34,6 +35,7 @@ class ScreenRecorderService {
   /// 開始錄影。每次呼叫都會先重新請求授權(見上方說明),
   /// 使用者會看到系統的「開始擷取畫面」視窗。
   static Future<bool> startRecording() async {
+    if (!AppPlatform.current.supportsScreenRecording) return false;
     final granted = await requestPermission();
     if (!granted) return false;
 
@@ -49,6 +51,7 @@ class ScreenRecorderService {
 
   /// 停止錄影,回傳錄好的影片檔案路徑,失敗或沒在錄則回傳 null。
   static Future<String?> stopRecording() async {
+    if (!AppPlatform.current.supportsScreenRecording) return null;
     try {
       final path = await _channel.invokeMethod<String>('stopRecording');
       return path;

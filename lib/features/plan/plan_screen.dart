@@ -1,3 +1,5 @@
+import '../../core/platform/app_platform.dart';
+import '../../core/ui/tv_ui.dart';
 import 'package:flutter/material.dart';
 
 import '../../core/ui/app_colors.dart';
@@ -216,6 +218,7 @@ class _PlanScreenState extends State<PlanScreen> {
 
   @override
   Widget build(BuildContext context) {
+    if (AppPlatform.current.isTv) return _buildTvPlan();
     return Scaffold(
       backgroundColor: const Color(0xFFF5F6FA),
       body: SafeArea(
@@ -253,6 +256,31 @@ class _PlanScreenState extends State<PlanScreen> {
       ),
     );
   }
+
+  Widget _buildTvPlan() => TvPage(title: '復健計畫', child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+    SizedBox(width: 210, child: ListView(children: [
+      for (int offset = -3; offset <= 3; offset++) Padding(padding: const EdgeInsets.only(bottom: 10),
+        child: OutlinedButton(autofocus: offset == 0, onPressed: () => _onSelectDay(DateTime.now().add(Duration(days: offset))),
+          child: Text(offset == 0 ? '今天' : '${DateTime.now().add(Duration(days: offset)).month}/${DateTime.now().add(Duration(days: offset)).day}'))),
+      OutlinedButton(onPressed: () => _loadPlan(selectedDate), child: const Text('重新整理')),
+    ])),
+    const SizedBox(width: 28),
+    Expanded(child: isLoading ? const Center(child: CircularProgressIndicator()) : SingleChildScrollView(child: Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        Text(_planSectionTitle(), style: const TextStyle(fontSize: 30, fontWeight: FontWeight.bold)),
+        const SizedBox(height: 18),
+        if (loadError != null) Text(loadError!)
+        else if (currentPlan == null || currentPlan!.items.isEmpty) const Text('治療師尚未安排這一天的復健計畫')
+        else for (final entry in currentPlan!.items.asMap().entries) Padding(padding: const EdgeInsets.only(bottom: 14),
+          child: OutlinedButton(onPressed: _isToday && !entry.value.done
+            ? () => _startExercise(findExerciseById(entry.value.exerciseId), entry.value, entry.key) : null,
+            child: Padding(padding: const EdgeInsets.all(18), child: Row(children: [
+              Expanded(child: Text(findExerciseById(entry.value.exerciseId).name)),
+              Text('${entry.value.sets} 組 × ${entry.value.repsPerSet} 下${entry.value.done ? " · 已完成" : ""}'),
+            ])),
+          )),
+      ]))),
+  ]));
 
   Widget _buildTopBar() {
     return const Padding(

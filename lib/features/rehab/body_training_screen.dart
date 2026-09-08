@@ -1,3 +1,5 @@
+import '../../core/platform/app_platform.dart';
+import '../../core/ui/tv_ui.dart';
 // lib/features/rehab/body_training_screen.dart
 //
 // ══════════════════════════════════════════════════════════════════
@@ -156,7 +158,22 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
 
   // 🚀 樹莓派新增:外接鏡頭來源(null = 尚未連線)
   PiCameraSource? _piCamera;
-  bool _isExternalCamera = false;
+  bool _isExternalCamera = AppPlatform.current.isTv;
+  bool _tvModelReady = false;
+  Future<void>? _tvInitialization;
+  bool _tvConnecting = false;
+  String? _tvError;
+  final ValueNotifier<int> _tvStatsRevision = ValueNotifier(0);
+
+  void _updatePosePresentation(VoidCallback update) {
+    if (!AppPlatform.current.isTv) { setState(update); return; }
+    final before = (_bodyVisible, _repCount, _feedback, _lastAiAnalysis);
+    update();
+    if (before != (_bodyVisible, _repCount, _feedback, _lastAiAnalysis)) {
+      _tvStatsRevision.value++;
+    }
+  }
+
   String? _lastPiIp;
 
   // 🚀 樹莓派手部偵測新增:另開一條連線拿手部 landmarks
@@ -282,6 +299,11 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
 
   Future<void> _start() async {
     // 🖥️ 電視投放新增:顯示端不開相機、不載模型,只吃遠端資料
+    if (AppPlatform.current.isTv) {
+      // Defer ONNX until a connection is requested. No camera or permissions.
+      _engine.poseNotifier.addListener(_onPoseUpdate);
+      return;
+    }
     await _engine.init(asReceiver: widget.isDisplay);
     if (!mounted) return;
     setState(() {});
@@ -357,7 +379,7 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
     bool justReachedLevelUp = false;
 
     if (mounted) {
-      setState(() {
+      _updatePosePresentation(() {
         _bodyVisible = visible;
         if (fb.scored) {
           _repCount++;
@@ -610,6 +632,7 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
   }
 
   Future<void> _switchCamera() async {
+    if (!AppPlatform.current.supportsLocalCamera) return;
     if (_isSwitchingCameraUI) return; // 🆕 UI層直接擋,連進到engine都不用
     _resetAiForSourceChange();
     setState(() => _isSwitchingCameraUI = true); // 🆕
@@ -626,6 +649,7 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
 
   // 🚀 樹莓派新增:開啟外接鏡頭來源(身體 + 手部)
   Future<void> _enableExternalCamera() async {
+    if (AppPlatform.current.isTv) { await _connectTvCamera(); return; }
     final ip = await showPiIpDialog(context, initialIp: _lastPiIp);
     if (ip == null || ip.isEmpty) return;
     _lastPiIp = ip;
@@ -654,6 +678,7 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
 
   // 🚀 樹莓派新增:切回手機內建鏡頭
   Future<void> _disableExternalCamera() async {
+    if (!AppPlatform.current.supportsLocalCamera) return;
     _resetAiForSourceChange();
     await _piCamera?.stop();
     _piCamera?.dispose();
@@ -943,13 +968,22 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
     _piCamera?.dispose(); // 🚀 樹莓派新增
     _piHand?.dispose(); // 🚀 樹莓派手部新增
     _handService.dispose(); // 🚀 樹莓派手部新增
-    _engine.dispose();
+    if (_tvInitialization != null && !_tvModelReady) {
+      _tvInitialization!.then((_) => _engine.dispose(), onError: (Object error, StackTrace stack) {
+        debugPrint('TV model initialization interrupted: $error');
+        return _engine.dispose();
+      });
+    } else {
+      _engine.dispose();
+    }
     _levelUpRepsController.dispose(); // 🆕
+    _tvStatsRevision.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
+    if (AppPlatform.current.isTv) return _buildTvTraining();
     return Stack(
       children: [
         Scaffold(
@@ -984,12 +1018,114 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
     );
   }
 
+  Future<void> _connectTvCamera() async {
+    if (_tvConnecting) return;
+    final ip = await showPiIpDialog(context, initialIp: _lastPiIp);
+    if (!mounted || ip == null) return;
+    setState(() { _tvConnecting = true; _tvError = null; _lastPiIp = ip; });
+    try {
+      if (!_tvModelReady) {
+        _tvInitialization = _engine.initForExternalFrames();
+        await _tvInitialization;
+        if (!mounted) return;
+        _tvModelReady = true;
+      }
+      final previous = _piCamera;
+      if (previous != null) {
+        // Detach listeners before disposing their notifier source.
+        setState(() => _piCamera = null);
+        await WidgetsBinding.instance.endOfFrame;
+        previous.dispose();
+      }
+      if (!mounted) return;
+      _resetAiForSourceChange();
+      final source = PiCameraSource(engine: _engine, ip: ip);
+      setState(() => _piCamera = source);
+      await source.start();
+    } catch (error, stack) {
+      debugPrint('TV external camera initialization: $error\n$stack');
+      if (mounted) setState(() => _tvError = '初始化失敗，請檢查網路或重新進入訓練');
+    } finally {
+      if (mounted) setState(() => _tvConnecting = false);
+    }
+  }
+
+  Widget _buildTvTraining() => PopScope(
+    canPop: _piCamera == null || _completionShown,
+    onPopInvokedWithResult: (didPop, result) { if (!didPop) _handleStopButtonTap(); },
+    child: Stack(children: [
+      TvPage(title: widget.action.title, child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        Expanded(flex: 3, child: RepaintBoundary(child: _buildTvFeed())),
+        const SizedBox(width: 24),
+        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          Expanded(child: SingleChildScrollView(child: ValueListenableBuilder<int>(
+            valueListenable: _tvStatsRevision,
+            builder: (_, revision, child) => Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text('$_repCount / $_currentLevelTargetReps 下', style: const TextStyle(fontSize: 32, fontWeight: FontWeight.bold)),
+              Text(widget.action.difficultyLabel),
+              const SizedBox(height: 20),
+              Text(_feedback, style: const TextStyle(fontSize: 22)),
+              Text(_instruction),
+              if (_usesTemplateAnalysis) _buildAiQualityCard(),
+            ]),
+          ))),
+          if (_tvError != null) Text(_tvError!, style: const TextStyle(color: Colors.red)),
+          if (_piCamera != null) ValueListenableBuilder<PiConnectionStatus>(
+            valueListenable: _piCamera!.status,
+            builder: (_, status, child) => Text(status.label),
+          ) else const Text('未連線'),
+          FilledButton(autofocus: true, onPressed: _tvConnecting ? null : _enableExternalCamera,
+            child: Text(_tvConnecting ? '連線中…' : _piCamera == null ? '連接攝影機' : '重新連線')),
+          const SizedBox(height: 12),
+          OutlinedButton(onPressed: _handleStopButtonTap, child: const Text('暫停 / 結束')),
+        ])),
+      ])),
+      if (_levelUpDialogShowing) Positioned.fill(child: SingleChildScrollView(child: _buildLevelUpOverlay())),
+    ]),
+  );
+
+  Widget _buildTvFeed() {
+    final source = _piCamera;
+    Widget feed = const TvWaitingView();
+    if (source != null) {
+      feed = ValueListenableBuilder<PiConnectionStatus>(valueListenable: source.status,
+        builder: (_, status, child) {
+          if (status != PiConnectionStatus.connected) return TvWaitingView(message: status.label);
+          return ValueListenableBuilder<Uint8List?>(valueListenable: source.latestJpeg,
+            builder: (_, jpeg, child) {
+              if (jpeg == null) return const TvWaitingView(message: '已連線，等待外部影像');
+              // Publish/display only after existing inference completed for this JPEG.
+              return Stack(fit: StackFit.expand, children: [
+                Image.memory(jpeg, fit: BoxFit.cover, gaplessPlayback: true),
+                CustomPaint(painter: _SkeletonPainter(_engine.poseNotifier.value,
+                  _scoreThreshold, sourceSize: source.frameSize.value)),
+              ]);
+            });
+        });
+    }
+    return ClipRect(child: Stack(fit: StackFit.expand, children: [
+      feed,
+      if (_waitingHandSelect) ColoredBox(color: Colors.black87, child: Center(child: Column(
+        mainAxisSize: MainAxisSize.min, children: [
+          const Text('請選擇要訓練的手', style: TextStyle(color: Colors.white, fontSize: 24)),
+          const SizedBox(height: 20),
+          Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+            _handButton('左手', () => setState(() { (widget.action as ReachAction).selectLeftHand(); })),
+            const SizedBox(width: 28),
+            _handButton('右手', () => setState(() { (widget.action as ReachAction).selectRightHand(); })),
+          ]),
+        ]))),
+      if (_waitingLegSelect) ColoredBox(color: Colors.black87, child: Center(child: SingleChildScrollView(
+        child: Column(mainAxisSize: MainAxisSize.min, children: _buildLegSelectContent())))),
+    ]));
+  }
+
   Widget _buildTopBar() {
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
       child: Row(
         children: [
-          GestureDetector(
+          TvTap(
             onTap: () => Navigator.of(context).pop(),
             child: Container(
               width: 40, height: 40,
@@ -1014,7 +1150,7 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
             ),
           ),
           // 🚀 樹莓派新增:外接鏡頭開關按鈕
-          GestureDetector(
+          TvTap(
             onTap: _isExternalCamera
                 ? _disableExternalCamera
                 : _enableExternalCamera,
@@ -1035,7 +1171,7 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
               ),
             ),
           ),
-          GestureDetector(
+          TvTap(
             onTap: _isSwitchingCameraUI ? null : _switchCamera, // 🆕 切換中直接不給按
             child: Container(
               width: 40, height: 40,
@@ -1324,7 +1460,7 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
   }
 
   Widget _handButton(String label, VoidCallback onTap) {
-    return GestureDetector(
+    return TvTap(
       onTap: onTap,
       child: Container(
         width: 120,
@@ -1444,7 +1580,7 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
 
   // 🆕 選腳按鈕(第一步用),樣式比照 _handButton
   Widget _legButton(String label, VoidCallback onTap) {
-    return GestureDetector(
+    return TvTap(
       onTap: onTap,
       child: Container(
         width: 120,
@@ -1481,7 +1617,7 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
 
   // 🆕 簡單版/困難版按鈕(第二步用)
   Widget _modeButton(String label, VoidCallback onTap) {
-    return GestureDetector(
+    return TvTap(
       onTap: onTap,
       child: Container(
         width: 150,
@@ -1754,7 +1890,7 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
   }
 
   Widget _buildStopButton() {
-    return GestureDetector(
+    return TvTap(
       onTap: _handleStopButtonTap,
       child: Container(
         width: 60,
@@ -1824,7 +1960,7 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
                       const SizedBox(width: 10),
                       SizedBox(
                         width: 56,
-                        child: TextField(
+                        child: TvTextNavigation(child: TextField(
                           controller: _levelUpRepsController,
                           keyboardType: TextInputType.number,
                           textAlign: TextAlign.center,
@@ -1847,7 +1983,7 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
                                   const BorderSide(color: Color(0xFF4A65FF)),
                             ),
                           ),
-                        ),
+                        )),
                       ),
                       const SizedBox(width: 4),
                       const Text('下',
@@ -1860,6 +1996,7 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
                   width: double.infinity,
                   height: 52,
                   child: ElevatedButton(
+                    autofocus: AppPlatform.current.isTv,
                     onPressed: _hasNextLevel ? _confirmLevelUp : _declineLevelUp,
                     style: ElevatedButton.styleFrom(
                       backgroundColor: const Color(0xFF4A65FF),
@@ -1946,6 +2083,7 @@ class _PauseMenuDialog extends StatelessWidget {
               width: double.infinity,
               height: 52,
               child: ElevatedButton(
+                autofocus: true,
                 onPressed: onResume,
                 style: ElevatedButton.styleFrom(
                   backgroundColor: const Color(0xFF4A65FF),

@@ -1,3 +1,6 @@
+import '../../core/platform/app_platform.dart';
+import '../../core/ui/tv_ui.dart';
+import '../../services/pi_camera_source.dart' show PiConnectionStatus;
 // lib/features/rehab/training_screen.dart
 //
 // ══════════════════════════════════════════════════════════════════
@@ -147,7 +150,11 @@ class _TrainingScreenState extends State<TrainingScreen>
   late RehabSessionController _controller;
 
   // 🚀 樹莓派新增:是否使用外接來源、記住上次輸入的 IP
-  bool _isExternalCamera = false;
+  bool _isExternalCamera = AppPlatform.current.isTv;
+  bool _tvConnecting = false;
+  bool _tvDetaching = false;
+  String? _tvError;
+  final _tvState = ValueNotifier(const RehabSessionState());
   String? _lastPiIp;
 
   bool _isInitialized = false;
@@ -189,17 +196,18 @@ class _TrainingScreenState extends State<TrainingScreen>
 
     // 🆕 手部訓練用的是原生 AndroidView 開相機,不會像 Flutter camera
     // 套件那樣自動跳權限視窗,這裡主動請求,確保跟全身端行為一致。
-    _checkCameraPermission();
+    if (AppPlatform.current.supportsLocalCamera) _checkCameraPermission();
 
     // 🖥️ 電視投放新增:顯示端不需要建立本機 controller / 相機資源。
     // 但為了盡量不動原本的建構流程與型別(late 欄位),仍建立一個
     // controller 物件,只是顯示端完全不會呼叫 _onSourceReady()/start()。
-    _controller = _buildController(useExternal: false);
+    _controller = _buildController(useExternal: AppPlatform.current.isTv, ip: AppPlatform.current.isTv ? '' : null);
 
     _pulseCtrl = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 1200),
-    )..repeat(reverse: true);
+    );
+    if (!AppPlatform.current.isTv) _pulseCtrl.repeat(reverse: true);
     _pulseAnim = Tween<double>(begin: 0.95, end: 1.05).animate(
       CurvedAnimation(parent: _pulseCtrl, curve: Curves.easeInOut),
     );
@@ -263,7 +271,7 @@ class _TrainingScreenState extends State<TrainingScreen>
   void _listenController() {
     _controller.stateStream.listen((state) {
       if (!mounted) return;
-      setState(() {});
+      if (AppPlatform.current.isTv) { _tvState.value = state; } else { setState(() {}); }
 
       // 🖥️ 電視投放新增:控制端把手部骨架 + 狀態傳給電視
       if (!widget.isDisplay &&
@@ -393,6 +401,7 @@ class _TrainingScreenState extends State<TrainingScreen>
 
   // 🚀 樹莓派新增:開啟外接鏡頭 → 詢問 IP → 換掉整個 controller
   Future<void> _enableExternalCamera() async {
+    if (AppPlatform.current.isTv) { await _connectTvHand(); return; }
     final ip = await showPiIpDialog(context, initialIp: _lastPiIp);
     if (ip == null || ip.isEmpty) return;
     _lastPiIp = ip;
@@ -412,6 +421,7 @@ class _TrainingScreenState extends State<TrainingScreen>
 
   // 🚀 樹莓派新增:切回手機原生鏡頭 → 換掉整個 controller
   Future<void> _disableExternalCamera() async {
+    if (!AppPlatform.current.supportsLocalCamera) return;
     await _controller.disposeAsync();
     if (!mounted) return;
 
@@ -511,6 +521,7 @@ class _TrainingScreenState extends State<TrainingScreen>
     _remoteState.dispose();
 
     _controller.dispose();
+    _tvState.dispose();
     _pulseCtrl.dispose();
     _slideCtrl.dispose();
     _levelUpRepsController.dispose(); // 🆕
@@ -861,8 +872,75 @@ class _TrainingScreenState extends State<TrainingScreen>
     return model.debugSource?.frameSize.value;
   }
 
+  Future<void> _connectTvHand() async {
+    if (_tvConnecting) return;
+    final ip = await showPiIpDialog(context, initialIp: _lastPiIp);
+    if (!mounted || ip == null) return;
+    setState(() { _tvConnecting = true; _tvDetaching = true; _tvError = null; });
+    try {
+      await WidgetsBinding.instance.endOfFrame;
+      await _controller.disposeAsync();
+      if (!mounted) return;
+      _lastPiIp = ip;
+      _controller = _buildController(useExternal: true, ip: ip);
+      _listenController();
+      setState(() { _tvDetaching = false; _isInitialized = false; });
+      await _onSourceReady();
+    } catch (error, stack) {
+      debugPrint('TV hand source: $error\n$stack');
+      if (mounted) setState(() => _tvError = '連線失敗，請重新連線');
+    } finally { if (mounted) setState(() => _tvConnecting = false); }
+  }
+
+  Widget _buildTvHandTraining() {
+    final model = _controller.currentModel;
+    final source = _tvDetaching ? null : (model is PiPoseModel ? model.debugSource : null);
+    return PopScope(canPop: source == null || _completionShown,
+      onPopInvokedWithResult: (didPop, result) { if (!didPop) _handleStopButtonTap(); },
+      child: Stack(children: [TvPage(title: widget.action.name, child: Row(children: [
+        Expanded(flex: 3, child: RepaintBoundary(child: source == null ? const TvWaitingView()
+          : ValueListenableBuilder<PiConnectionStatus>(valueListenable: source.status, builder: (_, status, child) {
+            if (status != PiConnectionStatus.connected) return TvWaitingView(message: status.label);
+            return ValueListenableBuilder<Uint8List?>(valueListenable: source.latestJpeg, builder: (_, jpeg, child) {
+              if (jpeg == null) return const TvWaitingView(message: '已連線，等待外部影像');
+              final hand = source.handResult.value;
+              final state = _controller.currentState;
+              return Stack(fit: StackFit.expand, children: [
+                Image.memory(jpeg, fit: BoxFit.cover, gaplessPlayback: true),
+                HandOverlayWidget(landmarks: hand.landmarks, isMirrored: false,
+                  showStickGuide: _showStickGuide && !state.isComplete,
+                  showPinchGuide: _showPinchGuide && !state.isComplete,
+                  progress: state.progress, speedState: state.speedState, sourceSize: source.frameSize.value),
+              ]);
+            });
+          }))),
+        const SizedBox(width: 24),
+        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          Expanded(child: SingleChildScrollView(child: ValueListenableBuilder<RehabSessionState>(
+            valueListenable: _tvState, builder: (_, state, child) => Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text('${state.repCount} / ${state.targetReps} 下', style: const TextStyle(fontSize: 32, fontWeight: FontWeight.bold)),
+              Text(state.currentLevelLabel),
+              const SizedBox(height: 20),
+              Text(state.feedback, style: const TextStyle(fontSize: 22)), Text(state.instruction),
+              if (state.isCountingDown && !state.countdownDone) Text('準備：${state.countdownSeconds}'),
+            ]),
+          ))),
+          if (_tvError != null) Text(_tvError!),
+          if (source != null) ValueListenableBuilder<PiConnectionStatus>(valueListenable: source.status,
+            builder: (_, status, child) => Text(status.label)) else const Text('未連線'),
+          FilledButton(autofocus: true, onPressed: _tvConnecting ? null : _enableExternalCamera,
+            child: Text(_tvConnecting ? '連線中…' : source == null ? '連接攝影機' : '重新連線')),
+          const SizedBox(height: 12),
+          OutlinedButton(onPressed: _handleStopButtonTap, child: const Text('暫停 / 結束')),
+        ])),
+      ])),
+      if (_showingLevelUpOverlay) Positioned.fill(child: SingleChildScrollView(child: _buildLevelUpOverlay())),
+    ]));
+  }
+
   @override
   Widget build(BuildContext context) {
+    if (AppPlatform.current.isTv) return _buildTvHandTraining();
     // 🖥️ 電視投放新增:顯示端走完全不同的簡化畫面,
     // 不開相機、不跑 controller,只讀遠端資料。
     if (widget.isDisplay) {
@@ -1054,7 +1132,7 @@ class _TrainingScreenState extends State<TrainingScreen>
                     const SizedBox(width: 10),
                     SizedBox(
                       width: 56,
-                      child: TextField(
+                      child: TvTextNavigation(child: TextField(
                         controller: _levelUpRepsController,
                         keyboardType: TextInputType.number,
                         textAlign: TextAlign.center,
@@ -1074,7 +1152,7 @@ class _TrainingScreenState extends State<TrainingScreen>
                             borderSide: const BorderSide(color: Color(0xFF4A65FF)),
                           ),
                         ),
-                      ),
+                      )),
                     ),
                     const SizedBox(width: 4),
                     const Text('下', style: TextStyle(color: Color(0xFF6B7280), fontSize: 13)),
@@ -1466,6 +1544,7 @@ class _PauseMenuDialog extends StatelessWidget {
               width: double.infinity,
               height: 52,
               child: ElevatedButton(
+                autofocus: true,
                 onPressed: onResume,
                 style: ElevatedButton.styleFrom(
                   backgroundColor: const Color(0xFF4A65FF),

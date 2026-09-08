@@ -1,3 +1,5 @@
+import '../../core/platform/app_platform.dart';
+import '../../core/ui/tv_ui.dart';
 // lib/features/training/action_list_screen.dart
 //
 // 動作清單頁 — 原本是 home_screen 的內容
@@ -351,8 +353,44 @@ class _ActionListScreenState extends State<ActionListScreen>
     ));
   }
 
+  Widget _buildTvSelection() {
+    final actions = kTrainingActions.where((a) => a.type != ActionType.bodyTest).toList();
+    return TvPage(title: '選擇復健訓練', child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      Expanded(flex: 2, child: SingleChildScrollView(child: Wrap(spacing: 16, runSpacing: 16,
+        children: actions.asMap().entries.map((entry) => SizedBox(width: 250, height: 100,
+          child: OutlinedButton(autofocus: entry.key == 0,
+            onPressed: () => _selectAction(entry.value),
+            child: Text('${_selectedAction == entry.value ? "✓ " : ""}${entry.value.name}'),
+          ),
+        )).toList(),
+      ))),
+      const SizedBox(width: 24),
+      Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        Expanded(child: SingleChildScrollView(child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          Text(_selectedAction?.name ?? '請選擇左側動作', style: const TextStyle(fontSize: 26, fontWeight: FontWeight.bold)),
+          const SizedBox(height: 12),
+          Text(_selectedAction?.description ?? '先選動作，再選難度。'),
+          const SizedBox(height: 16),
+          if (_selectedAction != null) ...[
+            for (final d in _selectedAction!.difficulties) Padding(padding: const EdgeInsets.only(bottom: 8),
+              child: OutlinedButton(onPressed: () => setState(() {
+                _selectedDifficulty = d; _repsController.text = '${d.targetReps}';
+              }), child: Text('${_selectedDifficulty?.level == d.level ? "✓ " : ""}${d.label}'))),
+            TvTextNavigation(child: TextField(controller: _repsController, keyboardType: TextInputType.number,
+              decoration: const InputDecoration(labelText: '目標次數'))),
+            SwitchListTile(title: const Text('自動升級難度'), value: _autoLevelUp,
+              onChanged: (value) => setState(() => _autoLevelUp = value)),
+          ],
+        ]))),
+        const SizedBox(height: 12),
+        FilledButton(onPressed: _selectedAction == null ? null : _startTraining, child: const Text('觀看示教 / 開始訓練')),
+      ])),
+    ]));
+  }
+
   @override
   Widget build(BuildContext context) {
+    if (AppPlatform.current.isTv) return _buildTvSelection();
     return PopScope(
         canPop: true,
         onPopInvokedWithResult: (didPop, result) {

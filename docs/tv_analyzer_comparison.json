@@ -1,0 +1,7 @@
+{
+  "baseline_dart_findings": 45,
+  "current_dart_findings": 45,
+  "added": [],
+  "removed": [],
+  "note": "Baseline extracted lib/test/pubspec into temporary directory. Nine missing-asset warnings caused by omitted assets are excluded; production files are untouched."
+}

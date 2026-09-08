@@ -1,0 +1,58 @@
+{
+  "baseline": "79bce366321f20f79574ed7863b6f3e8d9b04940",
+  "branch": "codex/android-tv-client",
+  "frozen_paths_changed": [],
+  "model_hashes": [
+    {
+      "file": "android/app/src/main/assets/hand_landmarker.task",
+      "baseline_git_blob": "0d53faf3786146e95c5bc010c48029ff16b7fa59",
+      "working_git_blob": "0d53faf3786146e95c5bc010c48029ff16b7fa59",
+      "unchanged": true
+    },
+    {
+      "file": "android/app/src/main/assets/pose_landmarker_lite.task",
+      "baseline_git_blob": "09576a930167d58ba3cd759a1521a1f7b159b0f2",
+      "working_git_blob": "09576a930167d58ba3cd759a1521a1f7b159b0f2",
+      "unchanged": true
+    },
+    {
+      "file": "android/app/src/main/assets/rtmdet.onnx",
+      "baseline_git_blob": "e9e21f0ed665e269e839711435a2aff41dafa7ed",
+      "working_git_blob": "e9e21f0ed665e269e839711435a2aff41dafa7ed",
+      "unchanged": true
+    },
+    {
+      "file": "android/app/src/main/assets/rtmpose_wholebody.onnx",
+      "baseline_git_blob": "8770fea0c5b0195aa26670e49cd8bf809bc61837",
+      "working_git_blob": "8770fea0c5b0195aa26670e49cd8bf809bc61837",
+      "unchanged": true
+    },
+    {
+      "file": "assets/rtmdet.onnx",
+      "baseline_git_blob": "e9e21f0ed665e269e839711435a2aff41dafa7ed",
+      "working_git_blob": "e9e21f0ed665e269e839711435a2aff41dafa7ed",
+      "unchanged": true
+    },
+    {
+      "file": "assets/rtmpose_wholebody.onnx",
+      "baseline_git_blob": "8770fea0c5b0195aa26670e49cd8bf809bc61837",
+      "working_git_blob": "8770fea0c5b0195aa26670e49cd8bf809bc61837",
+      "unchanged": true
+    }
+  ],
+  "pipeline": [
+    {
+      "file": "lib/services/pi_camera_source.dart",
+      "decode_inference_block_unchanged": true,
+      "ws_uri_unchanged": true,
+      "port_8765_unchanged": true
+    },
+    {
+      "file": "lib/services/pi_hand_source.dart",
+      "decode_inference_block_unchanged": true,
+      "ws_uri_unchanged": true,
+      "port_8765_unchanged": true
+    }
+  ],
+  "body_pose_callback_unchanged_except_rebuild_notification": true
+}

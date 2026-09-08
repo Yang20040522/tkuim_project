@@ -1,3 +1,4 @@
+import '../../core/platform/app_platform.dart';
 // lib/features/splash/splash_screen.dart
 import 'package:flutter/material.dart';
 import '../account/app_session.dart';
@@ -20,7 +21,11 @@ class _SplashScreenState extends State<SplashScreen> {
 
   Future<void> _init() async {
     // 先把上次登入狀態讀回來
-    await AppSession.load();
+    try {
+      await AppSession.load();
+    } catch (error, stack) {
+      debugPrint('Session restore failed: $error\n$stack');
+    }
     if (!mounted) return;
 
     // 維持原本 1.5 秒的 splash 顯示時間
@@ -48,7 +53,9 @@ class _SplashScreenState extends State<SplashScreen> {
     return Scaffold(
       backgroundColor: const Color(0xFFF5F7FA),
       body: Center(
-        child: Image.asset(
+        child: AppPlatform.current.isTv
+          ? const Text('RehabAssist TV', style: TextStyle(fontSize: 42, fontWeight: FontWeight.bold))
+          : Image.asset(
           'assets/splash/splash.png',
           fit: BoxFit.cover,
           width: double.infinity,

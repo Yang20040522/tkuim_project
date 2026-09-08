@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 // lib/services/voice_service.dart
 //
 // ══════════════════════════════════════════════════════════════════
@@ -48,6 +49,7 @@ class VoiceService {
   /// 初始化 — App 啟動時呼叫一次
   /// 重複呼叫也安全(有 _ready 旗標擋著)
   static Future<void> init() async {
+    try {
     if (_ready) return;
 
     // ── 基本 TTS 參數 ──
@@ -68,6 +70,8 @@ class VoiceService {
     });
 
     _ready = true;
+
+    } catch (error, stack) { debugPrint('TTS init unavailable: $error\n$stack'); }
   }
 
   /// 念一句話 — 畫面層直接把 feedback 丟進來
@@ -108,18 +112,21 @@ class VoiceService {
 
     if (important) {
       _speakingImportant = true;   // 上鎖,念完由 CompletionHandler 解開
-      await _tts.stop();            // 重要句可以打斷別人正在念的普通句
+      try { await _tts.stop(); } catch (error) { debugPrint('TTS stop unavailable: $error'); } // 重要句可以打斷別人正在念的普通句
     }
 
     // 真正念出來
-    await _tts.speak(clean);
+    try { await _tts.speak(clean); } catch (error) { debugPrint('TTS speak unavailable: $error'); }
   }
 
   /// 立刻停止並清狀態 — 畫面 dispose 時呼叫
   /// 避免離開畫面後還在念上一句
   static Future<void> stop() async {
+    try {
     _speakingImportant = false;
     await _tts.stop();
+
+    } catch (error, stack) { debugPrint('TTS stop unavailable: $error\n$stack'); }
   }
 
   // ══════════════════════════════════════════════════════════════

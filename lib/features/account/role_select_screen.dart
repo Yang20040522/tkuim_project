@@ -1,3 +1,5 @@
+import '../../core/platform/app_platform.dart';
+import '../../core/ui/tv_ui.dart';
 // lib/features/account/role_select_screen.dart
 // 打開 app 第一個畫面 — 選身分,選好進登入。
 import 'package:flutter/material.dart';
@@ -20,6 +22,19 @@ class RoleSelectScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (AppPlatform.current.isTv) {
+      return TvPage(title: 'RehabAssist TV', child: Center(
+      child: SizedBox(width: 560, child: Column(mainAxisSize: MainAxisSize.min, children: [
+        const Icon(Icons.live_tv, size: 80),
+        const Text('歡迎使用電視復健系統', style: TextStyle(fontSize: 32)),
+        const SizedBox(height: 24),
+        FilledButton(autofocus: true, onPressed: () => _selectRole(context, UserRole.patient),
+          child: const Text('患者登入')),
+        const SizedBox(height: 20),
+        const Text('治療師管理、註冊與帳號復原請使用手機版。'),
+      ])),
+    ));
+    }
     return Scaffold(
       backgroundColor: const Color(0xFFF5F6FA),
       body: SafeArea(

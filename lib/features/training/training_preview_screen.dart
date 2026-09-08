@@ -1,3 +1,5 @@
+import '../../core/platform/app_platform.dart';
+import '../tv/tv_demo_viewer.dart';
 // lib/features/training/training_preview_screen.dart
 //
 // 訓練前 3D 示範頁:
@@ -168,7 +170,7 @@ class _TrainingPreviewScreenState extends State<TrainingPreviewScreen> {
     super.initState();
     // 進頁面後自動彈說明(只有這個動作+難度有填說明才彈)
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _maybeShowTips();
+      if (!AppPlatform.current.isTv) _maybeShowTips();
     });
   }
 
@@ -185,6 +187,11 @@ class _TrainingPreviewScreenState extends State<TrainingPreviewScreen> {
 
   @override
   Widget build(BuildContext context) {
+    if (AppPlatform.current.isTv) {
+      return TvDemoViewer(demo: _demo,
+      title: widget.actionName, description: '${widget.description}\n${widget.difficultyLabel} · ${widget.targetReps} 下',
+      start: _startTraining);
+    }
     final demo = _demo;
     final modelSrc =
         demo.modelSrcs[_currentTab.clamp(0, demo.modelSrcs.length - 1)];

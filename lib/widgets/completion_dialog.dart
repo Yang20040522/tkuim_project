@@ -1,3 +1,4 @@
+import '../core/platform/app_platform.dart';
 // lib/widgets/completion_dialog.dart
 //
 // 🆕 2026-08-22:
@@ -105,6 +106,18 @@ class _CompletionDialogState extends State<CompletionDialog> {
 
   @override
   Widget build(BuildContext context) {
+    if (AppPlatform.current.isTv) {
+      return AlertDialog(
+      title: Text(widget.isPaused ? '訓練暫停' : '訓練結果'),
+      content: SizedBox(width: 560, child: SingleChildScrollView(child: Text(
+        '${widget.currentAction.name}\n完成 ${widget.repCount} 下 · ${widget.durationSeconds} 秒\n${widget.mistakeLogs.join("\n")}',
+      ))),
+      actions: [
+        TextButton(autofocus: true, onPressed: widget.onHome, child: const Text('返回')),
+        FilledButton(onPressed: widget.onRetry, child: const Text('再練一次')),
+      ],
+    );
+    }
     final minutes = widget.durationSeconds ~/ 60;
     final seconds = widget.durationSeconds % 60;
     final timeText = '$minutes:${seconds.toString().padLeft(2, '0')}';

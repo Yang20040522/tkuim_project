@@ -1,3 +1,4 @@
+import '../../core/platform/app_platform.dart';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -30,7 +31,7 @@ class ZegoCallInvitationService {
   }
 
   Future<void> synchronizeSession({String? userId, String? userName}) async {
-    if (!Platform.isAndroid || !ZegoCallConfig.isConfigured) return;
+    if (!AppPlatform.current.supportsVideoCalls || !Platform.isAndroid || !ZegoCallConfig.isConfigured) return;
     try {
       final safeUserId = userId == null ? null : buildZegoUserId(userId);
       await _lifecycle.synchronize(userId: safeUserId, userName: userName);

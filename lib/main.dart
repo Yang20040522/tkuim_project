@@ -1,3 +1,5 @@
+import 'core/platform/app_platform.dart';
+import 'core/ui/tv_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart'; // ← 新增
@@ -13,17 +15,23 @@ import 'services/history_service.dart';
 final rootNavigatorKey = GlobalKey<NavigatorState>();
 final rootScaffoldMessengerKey = GlobalKey<ScaffoldMessengerState>();
 
-void main() async {
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
+  AppPlatform.configure();
+  await SystemChrome.setPreferredOrientations(AppPlatform.current.isTv
+      ? [DeviceOrientation.landscapeLeft, DeviceOrientation.landscapeRight]
+      : [DeviceOrientation.portraitUp]);
   SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
     statusBarColor: Colors.transparent,
     statusBarIconBrightness: Brightness.light,
   ));
-  await NotificationService().init();
+  await initializeOptionalNotifications(capabilities: AppPlatform.current,
+      initialize: () => NotificationService().init());
+  if (AppPlatform.current.supportsVideoCalls) {
   ZegoCallInvitationService.instance
     ..setNavigatorKey(rootNavigatorKey)
     ..setScaffoldMessengerKey(rootScaffoldMessengerKey);
+  }
   //runApp(const RehabAssistApp());
   runApp(
     ChangeNotifierProvider.value(
@@ -55,7 +63,9 @@ class RehabAssistApp extends StatelessWidget {
       ],
       locale: const Locale('zh', 'TW'),
       // ↑ 新增結束
-      theme: AppTheme.light,
+      theme: AppPlatform.current.isTv ? tvTheme() : AppTheme.light,
+      builder: (context, child) => AppPlatform.current.isTv
+          ? TvRemoteScope(child: child!) : child!,
       //home: const HomeScreen(),
       home: const SplashScreen(),
     );
