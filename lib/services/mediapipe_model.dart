@@ -30,6 +30,7 @@ class MediaPipeModel implements IPoseModel {
       actionType: config.actionType,
       difficulty: config.difficulty,
       useFrontCamera: config.useFrontCamera,
+      enableImageStream: config.enableImageStream,
     );
 
     _landmarkSub = _svc.landmarkStream.listen((result) {
