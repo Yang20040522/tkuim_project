@@ -57,7 +57,7 @@ class _ChatScreenState extends State<ChatScreen> {
   StreamSubscription? _socketSub; // 🖥️ 電視投放新增
 
   ChatMessage get _welcomeMessage => ChatMessage(
-        text: '您好,我是您的 AI 復健治療師,有任何訓練上的問題都可以在這裡問我。',
+        text: '哼，總算來了？我是 RehabAssist 的 AI 復健助手。訓練紀錄、動作或 App 功能都可以問我……才、才不是特地在等你喔 🎀',
         sender: ChatSender.therapist,
         time: DateTime.now(),
       );
@@ -299,6 +299,32 @@ class _ChatScreenState extends State<ChatScreen> {
     _inputController.clear();
     await _persistCurrent();
     _scrollToBottom();
+
+    final targetIdxForHistory =
+        _conversations.indexWhere((c) => c.id == targetId);
+
+    final history = <AiChatTurn>[];
+
+    if (targetIdxForHistory >= 0) {
+      final messages = _conversations[targetIdxForHistory].messages;
+
+      // 最後一則就是這次剛送出的 userMsg，
+      // 不放進 history，避免同一句被送兩次。
+      final previousMessages = messages.isNotEmpty
+          ? messages.sublist(0, messages.length - 1)
+          : <ChatMessage>[];
+
+      history.addAll(
+        previousMessages
+            .where((message) => message.text.trim().isNotEmpty)
+            .map(
+              (message) => AiChatTurn(
+                role: message.sender == ChatSender.me ? 'user' : 'model',
+                text: message.text,
+              ),
+            ),
+      );
+    }
 
     final userContext = await _contextBuilder.build();
     final reply = await _chatRepository.sendMessage(
