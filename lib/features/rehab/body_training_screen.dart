@@ -198,7 +198,10 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
   bool _isSwitchingCameraUI = false;
 
   int _recordsSavedThisSession = 0;
-  Future<void> _historySaveChain = Future.value();
+
+  // 自動升級時，同一場訓練的所有難度共用同一個 sessionId。
+  // 手動升級則每一階在存檔時建立自己的 manual sessionId。
+  late final String _automaticHistorySessionId;
 
   bool _recordingStarted = false;
 
@@ -257,6 +260,9 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
   @override
   void initState() {
     super.initState();
+
+    _automaticHistorySessionId =
+        'auto:${DateTime.now().microsecondsSinceEpoch}';
     _templateAnalysisEnabled = _resolveTemplateAnalysisCapability();
     _currentLevelTargetReps = widget.difficultyMeta?.targetReps ?? 10; // 🆕
     _instruction = widget.action.initialHint;
@@ -709,26 +715,31 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
     _handleRealEnd(); // 🆕 不繼續練,直接進入結束流程(存紀錄、跳完成畫面)
   }
 
+  String _historySessionIdForCurrentRecord() {
+    if (widget.autoLevelUp) {
+      return _automaticHistorySessionId;
+    }
+
+    // 手動升級：每一階都必須是獨立紀錄，不能跟下一階合併。
+    return 'manual:${DateTime.now().microsecondsSinceEpoch}';
+  }
+
   void _saveCurrentLevelRecord() {
     if (widget.trainingActionMeta == null) return;
 
     final durationSec = DateTime.now().difference(_currentLevelStart).inSeconds;
 
-    final record = TrainingRecord(
-      timestamp: DateTime.now().toString().substring(0, 19),
-      actionName: widget.trainingActionMeta!.name,
-      difficulty: _levelToInt(_previousLevel),
-      durationSeconds: durationSec,
-      mistakeLogs: const [],
-      completedReps: _currentLevelReps,
-      //targetReps: widget.difficultyMeta?.targetReps ?? 10,
-      targetReps: _currentLevelTargetReps, // 🩹 修正:改讀「目前這一階」的實際次數,不是畫面一開始的舊難度
-    );
-
-    // 升級事件來自連續 pose frame，將 SharedPreferences 寫入排成一條鏈，
-    // 結束時才不會在紀錄尚未落盤前就回填 videoPath。
-    _historySaveChain = _historySaveChain.then(
-      (_) => HistoryService().saveRecord(record),
+    HistoryService().saveRecord(
+      TrainingRecord(
+        sessionId: _historySessionIdForCurrentRecord(),
+        timestamp: DateTime.now().toString().substring(0, 19),
+        actionName: widget.trainingActionMeta!.name,
+        difficulty: _levelToInt(_previousLevel),
+        durationSeconds: durationSec,
+        mistakeLogs: const [],
+        completedReps: _currentLevelReps,
+        targetReps: _currentLevelTargetReps,
+      ),
     );
 
     _recordsSavedThisSession++;
@@ -871,7 +882,6 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
     if (_currentLevelReps > 0) {
       _saveCurrentLevelRecord();
     }
-    await _historySaveChain;
 
     // ✅ 新增
     final patientId = AppSession.userId?.trim();

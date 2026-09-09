@@ -81,6 +81,9 @@ class _HistoryScreenState extends State<HistoryScreen> {
   // 上傳按鈕,每一筆要各自獨立顯示自己的上傳中狀態,不會互相影響。
   final Set<String> _uploadingTimestamps = {};
 
+  // 自動升級整組上傳時，用 sessionId 鎖住同一張群組卡片。
+  final Set<String> _uploadingSessionIds = {};
+
   @override
   void initState() {
     super.initState();
@@ -188,6 +191,75 @@ class _HistoryScreenState extends State<HistoryScreen> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(ok ? '這筆紀錄已上傳成功' : '這筆上傳失敗,請確認網路連線'),
+      ),
+    );
+  }
+
+
+  Future<void> _handleAutoGroupUpload(
+    List<TrainingRecord> records,
+  ) async {
+    if (records.isEmpty) return;
+
+    final sessionId =
+        records.first.sessionId?.trim();
+
+    if (sessionId == null ||
+        sessionId.isEmpty ||
+        !sessionId.startsWith('auto:')) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            '這不是自動升級紀錄，請使用單筆上傳',
+          ),
+        ),
+      );
+      return;
+    }
+
+    if (_uploadingSessionIds.contains(sessionId)) {
+      return;
+    }
+
+    final userId =
+        int.tryParse(AppSession.userId ?? '');
+
+    if (userId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('尚未登入,無法上傳到雲端'),
+        ),
+      );
+      return;
+    }
+
+    setState(
+      () => _uploadingSessionIds.add(sessionId),
+    );
+
+    final ok =
+        await _historyService.uploadAutoLevelSession(
+      records,
+      userId: userId,
+    );
+
+    if (!mounted) return;
+
+    setState(
+      () => _uploadingSessionIds.remove(sessionId),
+    );
+
+    await _loadHistory();
+
+    if (!mounted) return;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          ok
+              ? '本次自動升級紀錄已全部上傳'
+              : '本次自動升級上傳失敗,請確認網路連線後再試',
+        ),
       ),
     );
   }
@@ -316,7 +388,9 @@ class _HistoryScreenState extends State<HistoryScreen> {
                 _buildChart(filtered),
                 const SizedBox(height: 8),
               ],
-              _buildListHeader(filtered.length),
+              _buildListHeader(
+                _groupRecordsForDisplay(filtered).length,
+              ),
               Expanded(
                 child: _isLoading ? _buildLoading() : _buildList(filtered),
               ),
@@ -648,6 +722,195 @@ class _HistoryScreenState extends State<HistoryScreen> {
     );
   }
 
+  // ── 自動升級歷史分組 ──
+  //
+  // 只有 sessionId 以 auto: 開頭的資料才會合併。
+  // manual: 或舊資料一律維持單筆，避免把「手動升級」誤認成自動升級。
+  List<List<TrainingRecord>> _groupRecordsForDisplay(
+    List<TrainingRecord> records,
+  ) {
+    if (records.isEmpty) {
+      return <List<TrainingRecord>>[];
+    }
+
+    DateTime timeOf(TrainingRecord record) =>
+        _parseTimestamp(record.timestamp) ??
+        DateTime.fromMillisecondsSinceEpoch(0);
+
+    final autoGroups =
+        <String, List<TrainingRecord>>{};
+    final singles =
+        <List<TrainingRecord>>[];
+
+    for (final record in records) {
+      final sessionId =
+          record.sessionId?.trim();
+
+      if (sessionId != null &&
+          sessionId.startsWith('auto:')) {
+        final key =
+            '$sessionId|${record.actionName}';
+
+        autoGroups
+            .putIfAbsent(
+              key,
+              () => <TrainingRecord>[],
+            )
+            .add(record);
+      } else {
+        singles.add(
+          <TrainingRecord>[record],
+        );
+      }
+    }
+
+    final groups =
+        <List<TrainingRecord>>[
+      ...autoGroups.values,
+      ...singles,
+    ];
+
+    for (final group in groups) {
+      group.sort(
+        (a, b) {
+          final level =
+              a.difficulty.compareTo(
+            b.difficulty,
+          );
+
+          if (level != 0) {
+            return level;
+          }
+
+          return timeOf(a).compareTo(
+            timeOf(b),
+          );
+        },
+      );
+    }
+
+    groups.sort(
+      (a, b) {
+        final aLatest =
+            a.map(timeOf).reduce(
+                  (x, y) =>
+                      x.isAfter(y) ? x : y,
+                );
+
+        final bLatest =
+            b.map(timeOf).reduce(
+                  (x, y) =>
+                      x.isAfter(y) ? x : y,
+                );
+
+        return bLatest.compareTo(aLatest);
+      },
+    );
+
+    return groups;
+  }
+
+  bool _isAutoUpgradeGroup(
+    List<TrainingRecord> group,
+  ) {
+    if (group.length < 2) {
+      return false;
+    }
+
+    final sessionId =
+        group.first.sessionId?.trim();
+
+    if (sessionId == null ||
+        !sessionId.startsWith('auto:')) {
+      return false;
+    }
+
+    if (!group.every(
+      (record) =>
+          record.sessionId?.trim() ==
+          sessionId,
+    )) {
+      return false;
+    }
+
+    final levels = group
+        .map((record) => record.difficulty)
+        .toSet()
+        .toList()
+      ..sort();
+
+    if (levels.length < 2) {
+      return false;
+    }
+
+    for (int i = 1;
+        i < levels.length;
+        i++) {
+      if (levels[i] !=
+          levels[i - 1] + 1) {
+        return false;
+      }
+    }
+
+    return true;
+  }
+
+  Future<void> _deleteHistoryGroup(
+    List<TrainingRecord> group,
+  ) async {
+    for (final record in group) {
+      await _historyService.removeByTimestamp(record.timestamp);
+    }
+
+    if (!mounted) return;
+
+    final timestamps =
+        group.map((r) => r.timestamp).toSet();
+
+    setState(() {
+      _allRecords.removeWhere(
+        (r) => timestamps.contains(r.timestamp),
+      );
+    });
+
+    final newPendingCount =
+        await _historyService.getPendingUploadCount();
+
+    if (!mounted) return;
+
+    setState(
+      () => _pendingUploadCount = newPendingCount,
+    );
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          group.length > 1
+              ? '已刪除這次自動升級訓練'
+              : '已刪除紀錄',
+        ),
+        duration: const Duration(seconds: 2),
+      ),
+    );
+  }
+
+  Widget _buildDeleteBackground() {
+    return Container(
+      alignment: Alignment.centerRight,
+      padding: const EdgeInsets.symmetric(horizontal: 20),
+      margin: const EdgeInsets.only(bottom: 10),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFF4B4B),
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: const Icon(
+        Icons.delete_outline,
+        color: Colors.white,
+        size: 22,
+      ),
+    );
+  }
+
   Widget _buildList(List<TrainingRecord> records) {
     if (_allRecords.isEmpty) {
       return const Center(
@@ -671,7 +934,6 @@ class _HistoryScreenState extends State<HistoryScreen> {
     }
 
     if (records.isEmpty) {
-      // 選到的細項動作從來沒有任何紀錄 → 顯示「尚未做過」而不是一般的空篩選提示
       if (_selectedActionNeverDone) {
         return Center(
           child: Column(
@@ -681,12 +943,18 @@ class _HistoryScreenState extends State<HistoryScreen> {
               const SizedBox(height: 16),
               Text(
                 '「$_selectedAction」尚未做過',
-                style: const TextStyle(color: Color(0xFF6B7280), fontSize: 16),
+                style: const TextStyle(
+                  color: Color(0xFF6B7280),
+                  fontSize: 16,
+                ),
               ),
               const SizedBox(height: 8),
               const Text(
                 '完成一次訓練後這裡就會顯示紀錄',
-                style: TextStyle(color: AppColors.secondaryText, fontSize: 13),
+                style: TextStyle(
+                  color: AppColors.secondaryText,
+                  fontSize: 13,
+                ),
               ),
             ],
           ),
@@ -701,63 +969,347 @@ class _HistoryScreenState extends State<HistoryScreen> {
             SizedBox(height: 16),
             Text(
               '沒有符合篩選條件的紀錄',
-              style: TextStyle(color: Color(0xFF6B7280), fontSize: 16),
+              style: TextStyle(
+                color: Color(0xFF6B7280),
+                fontSize: 16,
+              ),
             ),
             SizedBox(height: 8),
             Text(
               '試試切換分類、動作或時間範圍',
-              style: TextStyle(color: AppColors.secondaryText, fontSize: 13),
+              style: TextStyle(
+                color: AppColors.secondaryText,
+                fontSize: 13,
+              ),
             ),
           ],
         ),
       );
     }
 
-    final reversed = records.reversed.toList();
+    final groups = _groupRecordsForDisplay(records);
+
     return ListView.builder(
       padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
-      itemCount: reversed.length,
+      itemCount: groups.length,
       itemBuilder: (_, i) {
-        final record = reversed[i];
+        final group = groups[i];
+
+        // 一般單一難度：維持原本畫面。
+        if (!_isAutoUpgradeGroup(group)) {
+          final record = group.first;
+
+          return Dismissible(
+            key: ValueKey(record.timestamp),
+            direction: DismissDirection.endToStart,
+            background: _buildDeleteBackground(),
+            onDismissed: (_) async {
+              await _deleteHistoryGroup(group);
+            },
+            child: _buildRecordCard(record),
+          );
+        }
+
+        // 自動升級：整組變成一個小選單。
         return Dismissible(
-          key: ValueKey(record.timestamp),
-          direction: DismissDirection.endToStart,
-          background: Container(
-            alignment: Alignment.centerRight,
-            padding: const EdgeInsets.symmetric(horizontal: 20),
-            margin: const EdgeInsets.only(bottom: 10),
-            decoration: BoxDecoration(
-              color: const Color(0xFFFF4B4B),
-              borderRadius: BorderRadius.circular(16),
-            ),
-            child:
-                const Icon(Icons.delete_outline, color: Colors.white, size: 22),
+          key: ValueKey(
+            'group-${group.first.sessionId ?? group.first.timestamp}',
           ),
+          direction: DismissDirection.endToStart,
+          background: _buildDeleteBackground(),
           onDismissed: (_) async {
-            await _historyService.removeByTimestamp(record.timestamp);
-            if (!mounted) return;
-            setState(() {
-              _allRecords.removeWhere((r) => r.timestamp == record.timestamp);
-            });
-            // 🆕 刪除後,待上傳筆數也要跟著重新整理
-            final newPendingCount =
-                await _historyService.getPendingUploadCount();
-            if (!mounted) return;
-            setState(() => _pendingUploadCount = newPendingCount);
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('已刪除紀錄'),
-                duration: Duration(seconds: 2),
-              ),
-            );
+            await _deleteHistoryGroup(group);
           },
-          child: _buildRecordCard(record),
+          child: _buildAutoUpgradeGroupCard(group),
         );
       },
     );
   }
 
-  Widget _buildRecordCard(TrainingRecord record) {
+  Widget _buildAutoUpgradeGroupCard(
+    List<TrainingRecord> group,
+  ) {
+    final records = List<TrainingRecord>.from(group)
+      ..sort(
+        (a, b) => a.difficulty.compareTo(b.difficulty),
+      );
+
+    final first = records.first;
+    final firstLevel = records.first.difficulty;
+    final lastLevel = records.last.difficulty;
+
+    TrainingRecord? videoRecord;
+    for (final record in records) {
+      if (record.videoPath != null &&
+          record.videoPath!.trim().isNotEmpty) {
+        videoRecord = record;
+        break;
+      }
+    }
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF5F6FA),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: const Color(0xFFDDE0F0),
+        ),
+      ),
+      child: Column(
+        children: [
+          ListTile(
+            contentPadding: const EdgeInsets.fromLTRB(
+              16,
+              8,
+              12,
+              0,
+            ),
+            leading: Container(
+              width: 44,
+              height: 44,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: const Color(0xFF4A65FF)
+                    .withOpacity(0.12),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Text(
+                '${records.length}',
+                style: const TextStyle(
+                  color: Color(0xFF4A65FF),
+                  fontSize: 18,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ),
+            title: Text(
+              first.actionName,
+              style: const TextStyle(
+                color: Color(0xFF1A1D2E),
+                fontSize: 14,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            subtitle: Text(
+              '${first.timestamp}\n'
+              '自動升級 · Lv.$firstLevel → Lv.$lastLevel',
+              style: const TextStyle(
+                color: Color(0xFF6B7280),
+                fontSize: 11,
+              ),
+            ),
+            isThreeLine: true,
+          ),
+
+          Builder(
+            builder: (context) {
+              final sessionId =
+                  first.sessionId!.trim();
+
+              final needsUpload =
+                  records.any(
+                (record) =>
+                    !record.isSynced ||
+                    (record.videoPath != null &&
+                        !record.isVideoSynced),
+              );
+
+              final uploading =
+                  _uploadingSessionIds.contains(
+                sessionId,
+              );
+
+              if (!needsUpload) {
+                return const SizedBox.shrink();
+              }
+
+              final metadataSynced =
+                  records.every(
+                (record) => record.isSynced,
+              );
+
+              return Padding(
+                padding:
+                    const EdgeInsets.fromLTRB(
+                  16,
+                  6,
+                  16,
+                  6,
+                ),
+                child: GestureDetector(
+                  onTap: uploading
+                      ? null
+                      : () =>
+                          _handleAutoGroupUpload(
+                            records,
+                          ),
+                  child: Container(
+                    width: double.infinity,
+                    padding:
+                        const EdgeInsets.symmetric(
+                      vertical: 11,
+                    ),
+                    decoration: BoxDecoration(
+                      color:
+                          const Color(0xFF4A65FF)
+                              .withOpacity(0.12),
+                      borderRadius:
+                          BorderRadius.circular(10),
+                      border: Border.all(
+                        color:
+                            const Color(0xFF4A65FF)
+                                .withOpacity(0.35),
+                      ),
+                    ),
+                    child: Row(
+                      mainAxisAlignment:
+                          MainAxisAlignment.center,
+                      children: [
+                        if (uploading)
+                          const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child:
+                                CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Color(
+                                0xFF4A65FF,
+                              ),
+                            ),
+                          )
+                        else
+                          const Icon(
+                            Icons.cloud_upload_outlined,
+                            size: 18,
+                            color:
+                                Color(0xFF4A65FF),
+                          ),
+                        const SizedBox(width: 6),
+                        Text(
+                          uploading
+                              ? '上傳中...'
+                              : metadataSynced
+                                  ? '補傳本次自動升級錄影'
+                                  : '上傳本次自動升級紀錄',
+                          style: const TextStyle(
+                            color:
+                                Color(0xFF4A65FF),
+                            fontSize: 13,
+                            fontWeight:
+                                FontWeight.w700,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              );
+            },
+          ),
+
+          // 同一次訓練只顯示一次影片按鈕。
+          if (videoRecord != null)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(
+                16,
+                4,
+                16,
+                4,
+              ),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: () {
+                        Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) => VideoPlaybackScreen(
+                              videoPath: videoRecord!.videoPath!,
+                              title:
+                                  '${first.actionName} · ${first.timestamp}',
+                            ),
+                          ),
+                        );
+                      },
+                      icon: const Icon(
+                        Icons.play_circle_outline,
+                        size: 18,
+                      ),
+                      label: const Text('播放錄影'),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: () {
+                        _analyzeRecording(
+                          context,
+                          videoRecord!.videoPath!,
+                          first.actionName,
+                        );
+                      },
+                      icon: const Icon(
+                        Icons.analytics_outlined,
+                        size: 18,
+                      ),
+                      label: const Text('分析錄影'),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+          Theme(
+            data: Theme.of(context).copyWith(
+              dividerColor: Colors.transparent,
+            ),
+            child: ExpansionTile(
+              tilePadding: const EdgeInsets.symmetric(
+                horizontal: 16,
+              ),
+              childrenPadding: const EdgeInsets.fromLTRB(
+                8,
+                0,
+                8,
+                8,
+              ),
+              title: const Text(
+                '查看各難度結果',
+                style: TextStyle(
+                  color: Color(0xFF4A65FF),
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              subtitle: Text(
+                '${records.length} 個難度紀錄',
+                style: const TextStyle(
+                  color: AppColors.secondaryText,
+                  fontSize: 10,
+                ),
+              ),
+              children: records
+                  .map(
+                    (record) => _buildRecordCard(
+                      record,
+                      showVideoActions: false,
+                      showUploadAction: false,
+                    ),
+                  )
+                  .toList(),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildRecordCard(
+    TrainingRecord record, {
+    bool showVideoActions = true,
+    bool showUploadAction = true,
+  }) {
     final completed = record.completedReps;
     final minutes = record.durationSeconds ~/ 60;
     final seconds = record.durationSeconds % 60;
@@ -864,7 +1416,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
           // 🆕 尚未上傳的紀錄底下,獨立一整列顯示大的上傳按鈕。
           // 拿掉原本擠在標題文字旁邊的小圖示,改成佔滿寬度的按鈕列,
           // 點擊範圍明顯變大,也更容易一眼看出哪些紀錄還沒上傳。
-          if (needsUpload) ...[
+          if (needsUpload && showUploadAction) ...[
             const SizedBox(height: 10),
             GestureDetector(
               onTap: isUploadingThis ? null : () => _handleSingleUpload(record),
@@ -915,7 +1467,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
           ],
 
           // ── 播放錄影按鈕(只有存在 videoPath 才顯示)───────────────
-          if (hasVideo) ...[
+          if (hasVideo && showVideoActions) ...[
             const SizedBox(height: 10),
             Row(
               children: [

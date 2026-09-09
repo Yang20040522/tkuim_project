@@ -54,7 +54,11 @@ class SidePinchAction extends BaseRehabAction implements LevelUpControllable {
 
   @override
   String get initialInstruction => '準備開始側捏訓練';
-
+  @override
+  List<String> get currentMistakeLogs =>
+      List<String>.unmodifiable(
+        _mistakeLogs,
+      );
   @override
   void dispose() {
     _transitionTimer?.cancel();

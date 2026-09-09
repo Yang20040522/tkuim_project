@@ -76,7 +76,11 @@ class WristSideBendAction extends BaseRehabAction {
 
   @override
   String get initialInstruction => '手腕向左彎到底（停留1秒） → 向右彎到底（停留1秒），算一次';
-
+  @override
+  List<String> get currentMistakeLogs =>
+      List<String>.unmodifiable(
+        _mistakeLogs,
+      );
   @override
   void dispose() {
     _transitionTimer?.cancel();

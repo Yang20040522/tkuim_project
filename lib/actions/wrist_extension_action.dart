@@ -58,7 +58,11 @@ class WristExtensionAction extends BaseRehabAction {
   //    的語音提示一致，避免使用者看到兩種不同的順序說明。
   @override
   String get initialInstruction => '手腕先往下壓 → 再往上翹，算一次';
-
+  @override
+  List<String> get currentMistakeLogs =>
+      List<String>.unmodifiable(
+        _mistakeLogs,
+      );
   @override
   void dispose() {
     _transitionTimer?.cancel();

@@ -110,7 +110,11 @@ class TurnPalmAction extends BaseRehabAction implements LevelUpControllable {
 
   @override
   String get initialInstruction => '對齊後保持5秒，才開始計算次數';
-
+  @override
+  List<String> get currentMistakeLogs =>
+      List<String>.unmodifiable(
+        _mistakeLogs,
+      );
   @override
   void dispose() {
     _countdownTimer?.cancel();
