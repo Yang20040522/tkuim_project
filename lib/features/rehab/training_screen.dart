@@ -365,6 +365,7 @@ class _TrainingScreenState extends State<TrainingScreen>
           1,
       durationSeconds: state.durationSeconds,
       mistakeLogs: state.mistakeLogs,
+      completedReps: state.repCount,
       targetReps: state.targetReps, // ✅ 改用 state.targetReps(這次訓練實際用的目標次數)
     ));
   }
@@ -598,6 +599,7 @@ class _TrainingScreenState extends State<TrainingScreen>
       durationSeconds: state.durationSeconds,
       mistakeLogs: state.mistakeLogs,
       videoPath: _pendingVideoPath,
+      completedReps: state.repCount,
       targetReps: state.targetReps, // ✅ 改用 state.targetReps
     ));
 
@@ -733,6 +735,7 @@ class _TrainingScreenState extends State<TrainingScreen>
       durationSeconds: state.durationSeconds,
       mistakeLogs: state.mistakeLogs,
       videoPath: _pendingVideoPath,
+      completedReps: state.repCount,
       targetReps: state.targetReps, // ✅ 改用 state.targetReps
     ));
 

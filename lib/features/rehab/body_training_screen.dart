@@ -198,6 +198,7 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
   bool _isSwitchingCameraUI = false;
 
   int _recordsSavedThisSession = 0;
+  Future<void> _historySaveChain = Future.value();
 
   bool _recordingStarted = false;
 
@@ -713,15 +714,22 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
 
     final durationSec = DateTime.now().difference(_currentLevelStart).inSeconds;
 
-    HistoryService().saveRecord(TrainingRecord(
+    final record = TrainingRecord(
       timestamp: DateTime.now().toString().substring(0, 19),
       actionName: widget.trainingActionMeta!.name,
       difficulty: _levelToInt(_previousLevel),
       durationSeconds: durationSec,
       mistakeLogs: const [],
+      completedReps: _currentLevelReps,
       //targetReps: widget.difficultyMeta?.targetReps ?? 10,
       targetReps: _currentLevelTargetReps, // 🩹 修正:改讀「目前這一階」的實際次數,不是畫面一開始的舊難度
-    ));
+    );
+
+    // 升級事件來自連續 pose frame，將 SharedPreferences 寫入排成一條鏈，
+    // 結束時才不會在紀錄尚未落盤前就回填 videoPath。
+    _historySaveChain = _historySaveChain.then(
+      (_) => HistoryService().saveRecord(record),
+    );
 
     _recordsSavedThisSession++;
   }
@@ -863,6 +871,7 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
     if (_currentLevelReps > 0) {
       _saveCurrentLevelRecord();
     }
+    await _historySaveChain;
 
     // ✅ 新增
     final patientId = AppSession.userId?.trim();

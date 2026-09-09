@@ -90,6 +90,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
   Future<void> _loadHistory() async {
     final records = await _historyService.getHistory();
     final pendingCount = await _historyService.getPendingUploadCount(); // 🆕
+    if (!mounted) return;
     setState(() {
       _allRecords = records;
       _isLoading = false;
@@ -177,23 +178,12 @@ class _HistoryScreenState extends State<HistoryScreen> {
 
     if (!mounted) return;
 
-    setState(() {
-      _uploadingTimestamps.remove(record.timestamp);
-      if (ok) {
-        // 直接把記憶體裡這筆紀錄標成已同步,畫面上的上傳按鈕才會立刻消失,
-        // 不用整個重新從 repository 撈一次列表。
-        final idx =
-            _allRecords.indexWhere((r) => r.timestamp == record.timestamp);
-        if (idx != -1) {
-          _allRecords[idx] = _allRecords[idx].copyWithSynced(true);
-        }
-      }
-    });
+    setState(() => _uploadingTimestamps.remove(record.timestamp));
 
-    // 上傳成功/失敗後,待上傳總數也要跟著更新(供內部統計用)
-    final newPendingCount = await _historyService.getPendingUploadCount();
+    // metadata 成功、影片失敗時 repository 已保存「metadata 已同步／影片待補傳」。
+    // 一律重讀可讓按鈕立即切換為「補傳這筆錄影」，也同步取得後端 id。
+    await _loadHistory();
     if (!mounted) return;
-    setState(() => _pendingUploadCount = newPendingCount);
 
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -600,13 +590,12 @@ class _HistoryScreenState extends State<HistoryScreen> {
         final w = constraints.maxWidth;
         final h = constraints.maxHeight;
         final points = records.asMap().entries.map((e) {
-          //final perfect = (10 - e.value.mistakeLogs.length).clamp(0, 10);
           final total = e.value.targetReps;
-          final perfect = (total - e.value.mistakeLogs.length).clamp(0, total);
+          final completed = e.value.completedReps.clamp(0, total);
           final x =
               records.length == 1 ? w / 2 : e.key / (records.length - 1) * w;
           //final y = h - (perfect / 10) * h;
-          final y = h - (perfect / total) * h;
+          final y = total > 0 ? h - (completed / total) * h : h;
           return Offset(x, y);
         }).toList();
 
@@ -769,13 +758,15 @@ class _HistoryScreenState extends State<HistoryScreen> {
   }
 
   Widget _buildRecordCard(TrainingRecord record) {
-    //final perfect = 10 - record.mistakeLogs.length;
-    final perfect = (record.targetReps - record.mistakeLogs.length)
-        .clamp(0, record.targetReps);
+    final completed = record.completedReps;
     final minutes = record.durationSeconds ~/ 60;
     final seconds = record.durationSeconds % 60;
     final hasMistakes = record.mistakeLogs.isNotEmpty;
     final hasVideo = record.videoPath != null;
+    final isComplete = completed >= record.targetReps && record.targetReps > 0;
+    final isPerfect = isComplete && !hasMistakes;
+    final needsUpload =
+        !record.isSynced || (record.videoPath != null && !record.isVideoSynced);
     final isUploadingThis =
         _uploadingTimestamps.contains(record.timestamp); // 🆕
 
@@ -796,18 +787,18 @@ class _HistoryScreenState extends State<HistoryScreen> {
                 width: 44,
                 height: 44,
                 decoration: BoxDecoration(
-                  color: hasMistakes
-                      ? const Color(0xFFFF4B4B).withOpacity(0.15)
-                      : const Color(0xFF4CAF50).withOpacity(0.15),
+                  color: isPerfect
+                      ? const Color(0xFF4CAF50).withOpacity(0.15)
+                      : const Color(0xFFFF4B4B).withOpacity(0.15),
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: Center(
                   child: Text(
-                    '$perfect',
+                    '$completed',
                     style: TextStyle(
-                      color: hasMistakes
-                          ? const Color(0xFFFF4B4B)
-                          : const Color(0xFF4CAF50),
+                      color: isPerfect
+                          ? const Color(0xFF4CAF50)
+                          : const Color(0xFFFF4B4B),
                       fontSize: 20,
                       fontWeight: FontWeight.w900,
                     ),
@@ -843,11 +834,15 @@ class _HistoryScreenState extends State<HistoryScreen> {
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
                   Text(
-                    hasMistakes ? '❌ ${record.mistakeLogs.length} 次失誤' : '✅ 完美',
+                    isPerfect
+                        ? '✅ 完美'
+                        : !isComplete
+                            ? '尚未完成'
+                            : '❌ ${record.mistakeLogs.length} 次失誤',
                     style: TextStyle(
-                      color: hasMistakes
-                          ? const Color(0xFFFF4B4B)
-                          : const Color(0xFF4CAF50),
+                      color: isPerfect
+                          ? const Color(0xFF4CAF50)
+                          : const Color(0xFFFF4B4B),
                       fontSize: 12,
                       fontWeight: FontWeight.w600,
                     ),
@@ -855,7 +850,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
                   const SizedBox(height: 2),
                   Text(
                     //'$perfect / 10',
-                    '$perfect / ${record.targetReps}',
+                    '$completed / ${record.targetReps}',
                     style: const TextStyle(
                       color: AppColors.secondaryText,
                       fontSize: 11,
@@ -869,7 +864,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
           // 🆕 尚未上傳的紀錄底下,獨立一整列顯示大的上傳按鈕。
           // 拿掉原本擠在標題文字旁邊的小圖示,改成佔滿寬度的按鈕列,
           // 點擊範圍明顯變大,也更容易一眼看出哪些紀錄還沒上傳。
-          if (!record.isSynced) ...[
+          if (needsUpload) ...[
             const SizedBox(height: 10),
             GestureDetector(
               onTap: isUploadingThis ? null : () => _handleSingleUpload(record),
@@ -902,7 +897,11 @@ class _HistoryScreenState extends State<HistoryScreen> {
                           ),
                     const SizedBox(width: 6),
                     Text(
-                      isUploadingThis ? '上傳中...' : '上傳這筆紀錄',
+                      isUploadingThis
+                          ? '上傳中...'
+                          : record.isSynced
+                              ? '補傳這筆錄影'
+                              : '上傳這筆紀錄',
                       style: const TextStyle(
                         color: Color(0xFF4A65FF),
                         fontSize: 13,

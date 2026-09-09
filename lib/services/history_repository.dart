@@ -30,11 +30,17 @@ abstract class HistoryRepository {
   Future<void> removeByTimestamp(String timestamp);
   Future<void> clearHistory();
 
-  /// 🆕 取得所有尚未上傳到後端(isSynced == false)的紀錄。
+  /// 取得 metadata 尚未同步，或仍有本機影片待補傳的紀錄。
   Future<List<TrainingRecord>> getUnsyncedRecords();
 
-  /// 🆕 把指定 timestamp 的那一筆紀錄標記為「已上傳」(isSynced = true)。
-  Future<void> markAsSynced(String timestamp);
+  /// metadata 上傳成功後保存後端 id，影片狀態不受影響。
+  Future<void> markAsSynced(String timestamp, {int? historyId});
+
+  /// 本機影片成功上傳後標記，讓 metadata 成功／影片失敗可以分開重試。
+  Future<void> markVideoAsSynced(
+    String timestamp, {
+    String? videoUrl,
+  });
 
   /// 🆕 把一批紀錄合併進儲存空間,timestamp 已存在的略過,回傳實際新增筆數。
   ///    給「病患從雲端把自己的紀錄拉回本機」用(換手機/重裝後救回)。
@@ -101,17 +107,37 @@ class LocalHistoryRepository implements HistoryRepository {
   @override
   Future<List<TrainingRecord>> getUnsyncedRecords() async {
     final history = await getHistory();
-    return history.where((r) => !r.isSynced).toList();
+    return history
+        .where((r) => !r.isSynced || (r.videoPath != null && !r.isVideoSynced))
+        .toList();
   }
 
   @override
-  Future<void> markAsSynced(String timestamp) async {
+  Future<void> markAsSynced(String timestamp, {int? historyId}) async {
     final prefs = await SharedPreferences.getInstance();
     final history = await getHistory();
     final index = history.indexWhere((r) => r.timestamp == timestamp);
     if (index == -1) return; // 找不到這筆,可能已經被刪除了,直接跳過
 
-    history[index] = history[index].copyWithSynced(true);
+    history[index] = history[index].copyWithSynced(true, historyId: historyId);
+    await prefs.setString(
+        _key, jsonEncode(history.map((e) => e.toJson()).toList()));
+  }
+
+  @override
+  Future<void> markVideoAsSynced(
+    String timestamp, {
+    String? videoUrl,
+  }) async {
+    final prefs = await SharedPreferences.getInstance();
+    final history = await getHistory();
+    final index = history.indexWhere((r) => r.timestamp == timestamp);
+    if (index == -1) return;
+
+    history[index] = history[index].copyWithVideoSynced(
+      true,
+      remoteVideoUrl: videoUrl,
+    );
     await prefs.setString(
         _key, jsonEncode(history.map((e) => e.toJson()).toList()));
   }
@@ -148,10 +174,16 @@ final HistoryRepository historyRepository = LocalHistoryRepository();
 /// 不寫入任何東西(治療師不應該改病患的紀錄)。第一次讀取後會快取,
 /// 所以就算數據頁上有多張卡片各自呼叫 getHistory(),也只打一次網路。
 class RemoteHistoryRepository implements HistoryRepository {
-  RemoteHistoryRepository({required this.userId});
+  RemoteHistoryRepository({
+    required this.userId,
+    this.viewerUserId,
+    this.identityToken,
+  });
 
   /// 要查看的病患的使用者 id。
   final int userId;
+  final int? viewerUserId;
+  final String? identityToken;
 
   List<TrainingRecord>? _cache;
 
@@ -160,7 +192,11 @@ class RemoteHistoryRepository implements HistoryRepository {
     final cached = _cache;
     if (cached != null) return cached;
 
-    final rows = await ExerciseApiService.fetchTrainingHistory(userId: userId);
+    final rows = await ExerciseApiService.fetchTrainingHistory(
+      userId: userId,
+      requesterUserId: viewerUserId,
+      identityToken: identityToken,
+    );
     final records = rows.map((e) => TrainingRecord.fromJson(e)).toList();
     _cache = records;
     return records;
@@ -187,7 +223,13 @@ class RemoteHistoryRepository implements HistoryRepository {
   Future<List<TrainingRecord>> getUnsyncedRecords() async => const [];
 
   @override
-  Future<void> markAsSynced(String timestamp) async {}
+  Future<void> markAsSynced(String timestamp, {int? historyId}) async {}
+
+  @override
+  Future<void> markVideoAsSynced(
+    String timestamp, {
+    String? videoUrl,
+  }) async {}
 
   @override
   Future<int> mergeRecords(List<TrainingRecord> incoming) =>

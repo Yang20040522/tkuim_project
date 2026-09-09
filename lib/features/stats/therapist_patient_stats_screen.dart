@@ -15,6 +15,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/ui/app_colors.dart';
+import '../account/app_session.dart';
 import '../../models/training_action.dart';
 import '../../services/history_service.dart';
 import '../../services/history_repository.dart';
@@ -23,6 +24,7 @@ import 'radar_chart_card.dart';
 import 'progress_trend_card.dart';
 import 'badges_card.dart';
 import 'personal_records_card.dart';
+import 'patient_training_videos_card.dart';
 
 class TherapistPatientStatsScreen extends StatefulWidget {
   const TherapistPatientStatsScreen({
@@ -49,7 +51,11 @@ class _TherapistPatientStatsScreenState
   void initState() {
     super.initState();
     final id = int.tryParse(widget.patientId) ?? -1;
-    _repository = RemoteHistoryRepository(userId: id);
+    _repository = RemoteHistoryRepository(
+      userId: id,
+      viewerUserId: int.tryParse(AppSession.userId ?? ''),
+      identityToken: AppSession.customExerciseToken,
+    );
     _service = HistoryService.readOnly(_repository);
     // 先抓一次,驅動頁面層的載入 / 失敗 / 空狀態;卡片之後讀的是同一個
     // repository 的快取,不會再打第二次網路。
@@ -110,16 +116,28 @@ class _TherapistPatientStatsScreenState
               padding: const EdgeInsets.fromLTRB(20, 16, 20, 32),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
-                children: const [
-                  WeekSummaryCard(),
-                  SizedBox(height: 12),
-                  RadarChartCard(),
-                  SizedBox(height: 12),
-                  ProgressTrendCard(),
-                  SizedBox(height: 12),
-                  BadgesCard(),
-                  SizedBox(height: 12),
-                  PersonalRecordsCard(),
+                children: [
+                  const WeekSummaryCard(),
+                  const SizedBox(height: 12),
+                  const RadarChartCard(),
+                  const SizedBox(height: 12),
+                  const ProgressTrendCard(),
+                  const SizedBox(height: 12),
+                  const BadgesCard(),
+                  const SizedBox(height: 12),
+                  const PersonalRecordsCard(),
+                  const SizedBox(height: 12),
+                  PatientTrainingVideosCard(
+                    records: records,
+                    httpHeaders: {
+                      if (AppSession.userId?.trim().isNotEmpty == true)
+                        'X-User-Id': AppSession.userId!.trim(),
+                      if (AppSession.customExerciseToken?.trim().isNotEmpty ==
+                          true)
+                        'X-Custom-Exercise-Token':
+                            AppSession.customExerciseToken!.trim(),
+                    },
+                  ),
                 ],
               ),
             ),

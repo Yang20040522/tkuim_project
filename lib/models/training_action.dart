@@ -302,69 +302,120 @@ const List<TrainingAction> kTrainingActions = [
 ];
 
 class TrainingRecord {
+  final int? id; // 後端 training_history.id；純本機紀錄尚未上傳時為 null
   final String timestamp;
   final String actionName;
   final int difficulty;
   final int durationSeconds;
   final List<String> mistakeLogs;
   final String? videoPath; // 訓練錄影檔案路徑,null 代表沒錄或使用者選擇不保留
-  final int targetReps; // ✅ 新增
+  final String? videoUrl; // 後端影片串流 URL；不可當成本機 File 路徑使用
+  final int completedReps; // 實際完成次數
+  final int targetReps; // 當次真正使用的目標次數
   final bool isSynced; // 🆕 是否已上傳到後端資料庫(治療師端可見)
+  final bool isVideoSynced; // 本機影片是否已完成上傳；metadata 狀態與影片分開
 
   TrainingRecord({
+    this.id,
     required this.timestamp,
     required this.actionName,
     required this.difficulty,
     required this.durationSeconds,
     required this.mistakeLogs,
     this.videoPath,
+    this.videoUrl,
+    this.completedReps = 0,
     this.targetReps = 10, // 沒帶值時的預設，避免其他呼叫處漏改就炸掉
     this.isSynced = false, // 🆕 預設尚未上傳,存進本機時一律從這個狀態開始
-  });
+    bool? isVideoSynced,
+  }) : isVideoSynced = isVideoSynced ?? videoPath == null;
+
+  bool get hasVideo => videoPath != null || videoUrl != null;
 
   Map<String, dynamic> toJson() => {
+        'id': id,
         'timestamp': timestamp,
         'actionName': actionName,
         'difficulty': difficulty,
         'durationSeconds': durationSeconds,
         'mistakeLogs': mistakeLogs,
         'videoPath': videoPath,
-        'targetReps': targetReps, // ✅
-        'isSynced': isSynced, // 🆕
+        'videoUrl': videoUrl,
+        'completedReps': completedReps,
+        'targetReps': targetReps,
+        'isSynced': isSynced,
+        'isVideoSynced': isVideoSynced,
       };
 
-  factory TrainingRecord.fromJson(Map<String, dynamic> json) => TrainingRecord(
-        timestamp: json['timestamp'] ?? '',
-        actionName: json['actionName'] ?? '',
-        difficulty: json['difficulty'] ?? 1,
-        durationSeconds: json['durationSeconds'] ?? 0,
-        mistakeLogs: List<String>.from(json['mistakeLogs'] ?? []),
-        videoPath: json['videoPath'] as String?,
-        targetReps: json['targetReps'] ?? 10, // ✅ 舊資料 fallback
-        isSynced: json['isSynced'] ?? false, // 🆕 舊資料(升級前存的)一律視為尚未上傳
+  factory TrainingRecord.fromJson(Map<String, dynamic> json) {
+    final videoPath = json['videoPath'] as String?;
+    return TrainingRecord(
+      id: (json['id'] as num?)?.toInt(),
+      timestamp: json['timestamp']?.toString() ?? '',
+      actionName: json['actionName']?.toString() ?? '',
+      difficulty: (json['difficulty'] as num?)?.toInt() ?? 1,
+      durationSeconds: (json['durationSeconds'] as num?)?.toInt() ?? 0,
+      mistakeLogs: List<String>.from(json['mistakeLogs'] ?? const []),
+      videoPath: videoPath,
+      videoUrl: json['videoUrl'] as String?,
+      // 舊資料沒有實際完成次數，保守視為 0，避免把目標次數誤報成完成次數。
+      completedReps: (json['completedReps'] as num?)?.toInt() ?? 0,
+      targetReps: (json['targetReps'] as num?)?.toInt() ?? 10,
+      isSynced: json['isSynced'] as bool? ?? false,
+      // 舊資料若有本機影片，即使 metadata 已同步也必須允許補傳影片。
+      isVideoSynced: json.containsKey('isVideoSynced')
+          ? json['isVideoSynced'] as bool? ?? false
+          : videoPath == null,
+    );
+  }
+
+  TrainingRecord copyWith({
+    int? id,
+    bool clearId = false,
+    String? videoPath,
+    bool replaceVideoPath = false,
+    String? videoUrl,
+    bool replaceVideoUrl = false,
+    int? completedReps,
+    int? targetReps,
+    bool? isSynced,
+    bool? isVideoSynced,
+  }) =>
+      TrainingRecord(
+        id: clearId ? null : id ?? this.id,
+        timestamp: timestamp,
+        actionName: actionName,
+        difficulty: difficulty,
+        durationSeconds: durationSeconds,
+        mistakeLogs: mistakeLogs,
+        videoPath: replaceVideoPath ? videoPath : this.videoPath,
+        videoUrl: replaceVideoUrl ? videoUrl : this.videoUrl,
+        completedReps: completedReps ?? this.completedReps,
+        targetReps: targetReps ?? this.targetReps,
+        isSynced: isSynced ?? this.isSynced,
+        isVideoSynced: isVideoSynced ?? this.isVideoSynced,
       );
 
   /// 複製一份紀錄,只替換 videoPath(用於「先存紀錄、後補影片路徑」的情境)
-  TrainingRecord copyWithVideoPath(String? path) => TrainingRecord(
-        timestamp: timestamp,
-        actionName: actionName,
-        difficulty: difficulty,
-        durationSeconds: durationSeconds,
-        mistakeLogs: mistakeLogs,
+  TrainingRecord copyWithVideoPath(String? path) => copyWith(
         videoPath: path,
-        targetReps: targetReps, // ✅
-        isSynced: isSynced, // 🆕 換影片路徑不影響上傳狀態
+        replaceVideoPath: true,
+        isVideoSynced: path == null,
       );
 
-  /// 複製一份紀錄,只替換 isSynced(上傳成功後呼叫,標記這筆已經同步過)
-  TrainingRecord copyWithSynced(bool synced) => TrainingRecord(
-        timestamp: timestamp,
-        actionName: actionName,
-        difficulty: difficulty,
-        durationSeconds: durationSeconds,
-        mistakeLogs: mistakeLogs,
-        videoPath: videoPath,
-        targetReps: targetReps,
-        isSynced: synced, // 🆕
+  /// metadata 上傳成功後呼叫；影片同步狀態保持獨立。
+  TrainingRecord copyWithSynced(bool synced, {int? historyId}) => copyWith(
+        id: historyId,
+        isSynced: synced,
+      );
+
+  TrainingRecord copyWithVideoSynced(
+    bool synced, {
+    String? remoteVideoUrl,
+  }) =>
+      copyWith(
+        isVideoSynced: synced,
+        videoUrl: remoteVideoUrl,
+        replaceVideoUrl: remoteVideoUrl != null,
       );
 }

@@ -25,6 +25,16 @@ class StatsCalculator {
 
   final HistoryService _historyService;
 
+  /// 以真正完成次數為基礎；未達目標會降低比例，失誤也不會被算成成功。
+  double _performancePercent(TrainingRecord record) {
+    if (record.targetReps <= 0) return 0;
+    final completed = record.completedReps < 0 ? 0 : record.completedReps;
+    final attempted = completed + record.mistakeLogs.length;
+    final denominator =
+        attempted > record.targetReps ? attempted : record.targetReps;
+    return (completed / denominator * 100).clamp(0.0, 100.0);
+  }
+
   /// 近 30 天使用者練過的動作 + 各自平均準確度
   /// 回傳的 list 已經按準確度由低到高排序(讓弱項容易被看到)
   Future<List<RadarAxis>> getRecentRadarData({int daysBack = 30}) async {
@@ -42,11 +52,7 @@ class StatsCalculator {
     // 依動作分組 → 算平均準確度
     final Map<String, List<double>> accByAction = {};
     for (final r in recent) {
-      final perfect = (r.targetReps - r.mistakeLogs.length)
-          .clamp(0, r.targetReps);
-      final acc = r.targetReps > 0
-          ? (perfect / r.targetReps * 100)
-          : 0.0;
+      final acc = _performancePercent(r);
       accByAction.putIfAbsent(r.actionName, () => []).add(acc);
     }
 
@@ -84,10 +90,7 @@ class StatsCalculator {
     // 最高單組準確度
     int maxAcc = 0;
     for (final r in records) {
-      if (r.targetReps <= 0) continue;
-      final perfect =
-          (r.targetReps - r.mistakeLogs.length).clamp(0, r.targetReps);
-      final acc = (perfect / r.targetReps * 100).round();
+      final acc = _performancePercent(r).round();
       if (acc > maxAcc) maxAcc = acc;
     }
 
@@ -166,9 +169,7 @@ class StatsCalculator {
       int count = 0;
       for (final r in thisWeek) {
         if (r.targetReps <= 0) continue;
-        final perfect =
-            (r.targetReps - r.mistakeLogs.length).clamp(0, r.targetReps);
-        sumAcc += perfect / r.targetReps * 100;
+        sumAcc += _performancePercent(r);
         count++;
       }
       if (count > 0) avgAcc = (sumAcc / count).round();
@@ -214,12 +215,12 @@ class StatsCalculator {
     int maxAcc = 0;
     DateTime? perfectAt;
     for (final r in records) {
-      if (r.targetReps <= 0) continue;
-      final perfect =
-          (r.targetReps - r.mistakeLogs.length).clamp(0, r.targetReps);
-      final acc = (perfect / r.targetReps * 100).round();
+      final acc = _performancePercent(r).round();
       if (acc > maxAcc) maxAcc = acc;
-      if (acc == 100 && perfectAt == null) {
+      if (r.completedReps >= r.targetReps &&
+          r.targetReps > 0 &&
+          r.mistakeLogs.isEmpty &&
+          perfectAt == null) {
         perfectAt = DateTime.tryParse(r.timestamp);
       }
     }
@@ -255,10 +256,7 @@ class StatsCalculator {
     for (final threshold in [70, 85]) {
       DateTime? found;
       for (final r in records) {
-        if (r.targetReps <= 0) continue;
-        final perfect =
-            (r.targetReps - r.mistakeLogs.length).clamp(0, r.targetReps);
-        final acc = (perfect / r.targetReps * 100).round();
+        final acc = _performancePercent(r).round();
         if (acc >= threshold) {
           final dt = DateTime.tryParse(r.timestamp);
           if (dt != null && (found == null || dt.isBefore(found))) {
@@ -351,8 +349,8 @@ class StatsCalculator {
         id: 'perfect',
         category: BadgeCategory.intensity,
         name: '完美主義',
-        description: '首次完美完成訓練(零錯誤)',
-        hint: '單組訓練零錯誤即解鎖',
+        description: '首次達成目標且零錯誤',
+        hint: '單組完成目標次數且零錯誤即解鎖',
         unlocked: perfectAt != null,
         unlockedAt: perfectAt,
       ),
@@ -426,13 +424,7 @@ class StatsCalculator {
     // 算每筆的準確度
     final accuracies = <double>[];
     for (final r in list) {
-      if (r.targetReps <= 0) {
-        accuracies.add(0);
-        continue;
-      }
-      final perfect =
-          (r.targetReps - r.mistakeLogs.length).clamp(0, r.targetReps);
-      accuracies.add(perfect / r.targetReps * 100);
+      accuracies.add(_performancePercent(r));
     }
 
     // 進步幅度 = 最後一筆 - 第一筆

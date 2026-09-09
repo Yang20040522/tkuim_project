@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:http/http.dart' as http;
+import 'package:http_parser/http_parser.dart';
 
 import '../core/api_config.dart';
 
@@ -192,6 +193,7 @@ class ExerciseApiService {
     required String actionName,
     required int difficulty,
     required int durationSeconds,
+    required int completedReps,
     required int targetReps,
     required List<String> mistakeLogs,
   }) async {
@@ -205,27 +207,29 @@ class ExerciseApiService {
       'actionName': actionName,
       'difficulty': difficulty,
       'durationSeconds': durationSeconds,
+      'completedReps': completedReps,
       'targetReps': targetReps,
       'mistakeLogs': mistakeLogs,
     };
 
-    final response = await http.post(
-      uri,
-      headers: {
-        'Content-Type': 'application/json; charset=UTF-8',
-        'Accept': 'application/json',
-      },
-      body: jsonEncode(requestBody),
-    ).timeout(
-      const Duration(seconds: 90),
-    );
+    final response = await http
+        .post(
+          uri,
+          headers: {
+            'Content-Type': 'application/json; charset=UTF-8',
+            'Accept': 'application/json',
+          },
+          body: jsonEncode(requestBody),
+        )
+        .timeout(
+          const Duration(seconds: 90),
+        );
 
     final responseText = utf8.decode(
       response.bodyBytes,
     );
 
-    if (response.statusCode < 200 ||
-        response.statusCode >= 300) {
+    if (response.statusCode < 200 || response.statusCode >= 300) {
       throw Exception(
         '上傳訓練紀錄失敗：${response.statusCode}\n'
         '$responseText',
@@ -239,25 +243,73 @@ class ExerciseApiService {
     );
   }
 
+  /// 將手機上的真正影片檔案以 multipart binary 上傳，不傳本機路徑或 base64。
+  static Future<void> uploadTrainingHistoryVideo({
+    required int historyId,
+    required int userId,
+    required String videoPath,
+  }) async {
+    final uri = Uri.parse(
+      '$_historyBaseUrl/api/training-history/$historyId/video',
+    );
+    final fileName = videoPath.split(RegExp(r'[/\\]')).last;
+    final extension =
+        fileName.contains('.') ? fileName.split('.').last.toLowerCase() : '';
+    final contentType = switch (extension) {
+      'mov' => MediaType('video', 'quicktime'),
+      'webm' => MediaType('video', 'webm'),
+      'm4v' => MediaType('video', 'x-m4v'),
+      _ => MediaType('video', 'mp4'),
+    };
+
+    final request = http.MultipartRequest('POST', uri)
+      ..fields['userId'] = '$userId'
+      ..files.add(await http.MultipartFile.fromPath(
+        'file',
+        videoPath,
+        filename: fileName,
+        contentType: contentType,
+      ));
+
+    final streamed = await request.send().timeout(
+          const Duration(minutes: 3),
+        );
+    final response = await http.Response.fromStream(streamed);
+    final responseText = utf8.decode(response.bodyBytes);
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw Exception(
+        '上傳訓練影片失敗：${response.statusCode}\n$responseText',
+      );
+    }
+  }
+
   /// 取得某使用者在後端的自由訓練紀錄（新到舊)。
   ///
   /// 回傳的每一筆欄位已對齊 TrainingRecord.toJson()，
   /// 呼叫端可以直接用 TrainingRecord.fromJson() 解析。
   static Future<List<Map<String, dynamic>>> fetchTrainingHistory({
     required int userId,
+    int? requesterUserId,
+    String? identityToken,
   }) async {
     final uri = Uri.parse(
       '$_historyBaseUrl/api/training-history/$userId',
     );
 
-    final response = await http.get(
-      uri,
-      headers: {
-        'Accept': 'application/json',
-      },
-    ).timeout(
-      const Duration(seconds: 90),
-    );
+    final headers = <String, String>{
+      'Accept': 'application/json',
+      if (requesterUserId != null) 'X-User-Id': '$requesterUserId',
+      if (identityToken != null && identityToken.trim().isNotEmpty)
+        'X-Custom-Exercise-Token': identityToken.trim(),
+    };
+    final response = await http
+        .get(
+          uri,
+          headers: headers,
+        )
+        .timeout(
+          const Duration(seconds: 90),
+        );
 
     final responseText = utf8.decode(
       response.bodyBytes,
@@ -274,10 +326,14 @@ class ExerciseApiService {
       responseText,
     );
 
-    return data
-        .map(
-          (item) => Map<String, dynamic>.from(item),
-        )
-        .toList();
+    return data.map((item) {
+      final row = Map<String, dynamic>.from(item);
+      final rawVideoUrl = row['videoUrl']?.toString();
+      if (rawVideoUrl != null && rawVideoUrl.isNotEmpty) {
+        row['videoUrl'] =
+            Uri.parse(_historyBaseUrl).resolve(rawVideoUrl).toString();
+      }
+      return row;
+    }).toList();
   }
 }

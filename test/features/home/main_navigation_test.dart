@@ -437,7 +437,13 @@ class _CountingHistoryRepository implements HistoryRepository {
   Future<List<TrainingRecord>> getUnsyncedRecords() async => const [];
 
   @override
-  Future<void> markAsSynced(String timestamp) async {}
+  Future<void> markAsSynced(String timestamp, {int? historyId}) async {}
+
+  @override
+  Future<void> markVideoAsSynced(
+    String timestamp, {
+    String? videoUrl,
+  }) async {}
 
   @override
   Future<int> mergeRecords(List<TrainingRecord> incoming) async => 0;

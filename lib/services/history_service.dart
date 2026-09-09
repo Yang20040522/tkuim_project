@@ -24,16 +24,21 @@
 //    欄位直接對齊 TrainingRecord,不需要 exerciseId 對照表,difficulty /
 //    durationSeconds / targetReps / mistakeLogs 都會完整存進資料庫。
 //    userId 由呼叫端(UI)提供,目前來源是登入者 AppSession.userId。
-//    唯一沒上傳的是 videoPath(手機本機路徑,治療師端開不了)。
+//    videoPath 是手機本機路徑，不會當作 metadata 字串送出；metadata 成功
+//    取得 historyId 後，會以 multipart binary 另外上傳影片。
 //
 // 🆕 syncFromCloud():病患從雲端把自己的紀錄拉回本機(換手機/重裝後救回)。
 //    因為數據頁的卡片都聽這個 ChangeNotifier,同步完會自動重算顯示。
 
-import '../models/training_action.dart';
-import '../features/notification/notification_service.dart';
+import 'dart:io';
+
 import 'package:flutter/foundation.dart';
-import 'history_repository.dart';
+
+import '../features/account/app_session.dart';
+import '../features/notification/notification_service.dart';
+import '../models/training_action.dart';
 import 'exercise_api_service.dart'; // 🆕 後端提供的上傳 API
+import 'history_repository.dart';
 
 /// 上傳完成後的結果統計,方便畫面顯示「成功 N 筆、失敗 N 筆」。
 class UploadResult {
@@ -75,11 +80,21 @@ class HistoryService extends ChangeNotifier {
     await _repository.saveRecord(record);
 
     final mistakes = record.mistakeLogs.length;
-    final acc = ((10 - mistakes) / 10 * 100).clamp(0, 100).round();
-    NotificationService().addAchievement(
-      title: mistakes == 0 ? '完美完成一組訓練 🎯' : '完成一組訓練 ✅',
-      body: '「${record.actionName}」${record.targetReps} 下 · 準確度 $acc%',
-    ).catchError((_) {});
+    final completed = record.completedReps < 0 ? 0 : record.completedReps;
+    final attempts = completed + mistakes;
+    final denominator =
+        attempts > record.targetReps ? attempts : record.targetReps;
+    final acc = denominator > 0
+        ? (completed / denominator * 100).clamp(0, 100).round()
+        : 0;
+    final fullyCompleted = record.completedReps >= record.targetReps;
+    NotificationService()
+        .addAchievement(
+          title: fullyCompleted && mistakes == 0 ? '完美完成一組訓練 🎯' : '完成一組訓練 ✅',
+          body: '「${record.actionName}」${record.completedReps} / '
+              '${record.targetReps} 下 · 準確度 $acc%',
+        )
+        .catchError((_) {});
 
     notifyListeners();
   }
@@ -136,7 +151,6 @@ class HistoryService extends ChangeNotifier {
     for (final record in pending) {
       try {
         await _uploadSingleRecord(record, userId: userId);
-        await _repository.markAsSynced(record.timestamp);
         success++;
       } catch (e) {
         debugPrint('上傳訓練紀錄失敗(${record.timestamp}): $e');
@@ -166,7 +180,6 @@ class HistoryService extends ChangeNotifier {
   }) async {
     try {
       await _uploadSingleRecord(record, userId: userId);
-      await _repository.markAsSynced(record.timestamp);
       notifyListeners();
       return true;
     } catch (e) {
@@ -185,7 +198,11 @@ class HistoryService extends ChangeNotifier {
   /// 需要有網路 + 已登入(userId 由呼叫端提供)。任何一步失敗都會往外丟
   /// Exception,由呼叫端(UI)決定要顯示什麼提示。
   Future<int> syncFromCloud({required int userId}) async {
-    final rows = await ExerciseApiService.fetchTrainingHistory(userId: userId);
+    final rows = await ExerciseApiService.fetchTrainingHistory(
+      userId: userId,
+      requesterUserId: userId,
+      identityToken: AppSession.customExerciseToken,
+    );
     final cloud = rows.map((e) => TrainingRecord.fromJson(e)).toList();
     final added = await _repository.mergeRecords(cloud);
     if (added > 0) notifyListeners();
@@ -202,20 +219,233 @@ class HistoryService extends ChangeNotifier {
   /// 後端用 (userId, clientTimestamp) 做冪等 upsert,所以同一筆重複上傳
   /// 不會在資料庫產生重複列;失敗會往外丟 Exception,由呼叫端決定重試。
   ///
-  /// ⚠️ 唯一沒送的是 record.videoPath —— 那是手機本機路徑,傳字串到後端
-  /// 治療師也開不了,要真的讓治療師看影片得另外做檔案上傳。
+  /// record.videoPath 是手機本機路徑，不放進 JSON；metadata 成功取得
+  /// historyId 後才以 multipart binary 上傳。兩段同步狀態會分開保存。
   Future<void> _uploadSingleRecord(
-    TrainingRecord record, {
-    required int userId,
-  }) async {
-    await ExerciseApiService.uploadTrainingHistory(
-      userId: userId,
-      clientTimestamp: record.timestamp,
-      actionName: record.actionName,
-      difficulty: record.difficulty,
-      durationSeconds: record.durationSeconds,
-      targetReps: record.targetReps,
-      mistakeLogs: record.mistakeLogs,
+  TrainingRecord record, {
+  required int userId,
+}) async {
+  // ─────────────────────────────────────────────
+  // 1. 先上傳歷史 metadata
+  // ─────────────────────────────────────────────
+
+  debugPrint('===== TRAINING HISTORY UPLOAD =====');
+  debugPrint('timestamp = ${record.timestamp}');
+  debugPrint('actionName = ${record.actionName}');
+  debugPrint('difficulty = ${record.difficulty}');
+  debugPrint('durationSeconds = ${record.durationSeconds}');
+  debugPrint('completedReps = ${record.completedReps}');
+  debugPrint('targetReps = ${record.targetReps}');
+  debugPrint('mistakeCount = ${record.mistakeLogs.length}');
+
+  final response =
+      await ExerciseApiService.uploadTrainingHistory(
+    userId: userId,
+    clientTimestamp: record.timestamp,
+    actionName: record.actionName,
+    difficulty: record.difficulty,
+    durationSeconds: record.durationSeconds,
+    completedReps: record.completedReps,
+    targetReps: record.targetReps,
+    mistakeLogs: record.mistakeLogs,
+  );
+
+  final historyId =
+      (response['id'] as num?)?.toInt();
+
+  if (historyId == null) {
+    throw const FormatException(
+      '後端未回傳 training history id',
     );
   }
+
+  debugPrint(
+    '✅ metadata 上傳成功，historyId = $historyId',
+  );
+
+  // metadata 已經成功就立即保存。
+  //
+  // 就算影片等等失敗，也不要把 metadata 變回未同步。
+  // 下次仍可用相同 clientTimestamp upsert，
+  // 再繼續補傳影片。
+  await _repository.markAsSynced(
+    record.timestamp,
+    historyId: historyId,
+  );
+
+  // ─────────────────────────────────────────────
+  // 2. 檢查有沒有影片需要上傳
+  // ─────────────────────────────────────────────
+
+  final videoPath = record.videoPath;
+
+  if (videoPath == null ||
+      videoPath.trim().isEmpty) {
+    debugPrint(
+      'ℹ️ 此筆紀錄沒有本機影片，不需要上傳影片。',
+    );
+    debugPrint(
+      '=====================================',
+    );
+    return;
+  }
+
+  if (record.isVideoSynced) {
+    debugPrint(
+      'ℹ️ 此筆影片已經同步，不重複上傳。',
+    );
+    debugPrint(
+      '=====================================',
+    );
+    return;
+  }
+
+  final videoFile = File(videoPath);
+
+  if (!await videoFile.exists()) {
+    throw FileSystemException(
+      '找不到待上傳的本機訓練影片',
+      videoPath,
+    );
+  }
+
+  // ─────────────────────────────────────────────
+  // 3. 取得影片真正檔案大小
+  //
+  // 注意：
+  // File.length() 不會把整支影片讀進 RAM，
+  // 只會取得檔案大小資訊。
+  // ─────────────────────────────────────────────
+
+  final videoBytes =
+      await videoFile.length();
+
+  final videoSizeMb =
+      videoBytes / 1024 / 1024;
+
+  debugPrint('');
+  debugPrint('========== VIDEO DEBUG ==========');
+  debugPrint('historyId = $historyId');
+  debugPrint('videoPath = $videoPath');
+  debugPrint('videoBytes = $videoBytes');
+  debugPrint(
+    'videoSizeMB = '
+    '${videoSizeMb.toStringAsFixed(2)} MB',
+  );
+
+  // 目前只是警告，不阻擋上傳。
+  //
+  // 等我們知道實際影片大小後，
+  // 才決定是否真的需要 App 端限制。
+  if (videoSizeMb >= 80) {
+    debugPrint(
+      '🚨 影片非常大（>= 80 MB），'
+      '目前 Render / Java heap 很可能撐不住。',
+    );
+  } else if (videoSizeMb >= 50) {
+    debugPrint(
+      '⚠️ 影片 >= 50 MB，'
+      '後端使用 byte[] / file.getBytes() 時很容易 OOM。',
+    );
+  } else if (videoSizeMb >= 20) {
+    debugPrint(
+      '⚠️ 影片 >= 20 MB，'
+      '請特別觀察 Render JVM 記憶體。',
+    );
+  } else {
+    debugPrint(
+      'ℹ️ 影片大小低於 20 MB。',
+    );
+  }
+
+  debugPrint(
+    '=================================',
+  );
+  debugPrint('');
+
+  // ─────────────────────────────────────────────
+  // 4. 真正上傳影片
+  // ─────────────────────────────────────────────
+
+  try {
+    debugPrint(
+      '開始上傳影片到 '
+      '/api/training-history/$historyId/video',
+    );
+
+    await ExerciseApiService
+        .uploadTrainingHistoryVideo(
+      historyId: historyId,
+      userId: userId,
+      videoPath: videoPath,
+    );
+  } catch (e) {
+    // metadata 成功、video 失敗。
+    //
+    // 不刪本機 videoPath，
+    // 不標記 isVideoSynced，
+    // 讓下一次仍可重試。
+    debugPrint('');
+    debugPrint(
+      '❌ ===== VIDEO UPLOAD FAILED =====',
+    );
+
+    debugPrint(
+      'historyId = $historyId',
+    );
+
+    debugPrint(
+      'videoSizeMB = '
+      '${videoSizeMb.toStringAsFixed(2)} MB',
+    );
+
+    debugPrint(
+      'videoPath = $videoPath',
+    );
+
+    debugPrint(
+      'error = $e',
+    );
+
+    debugPrint(
+      'metadata 已成功上傳，'
+      '影片同步狀態不會標記成功；'
+      '本機影片會保留，下次可重新補傳。',
+    );
+
+    debugPrint(
+      '==================================',
+    );
+    debugPrint('');
+
+    rethrow;
+  }
+
+  // ─────────────────────────────────────────────
+  // 5. 影片成功才標記 isVideoSynced
+  // ─────────────────────────────────────────────
+
+  await _repository.markVideoAsSynced(
+    record.timestamp,
+  );
+
+  debugPrint('');
+  debugPrint(
+    '✅ ===== VIDEO UPLOAD SUCCESS =====',
+  );
+
+  debugPrint(
+    'historyId = $historyId',
+  );
+
+  debugPrint(
+    'videoSizeMB = '
+    '${videoSizeMb.toStringAsFixed(2)} MB',
+  );
+
+  debugPrint(
+    '===================================',
+  );
+  debugPrint('');
+}
 }

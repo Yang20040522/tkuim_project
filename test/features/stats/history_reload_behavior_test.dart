@@ -169,10 +169,25 @@ class _CountingHistoryRepository implements HistoryRepository {
   }
 
   @override
-  Future<void> markAsSynced(String timestamp) async {
+  Future<void> markAsSynced(String timestamp, {int? historyId}) async {
     final index = records.indexWhere((record) => record.timestamp == timestamp);
     if (index >= 0) {
-      records[index] = records[index].copyWithSynced(true);
+      records[index] =
+          records[index].copyWithSynced(true, historyId: historyId);
+    }
+  }
+
+  @override
+  Future<void> markVideoAsSynced(
+    String timestamp, {
+    String? videoUrl,
+  }) async {
+    final index = records.indexWhere((record) => record.timestamp == timestamp);
+    if (index >= 0) {
+      records[index] = records[index].copyWithVideoSynced(
+        true,
+        remoteVideoUrl: videoUrl,
+      );
     }
   }
 
