@@ -105,8 +105,7 @@ import '../../features/tv_cast/socket_client_service.dart';
 import '../../controllers/rehab_session_controller.dart';
 import '../training/training_preview_screen.dart';
 
-// 達標下限:當前難度做 ≥ 3 下,按結束才會存紀錄
-const int _kMinRepsToSave = 3;
+// 歷史紀錄現在依實際完成次數判斷：目前難度有完成至少 1 下就保存。
 
 // RTMPose 133 點 → RehabJoint 對應表
 const Map<RehabJoint, int> _kJointIndex = {
@@ -511,17 +510,30 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
               currentLevelIdx + 1 < currentMeta.difficulties.length;
 
           if (hasNextLevel) {
-            controllable?.confirmLevelUp();
-            final nextLevelIdx = currentLevelIdx + 1;
-            final nextTargetReps =
-                currentMeta.difficulties[nextLevelIdx].targetReps; // 🆕
+            // 🛠️ 2026-09-09：
+            // 使用者如果一開始自訂「2 次」，自動升級後也必須維持 2 次，
+            // 不能偷偷改回下一階設定檔裡預設的 8 / 6 次。
+            //
+            // 先保存目前真正使用中的目標次數，再用同一個值升級 action。
+            final selectedTargetReps = _currentLevelTargetReps;
+
+            // 升級前先把這一階存下來。
+            _saveCurrentLevelRecord();
+
+            // 把使用者選的次數傳進下一階 action，避免 action 內部回到預設值。
+            controllable?.confirmLevelUp(
+              customTargetReps: selectedTargetReps,
+            );
+
             setState(() {
-              _saveCurrentLevelRecord();
               _previousLevel = _nextLevel(_previousLevel);
               _currentLevelStart = DateTime.now();
               _currentLevelReps = 0;
               _repCount = 0;
-              _currentLevelTargetReps = nextTargetReps; // 🆕
+
+              // 關鍵：下一階繼續使用使用者原本選的次數。
+              _currentLevelTargetReps = selectedTargetReps;
+
               _instruction = '難度提升,請繼續保持';
             });
           } else {
@@ -643,7 +655,11 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
       _levelUpDialogShowing = true;
       _hasNextLevel = hasNextLevel;
       _nextLevelLabel = nextDifficulty?.label ?? '';
-      _levelUpRepsController.text = '${nextDifficulty?.targetReps ?? 10}';
+
+      // 🛠️ 手動升級視窗也沿用目前使用者選的次數。
+      // 例如一開始選 2 次，升級視窗預設仍顯示 2；
+      // 使用者若真的想改成別的次數，再自行修改即可。
+      _levelUpRepsController.text = '$_currentLevelTargetReps';
     });
     VoiceService.stop();
   }
@@ -675,10 +691,11 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
       _currentLevelStart = DateTime.now();
       _currentLevelReps = 0;
       _repCount = 0;
-      _currentLevelTargetReps = (customReps != null && customReps > 0)
-          ? customReps
-          : (int.tryParse(_levelUpRepsController.text) ??
-              _currentLevelTargetReps); // 🆕 優先用自訂值
+      // 使用者有輸入新值就採用新值；沒有有效輸入則維持原本自訂次數。
+      _currentLevelTargetReps =
+          (customReps != null && customReps > 0)
+              ? customReps
+              : _currentLevelTargetReps;
       _instruction = '難度提升,請繼續保持';
       _isPaused = false;
     });
@@ -835,7 +852,15 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
 
     final videoPath = await ScreenRecorderService.stopRecording();
 
-    if (_currentLevelReps >= _kMinRepsToSave) {
+    // 🛠️ 2026-09-09：
+    // 舊版要求目前難度至少完成 3 下才存紀錄。
+    // 但現在使用者可以自訂目標次數，例如只選 1 次或 2 次，
+    // 最高難度完成後會直接進入 _handleRealEnd()，
+    // 因此 1/1、2/2 反而會被「至少 3 下」這個舊限制擋掉，
+    // 導致 Lv.3 明明完成卻沒有歷史紀錄。
+    //
+    // 新規則：只要目前這一階真的有完成至少 1 下，就保存。
+    if (_currentLevelReps > 0) {
       _saveCurrentLevelRecord();
     }
 
