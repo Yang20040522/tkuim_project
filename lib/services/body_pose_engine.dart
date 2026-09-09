@@ -13,6 +13,11 @@
 //     否則骨架會上下顛倒。改用獨立欄位區分「手機相機幀」與
 //     「外部畫面幀(樹莓派/影片分析)」,兩條路徑互不影響。
 //
+//  🛠️ 2026-09-09:修正 RTMPose landmark index 位移問題。
+//     - keypoints / scores 固定維持 133 格，不再用 add() 造成索引左移。
+//     - 單一 landmark 輸出缺失時保留該 index，score=0。
+//     - EMA 只更新可信點，避免缺失點 Offset.zero 汙染平滑結果。
+//
 //  用法:
 //    final engine = BodyPoseEngine();
 //    await engine.init();
@@ -496,73 +501,142 @@ class BodyPoseEngine {
     try {
       const inputH = 256, inputW = 192;
       tensor = OrtValueTensor.createTensorWithDataList(
-          converted, [1, 3, inputH, inputW]);
+        converted,
+        [1, 3, inputH, inputW],
+      );
 
       outputs = await _poseSession!.runAsync(_runOpts!, {'input': tensor});
       if (outputs == null || outputs.length < 2) return;
+      if (outputs[0] == null || outputs[1] == null) return;
 
-      final xBatch = (outputs[0]!.value as List)[0] as List;
-      final yBatch = (outputs[1]!.value as List)[0] as List;
+      final xValue = outputs[0]!.value;
+      final yValue = outputs[1]!.value;
+      if (xValue is! List || yValue is! List ||
+          xValue.isEmpty || yValue.isEmpty) {
+        return;
+      }
 
-      final keypoints = <Offset>[];
-      final scores = <double>[];
+      final xBatchRaw = xValue[0];
+      final yBatchRaw = yValue[0];
+      if (xBatchRaw is! List || yBatchRaw is! List) return;
 
-      for (int i = 0; i < numKpts; i++) {
-        final xArr = xBatch[i] as List;
-        final yArr = yBatch[i] as List;
-        if (xArr.isEmpty || yArr.isEmpty) continue;
+      final xBatch = xBatchRaw;
+      final yBatch = yBatchRaw;
 
-        double maxX = -double.infinity, maxY = -double.infinity;
-        int xi = 0, yi = 0;
+      // 🛠️ 關鍵修正：永遠固定 133 格。
+      // 舊版遇到某一點 xArr/yArr 空陣列就 continue + add()，
+      // 會讓後面所有 landmark index 左移，肩/肘/髖等索引失真。
+      final keypoints = List<Offset>.filled(
+        numKpts,
+        Offset.zero,
+        growable: false,
+      );
+      final scores = List<double>.filled(
+        numKpts,
+        0.0,
+        growable: false,
+      );
+
+      final availableKpts = math.min(
+        numKpts,
+        math.min(xBatch.length, yBatch.length),
+      );
+
+      for (int i = 0; i < availableKpts; i++) {
+        final xRaw = xBatch[i];
+        final yRaw = yBatch[i];
+        if (xRaw is! List || yRaw is! List) continue;
+        if (xRaw.isEmpty || yRaw.isEmpty) continue;
+
+        final xArr = xRaw;
+        final yArr = yRaw;
+
+        double maxX = -double.infinity;
+        double maxY = -double.infinity;
+        int xi = 0;
+        int yi = 0;
+
         for (int j = 0; j < xArr.length; j++) {
-          final v = (xArr[j] as num).toDouble();
+          final value = xArr[j];
+          if (value is! num) continue;
+          final v = value.toDouble();
+          if (!v.isFinite) continue;
           if (v > maxX) {
             maxX = v;
             xi = j;
           }
         }
+
         for (int j = 0; j < yArr.length; j++) {
-          final v = (yArr[j] as num).toDouble();
+          final value = yArr[j];
+          if (value is! num) continue;
+          final v = value.toDouble();
+          if (!v.isFinite) continue;
           if (v > maxY) {
             maxY = v;
             yi = j;
           }
         }
 
-        scores.add((maxX + maxY) / 2);
+        if (!maxX.isFinite || !maxY.isFinite) continue;
+
+        final score = (maxX + maxY) / 2;
         final rawX = xi / xArr.length.toDouble();
         final rawY = yi / yArr.length.toDouble();
 
+        if (!score.isFinite || !rawX.isFinite || !rawY.isFinite) continue;
+        scores[i] = score;
+
+        Offset point;
         if (_isExternalFrame) {
           // 🚀 樹莓派/外部畫面專用映射:
           // 畫面本身已經是正的(needsRotation:false 沒做任何旋轉),
           // 不套用手機鏡頭那套旋轉校正的翻轉公式,
           // 否則骨架會上下顛倒。只有需要鏡像時才翻 x 軸。
-          if (_externalMirror) {
-            keypoints.add(Offset(1.0 - rawX, rawY));
-          } else {
-            keypoints.add(Offset(rawX, rawY));
-          }
+          point = _externalMirror
+              ? Offset(1.0 - rawX, rawY)
+              : Offset(rawX, rawY);
         } else if (_isFrontCamera) {
-          keypoints.add(Offset(1.0 - rawX, rawY));
+          point = Offset(1.0 - rawX, rawY);
         } else {
-          keypoints.add(Offset(1.0 - rawX, 1.0 - rawY));
+          point = Offset(1.0 - rawX, 1.0 - rawY);
         }
+
+        keypoints[i] = point;
       }
 
       // EMA 動態平滑 (參數與 body_test_screen 相同:dist*40, clamp 0.15~1.0)
-      if (_smoothedKeypoints.isEmpty ||
-          _smoothedKeypoints.length != keypoints.length) {
-        _smoothedKeypoints = List.from(keypoints);
+      if (_smoothedKeypoints.length != numKpts) {
+        _smoothedKeypoints = List<Offset>.filled(
+          numKpts,
+          Offset.zero,
+          growable: false,
+        );
+
+        for (int i = 0; i < numKpts; i++) {
+          if (scores[i] >= scoreThreshold) {
+            _smoothedKeypoints[i] = keypoints[i];
+          }
+        }
       } else {
-        for (int i = 0; i < keypoints.length; i++) {
-          if (i >= scores.length || scores[i] < scoreThreshold) continue;
+        for (int i = 0; i < numKpts; i++) {
+          // 缺失或低可信點不拿 Offset.zero 覆蓋前一幀，
+          // 保留上一個平滑座標；score 仍是本幀的 0/低分，
+          // 畫面與動作判定都能知道這一點目前不可信。
+          if (scores[i] < scoreThreshold) continue;
+
           final cur = keypoints[i];
           final prev = _smoothedKeypoints[i];
+
+          if (prev == Offset.zero) {
+            _smoothedKeypoints[i] = cur;
+            continue;
+          }
+
           final dx = cur.dx - prev.dx;
           final dy = cur.dy - prev.dy;
           final dist = math.sqrt(dx * dx + dy * dy);
-          final alpha = (dist * 40).clamp(0.15, 1.0);
+          final alpha = (dist * 40).clamp(0.15, 1.0).toDouble();
           _smoothedKeypoints[i] = Offset(
             alpha * cur.dx + (1 - alpha) * prev.dx,
             alpha * cur.dy + (1 - alpha) * prev.dy,
@@ -570,9 +644,14 @@ class BodyPoseEngine {
         }
       }
 
-      poseNotifier.value = PoseData(List.from(_smoothedKeypoints), scores);
-    } catch (e) {
+      // 對外永遠提供固定 133 點，index 0~132 不會因缺點而位移。
+      poseNotifier.value = PoseData(
+        List<Offset>.from(_smoothedKeypoints),
+        List<double>.from(scores),
+      );
+    } catch (e, stackTrace) {
       debugPrint('BodyPoseEngine 推論錯誤: $e');
+      debugPrintStack(stackTrace: stackTrace);
     } finally {
       tensor?.release();
       if (outputs != null) {
@@ -582,7 +661,9 @@ class BodyPoseEngine {
       }
       // 散熱節能鎖 (與 body_test_screen 相同:休息 20ms)
       Future.delayed(const Duration(milliseconds: 20), () {
-        _processing = false;
+        if (!_disposed) {
+          _processing = false;
+        }
       });
     }
   }

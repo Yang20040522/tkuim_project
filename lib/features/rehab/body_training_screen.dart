@@ -49,6 +49,13 @@
 //
 //  🔀 2026-09-07:AI 標準模板採 opt-in selectedTemplate。
 //     一般訓練不收集 trajectory；AI 模式只在既有 scored rep 後比較。
+//
+//  🛠️ 2026-09-09:修正全身動作「有骨架但不計次」的共用判定鏈。
+//     - BodyTrainingScreen 不再硬性要求 133 點完整，身體 0~16 足夠就判定。
+//     - 只把可信且有限值的身體關節送進 BodyRehabAction。
+//     - 原本 action.update() 改為先執行，AI 模板分析保持被動附加。
+//     - 樹莓派模式補回 Reach/下肢選擇遮罩。
+//     - 樹莓派切回手機時只由 BodyPoseEngine 啟動 image stream，避免重複啟動。
 // ══════════════════════════════════════════════════════════════════
 
 import 'dart:io';
@@ -176,6 +183,14 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
   String _feedback = '請將身體放入鏡頭範圍內';
   late String _instruction;
   bool _bodyVisible = false;
+
+  // 🛠️ 2026-09-09：避免「骨架明明有抓到，畫面卻一直顯示請站入鏡頭範圍內」。
+  //
+  // _bodyVisible 只控制 UI 遮罩，不應要求左右肩同時高分。
+  // RTMPose 某一個肩膀短暫掉分時，其他骨架仍可能正常。
+  int _bodyMissingFrames = 0;
+  static const int _bodyMissingFrameTolerance = 10;
+  static const double _bodyVisibilityScoreThreshold = 0.15;
 
   final DateTime _sessionStart = DateTime.now();
   bool _completionShown = false;
@@ -306,40 +321,143 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
     if (_isPaused) return;
 
     final data = _engine.poseNotifier.value;
-    if (data.keypoints.length < BodyPoseEngine.numKpts) return;
 
+    // 🛠️ 2026-09-09：全身復健動作實際只使用 RTMPose 的 0~16 身體點。
+    // 不再要求整包 133 點全部存在，避免臉部/手部任一點缺失時，
+    // 明明身體骨架完整卻直接 return，導致所有 BodyRehabAction 都不執行。
+    const int bodyLandmarkCount = 17;
+    if (data.keypoints.length < bodyLandmarkCount ||
+        data.scores.length < bodyLandmarkCount) {
+      // 偶爾少一幀時，不要立刻把畫面蓋黑。
+      // 只有連續多幀資料都不足，才判定人真的離開鏡頭。
+      _bodyMissingFrames++;
+
+      if (mounted &&
+          _bodyVisible &&
+          _bodyMissingFrames >= _bodyMissingFrameTolerance) {
+        setState(() {
+          _bodyVisible = false;
+        });
+      }
+
+      debugPrint(
+        'BodyTrainingScreen：姿勢資料不足 '
+        '(keypoints=${data.keypoints.length}, scores=${data.scores.length}, '
+        'missingFrames=$_bodyMissingFrames)',
+      );
+      return;
+    }
+
+    // 只把「索引存在 + 分數可信 + 座標有效」的關節交給動作判定。
+    // BodyRehabAction 本身若缺必要關節會回 RehabFeedback.none，
+    // 比把缺失點塞成 Offset.zero 更安全。
     final joints = <RehabJoint, Offset>{};
     _kJointIndex.forEach((joint, idx) {
-      joints[joint] = data.keypoints[idx];
+      if (idx >= data.keypoints.length || idx >= data.scores.length) return;
+
+      final point = data.keypoints[idx];
+      final score = data.scores[idx];
+      if (!point.dx.isFinite || !point.dy.isFinite || !score.isFinite) return;
+      if (score < _scoreThreshold) return;
+
+      joints[joint] = point;
     });
     final frame = BodyFrame(joints: joints);
 
-    final visible =
-        data.scores[5] > _scoreThreshold && data.scores[6] > _scoreThreshold;
+    // ── UI 用「人在不在鏡頭內」判定 ─────────────────────────────
+    //
+    // 舊版要求左肩 + 右肩都高於 threshold，
+    // 只要其中一邊肩膀短暫掉分，就會立刻顯示黑色遮罩。
+    //
+    // 新版改看主要身體點（肩、肘、腕、髖、膝、踝）：
+    // 至少 4 個可靠點，且至少有 1 個肩/髖軀幹點，就視為人在畫面內。
+    // 這只控制 UI；真正動作判定仍由各 Action 自己決定。
+    const bodyVisibilityIndexes = <int>[
+      5, 6,   // 肩
+      7, 8,   // 肘
+      9, 10,  // 手腕
+      11, 12, // 髖
+      13, 14, // 膝
+      15, 16, // 腳踝
+    ];
+
+    const torsoVisibilityIndexes = <int>[
+      5, 6,   // 肩
+      11, 12, // 髖
+    ];
+
+    int visibleBodyJointCount = 0;
+    for (final idx in bodyVisibilityIndexes) {
+      if (idx < data.scores.length &&
+          data.scores[idx].isFinite &&
+          data.scores[idx] >= _bodyVisibilityScoreThreshold) {
+        visibleBodyJointCount++;
+      }
+    }
+
+    int visibleTorsoJointCount = 0;
+    for (final idx in torsoVisibilityIndexes) {
+      if (idx < data.scores.length &&
+          data.scores[idx].isFinite &&
+          data.scores[idx] >= _bodyVisibilityScoreThreshold) {
+        visibleTorsoJointCount++;
+      }
+    }
+
+    final detectedNow =
+        visibleBodyJointCount >= 4 && visibleTorsoJointCount >= 1;
+
+    if (detectedNow) {
+      _bodyMissingFrames = 0;
+    } else {
+      _bodyMissingFrames++;
+    }
+
+    // 已經偵測到人時，允許短暫掉點約 10 幀，
+    // 避免骨架分數小幅波動就讓畫面忽明忽暗。
+    final visible = detectedNow ||
+        (_bodyVisible &&
+            _bodyMissingFrames < _bodyMissingFrameTolerance);
+
+    // 🛠️ 原本動作判定是整個訓練最重要的主流程。
+    // 先執行 action.update()，AI 標準模板分析改成被動附加，
+    // 即使未來 AI 收集/分析出錯，也不會擋住原本的計次功能。
+    RehabFeedback fb;
+    try {
+      fb = widget.action.update(frame);
+    } catch (error, stackTrace) {
+      debugPrint('Body action 判定失敗：$error');
+      debugPrintStack(stackTrace: stackTrace);
+      fb = RehabFeedback.none;
+    }
 
     int? aiTimestampMs;
     if (_usesTemplateAnalysis) {
       aiTimestampMs = _aiSessionClock.elapsedMilliseconds;
-      _aiTrajectoryCollector.addFrame(
-        timestampMs: aiTimestampMs,
-        landmarks: data.keypoints,
-        scores: data.scores,
-      );
+      try {
+        _aiTrajectoryCollector.addFrame(
+          timestampMs: aiTimestampMs,
+          landmarks: data.keypoints,
+          scores: data.scores,
+        );
+      } catch (error) {
+        // AI 是附加功能；收集失敗不能影響原本動作計次。
+        debugPrint('Body AI 軌跡收集失敗：$error');
+      }
     }
 
-    final fb = widget.action.update(frame);
     BodyTemplateAnalysisResult? completedRepAnalysis;
     if (_usesTemplateAnalysis && fb.scored) {
-      // Always retain the authoritative scored frame even if it falls inside
-      // the normal 100 ms sampling interval.
-      _aiTrajectoryCollector.addFrame(
-        timestampMs: aiTimestampMs!,
-        landmarks: data.keypoints,
-        scores: data.scores,
-        force: true,
-      );
-      final completedRep = _aiTrajectoryCollector.takeCompletedRep();
       try {
+        // Always retain the authoritative scored frame even if it falls inside
+        // the normal 100 ms sampling interval.
+        _aiTrajectoryCollector.addFrame(
+          timestampMs: aiTimestampMs!,
+          landmarks: data.keypoints,
+          scores: data.scores,
+          force: true,
+        );
+        final completedRep = _aiTrajectoryCollector.takeCompletedRep();
         completedRepAnalysis = _bodyTemplateAnalyzer.analyze(
           template: widget.selectedTemplate!,
           patientSamples: completedRep,
@@ -668,15 +786,18 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
     _piHand?.dispose();
     _piHand = null;
 
+    // 🛠️ 2026-09-09：不要先開一條空的 image stream。
+    // 舊版先 cam.startImageStream((image) {})，下一行再呼叫 engine.startCamera()，
+    // 等於同一個 CameraController 連續啟動兩次串流；部分裝置會因此拋錯，
+    // 切回手機鏡頭後只剩預覽、沒有再餵 RTMPose 推論。
     try {
       final cam = _engine.cameraController;
       if (cam != null && !cam.value.isStreamingImages) {
-        await cam.startImageStream((image) {});
-        // startImageStream 需要透過 engine 內部方法才會接上推論,
-        // 這裡改呼叫 engine 自己的 startCamera() 更安全:
+        await _engine.startCamera();
       }
-    } catch (_) {}
-    await _engine.startCamera();
+    } catch (error) {
+      debugPrint('切回手機鏡頭失敗：$error');
+    }
 
     if (!mounted) return;
     setState(() => _isExternalCamera = false);
@@ -1218,6 +1339,75 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
                         color: Colors.white,
                         fontSize: 18,
                         fontWeight: FontWeight.w600,
+                        shadows: [Shadow(blurRadius: 8, color: Colors.black)],
+                      ),
+                    ),
+                  ),
+                ),
+              // 🛠️ 2026-09-09：外接鏡頭也要保留選手 UI，
+              // 否則 ReachAction 切到樹莓派後若尚未選手，update() 會永遠等待。
+              if (_waitingHandSelect)
+                Container(
+                  color: Colors.black.withValues(alpha: 0.65),
+                  child: Center(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Text(
+                          '請選擇要訓練的手',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 22,
+                            fontWeight: FontWeight.w700,
+                            shadows: [Shadow(blurRadius: 8, color: Colors.black)],
+                          ),
+                        ),
+                        const SizedBox(height: 36),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            _handButton('左手', () {
+                              setState(() {
+                                (widget.action as ReachAction).selectLeftHand();
+                                _feedback = '已選擇左手,請將手自然放下';
+                                _instruction = '';
+                              });
+                            }),
+                            const SizedBox(width: 28),
+                            _handButton('右手', () {
+                              setState(() {
+                                (widget.action as ReachAction).selectRightHand();
+                                _feedback = '已選擇右手,請將手自然放下';
+                                _instruction = '';
+                              });
+                            }),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              // 🛠️ 外接鏡頭同樣保留下肢「患側 → 簡單/困難版」選擇。
+              if (_waitingLegSelect)
+                Container(
+                  color: Colors.black.withValues(alpha: 0.65),
+                  child: Center(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: _buildLegSelectContent(),
+                    ),
+                  ),
+                ),
+              if (_isPaused)
+                Container(
+                  color: Colors.black.withValues(alpha: 0.4),
+                  child: const Center(
+                    child: Text(
+                      '⏸ 已暫停',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 20,
+                        fontWeight: FontWeight.w700,
                         shadows: [Shadow(blurRadius: 8, color: Colors.black)],
                       ),
                     ),
