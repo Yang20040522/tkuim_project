@@ -622,10 +622,18 @@ class _TrainingScreenState extends State<TrainingScreen>
 
     if (patientId != null &&
         patientId.isNotEmpty) {
-      await markPlanItemDoneByActionName(
-        patientId: patientId,
-        actionName: widget.action.name,
-      );
+      try {
+        await markPlanItemDoneByActionName(
+          patientId: patientId,
+          actionName: widget.action.name,
+        );
+      } on Object {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('讀取或儲存復健計畫失敗')),
+          );
+        }
+      }
     }
 
     if (!mounted || result == null) {
@@ -823,10 +831,18 @@ class _TrainingScreenState extends State<TrainingScreen>
 
     if (patientId != null &&
         patientId.isNotEmpty) {
-      await markPlanItemDoneByActionName(
-        patientId: patientId,
-        actionName: widget.action.name,
-      );
+      try {
+        await markPlanItemDoneByActionName(
+          patientId: patientId,
+          actionName: widget.action.name,
+        );
+      } on Object {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('讀取或儲存復健計畫失敗')),
+          );
+        }
+      }
     }
 
     if (!mounted || result == null) {

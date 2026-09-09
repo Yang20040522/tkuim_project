@@ -3,6 +3,7 @@ import 'package:flutter_body/features/account/app_session.dart';
 import 'package:flutter_body/features/account/repositories/therapist_patient_repository.dart';
 import 'package:flutter_body/features/account/therapist_home_screen.dart';
 import 'package:flutter_body/features/plan/plan_builder_screen.dart';
+import 'package:flutter_body/features/plan/plan_api_repository.dart';
 import 'package:flutter_body/features/plan/plan_repository.dart';
 import 'package:flutter_body/features/plan/plan_screen.dart';
 import 'package:flutter_body/features/plan/rehab_plan.dart';
@@ -12,6 +13,10 @@ import 'package:flutter_test/flutter_test.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+
+  test('production plan repository uses the backend API', () {
+    expect(planRepository, isA<PlanApiRepository>());
+  });
 
   setUp(() {
     AppSession.userId = null;

@@ -18,6 +18,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 
 import '../../core/api_config.dart';
+import '../account/app_session.dart';
 import 'exercise.dart';
 import 'rehab_plan.dart';
 import 'plan_repository.dart';
@@ -41,14 +42,16 @@ class PlanApiRepository implements PlanRepository {
       'date': _dateKey(date),
     });
 
-    final response = await http.get(uri).timeout(const Duration(seconds: 10));
+    final response = await http
+        .get(uri, headers: _headers())
+        .timeout(const Duration(seconds: 10));
 
     if (response.statusCode == 404) {
       return null; // 這天還沒有計畫,不是錯誤
     }
 
     if (response.statusCode != 200) {
-      throw Exception('取得計畫失敗(狀態碼 ${response.statusCode})');
+      throw Exception(_errorMessage(response, '取得計畫失敗'));
     }
 
     final data = jsonDecode(utf8.decode(response.bodyBytes));
@@ -64,13 +67,13 @@ class PlanApiRepository implements PlanRepository {
     final response = await http
         .post(
           uri,
-          headers: {'Content-Type': 'application/json; charset=UTF-8'},
+          headers: _headers(),
           body: jsonEncode(plan.toJson()),
         )
         .timeout(const Duration(seconds: 10));
 
     if (response.statusCode != 200 && response.statusCode != 201) {
-      throw Exception('儲存計畫失敗(狀態碼 ${response.statusCode})');
+      throw Exception(_errorMessage(response, '儲存計畫失敗'));
     }
   }
 
@@ -89,14 +92,44 @@ class PlanApiRepository implements PlanRepository {
     final response = await http
         .patch(
           uri,
-          headers: {'Content-Type': 'application/json; charset=UTF-8'},
+          headers: _headers(),
           body: jsonEncode(item.toJson()),
         )
         .timeout(const Duration(seconds: 10));
 
     if (response.statusCode != 200) {
-      throw Exception('更新動作項目失敗(狀態碼 ${response.statusCode})');
+      throw Exception(_errorMessage(response, '更新動作項目失敗'));
     }
+  }
+
+  Map<String, String> _headers() {
+    final userId = AppSession.userId?.trim();
+    final identityToken = AppSession.customExerciseToken?.trim();
+    if (userId == null || userId.isEmpty) {
+      throw Exception('找不到登入使用者，請重新登入');
+    }
+    if (identityToken == null || identityToken.isEmpty) {
+      throw Exception('目前登入狀態缺少復健計畫授權，請登出後重新登入');
+    }
+    return {
+      'Accept': 'application/json',
+      'Content-Type': 'application/json; charset=UTF-8',
+      'X-User-Id': userId,
+      'X-Custom-Exercise-Token': identityToken,
+    };
+  }
+
+  String _errorMessage(http.Response response, String fallback) {
+    final body = utf8.decode(response.bodyBytes);
+    try {
+      final decoded = jsonDecode(body);
+      if (decoded is Map && decoded['message'] is String) {
+        return decoded['message'] as String;
+      }
+    } on FormatException {
+      // Fall through to the stable localized message below.
+    }
+    return '$fallback(狀態碼 ${response.statusCode})';
   }
 
   // ── 以下兩個維持跟 InMemoryPlanRepository 一樣的靜態邏輯 ──

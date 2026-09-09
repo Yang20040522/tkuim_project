@@ -886,10 +886,18 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
     // ✅ 新增
     final patientId = AppSession.userId?.trim();
     if (patientId != null && patientId.isNotEmpty) {
-      await markPlanItemDoneByActionName(
-        patientId: patientId,
-        actionName: widget.trainingActionMeta?.name ?? widget.action.title,
-      );
+      try {
+        await markPlanItemDoneByActionName(
+          patientId: patientId,
+          actionName: widget.trainingActionMeta?.name ?? widget.action.title,
+        );
+      } on Object {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('讀取或儲存復健計畫失敗')),
+          );
+        }
+      }
     }
 
     final durationSeconds = DateTime.now().difference(_sessionStart).inSeconds;
