@@ -104,6 +104,7 @@ import '../../features/tv_cast/socket_server_service.dart';
 import '../../features/tv_cast/socket_client_service.dart';
 import '../../controllers/rehab_session_controller.dart';
 import '../training/training_preview_screen.dart';
+import 'training_camera_session.dart';
 
 // 歷史紀錄現在依實際完成次數判斷：目前難度有完成至少 1 下就保存。
 
@@ -124,10 +125,22 @@ const Map<RehabJoint, int> _kJointIndex = {
 };
 
 const _skeletonConnections = [
-  [0, 1], [0, 2], [1, 3], [2, 4],
-  [5, 6], [5, 7], [7, 9], [6, 8], [8, 10],
-  [5, 11], [6, 12], [11, 12],
-  [11, 13], [13, 15], [12, 14], [14, 16],
+  [0, 1],
+  [0, 2],
+  [1, 3],
+  [2, 4],
+  [5, 6],
+  [5, 7],
+  [7, 9],
+  [6, 8],
+  [8, 10],
+  [5, 11],
+  [6, 12],
+  [11, 12],
+  [11, 13],
+  [13, 15],
+  [12, 14],
+  [14, 16],
 ];
 
 class BodyTrainingScreen extends StatefulWidget {
@@ -139,6 +152,7 @@ class BodyTrainingScreen extends StatefulWidget {
 
   final bool isDisplay; // 🖥️ 電視投放新增:true = 這台當電視顯示端
   final bool autoLevelUp; // 🆕 true=自動升級(舊行為), false=跳出詢問讓使用者決定
+  final TrainingCameraSelection initialCameraSelection;
 
   const BodyTrainingScreen({
     super.key,
@@ -148,6 +162,7 @@ class BodyTrainingScreen extends StatefulWidget {
     this.selectedTemplate,
     this.isDisplay = false, // 🖥️ 電視投放新增
     this.autoLevelUp = true, // 🆕 預設 true,不影響現在其他呼叫這個畫面的地方
+    this.initialCameraSelection = const TrainingCameraSelection.phone(),
   });
 
   @override
@@ -164,6 +179,10 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
   PiCameraSource? _piCamera;
   bool _isExternalCamera = false;
   String? _lastPiIp;
+  String? _cameraError;
+  bool _isRestarting = false;
+  bool _resourcesReleased = false;
+  final TrainingRestartGuard _restartGuard = TrainingRestartGuard();
 
   // 🚀 樹莓派手部偵測新增:另開一條連線拿手部 landmarks
   final MediaPipeService _handService = MediaPipeService();
@@ -261,6 +280,9 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
   void initState() {
     super.initState();
 
+    _isExternalCamera = widget.initialCameraSelection.usesRaspberryPi;
+    _lastPiIp = widget.initialCameraSelection.raspberryPiIp;
+
     _automaticHistorySessionId =
         'auto:${DateTime.now().microsecondsSinceEpoch}';
     _templateAnalysisEnabled = _resolveTemplateAnalysisCapability();
@@ -293,6 +315,7 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
         'type': 'START_TRAINING',
         'actionName': widget.trainingActionMeta?.name ?? widget.action.title,
         'difficultyLevel': widget.difficultyMeta?.level.name ?? 'level1',
+        'targetReps': _currentLevelTargetReps,
       };
       if (_clientService.isConnected) {
         _clientService.sendCommand(startMsg);
@@ -304,22 +327,39 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
 
   Future<void> _start() async {
     // 🖥️ 電視投放新增:顯示端不開相機、不載模型,只吃遠端資料
-    await _engine.init(asReceiver: widget.isDisplay);
-    if (!mounted) return;
-    setState(() {});
-    if (widget.isDisplay) return; // 🖥️ 顯示端到此為止
+    try {
+      await _engine.init(
+        asReceiver: widget.isDisplay,
+        initializeCamera: !_isExternalCamera,
+      );
+      if (!mounted) return;
+      setState(() {});
+      if (widget.isDisplay) return; // 🖥️ 顯示端到此為止
 
-    await _engine.startCamera();
-    _engine.poseNotifier.addListener(_onPoseUpdate); // ← 偵測核心,補回來
-    // 🖥️ 電視投放:只有連了電視的控制端才傳畫面,沒連不生成 JPEG(省效能)
-    if (_clientService.isConnected || _serverService.isClientConnected) {
-      _engine.imageNotifier.addListener(_onImageUpdate);
-      _engine.castEnabled = true;
-    }
+      _engine.poseNotifier.addListener(_onPoseUpdate); // ← 偵測核心,補回來
+      // 🖥️ 電視投放:只有連了電視的控制端才傳畫面,沒連不生成 JPEG(省效能)
+      if (_clientService.isConnected || _serverService.isClientConnected) {
+        _engine.imageNotifier.addListener(_onImageUpdate);
+        _engine.castEnabled = true;
+      }
 
-    if (!_recordingStarted) {
-      _recordingStarted = true;
-      ScreenRecorderService.startRecording();
+      if (_isExternalCamera) {
+        await _connectExternalCamera(_lastPiIp!);
+      } else {
+        await _engine.startPhoneCamera();
+      }
+
+      if (!_recordingStarted && !_isExternalCamera) {
+        _recordingStarted = true;
+        ScreenRecorderService.startRecording();
+      }
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _cameraError = _isExternalCamera
+            ? '無法重新連接樹莓派鏡頭（${_lastPiIp ?? 'IP 不明'}）。\n請確認裝置與網路後再試一次。'
+            : '手機相機啟動失敗，請確認相機權限後再試一次。';
+      });
     }
   }
 
@@ -379,16 +419,16 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
     // 至少 4 個可靠點，且至少有 1 個肩/髖軀幹點，就視為人在畫面內。
     // 這只控制 UI；真正動作判定仍由各 Action 自己決定。
     const bodyVisibilityIndexes = <int>[
-      5, 6,   // 肩
-      7, 8,   // 肘
-      9, 10,  // 手腕
+      5, 6, // 肩
+      7, 8, // 肘
+      9, 10, // 手腕
       11, 12, // 髖
       13, 14, // 膝
       15, 16, // 腳踝
     ];
 
     const torsoVisibilityIndexes = <int>[
-      5, 6,   // 肩
+      5, 6, // 肩
       11, 12, // 髖
     ];
 
@@ -422,8 +462,7 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
     // 已經偵測到人時，允許短暫掉點約 10 幀，
     // 避免骨架分數小幅波動就讓畫面忽明忽暗。
     final visible = detectedNow ||
-        (_bodyVisible &&
-            _bodyMissingFrames < _bodyMissingFrameTolerance);
+        (_bodyVisible && _bodyMissingFrames < _bodyMissingFrameTolerance);
 
     // 🛠️ 原本動作判定是整個訓練最重要的主流程。
     // 先執行 action.update()，AI 標準模板分析改成被動附加，
@@ -564,6 +603,7 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
         final statusMsg = {
           'type': 'TRAINING_UPDATE',
           'repCount': _repCount,
+          'targetReps': _currentLevelTargetReps,
           'feedback': _feedback,
           'instruction': _instruction,
         };
@@ -630,6 +670,7 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
       final c = _remoteState.value;
       _remoteState.value = c.copyWith(
         repCount: msg['repCount'] ?? c.repCount,
+        targetReps: msg['targetReps'] ?? c.targetReps,
         feedback: msg['feedback'] ?? c.feedback,
         instruction: msg['instruction'] ?? c.instruction,
       );
@@ -699,10 +740,9 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
       _currentLevelReps = 0;
       _repCount = 0;
       // 使用者有輸入新值就採用新值；沒有有效輸入則維持原本自訂次數。
-      _currentLevelTargetReps =
-          (customReps != null && customReps > 0)
-              ? customReps
-              : _currentLevelTargetReps;
+      _currentLevelTargetReps = (customReps != null && customReps > 0)
+          ? customReps
+          : _currentLevelTargetReps;
       _instruction = '難度提升,請繼續保持';
       _isPaused = false;
     });
@@ -784,6 +824,7 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
 
   // 🚀 樹莓派新增:開啟外接鏡頭來源(身體 + 手部)
   Future<void> _enableExternalCamera() async {
+    if (_isRestarting) return;
     final ip = await showPiIpDialog(context, initialIp: _lastPiIp);
     if (ip == null || ip.isEmpty) return;
     _lastPiIp = ip;
@@ -797,17 +838,74 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
       }
     } catch (_) {}
 
+    if (mounted) {
+      setState(() {
+        _isExternalCamera = true;
+        _cameraError = null;
+      });
+    }
+    try {
+      await _connectExternalCamera(ip);
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _cameraError = '無法連接樹莓派鏡頭（$ip）。\n請確認裝置與網路後再試一次。';
+      });
+    }
+  }
+
+  Future<void> _connectExternalCamera(String ip) async {
+    await _piCamera?.stop();
     _piCamera?.dispose();
-    _piCamera = PiCameraSource(engine: _engine, ip: ip);
-    await _piCamera!.start();
-
-    // 🚀 手部偵測:另開一條連線接同一台樹莓派,拿手部 landmarks
+    await _piHand?.stop();
     _piHand?.dispose();
-    _piHand = PiHandSource(service: _handService, ip: ip);
-    await _piHand!.start();
 
-    if (!mounted) return;
-    setState(() => _isExternalCamera = true);
+    final camera = PiCameraSource(engine: _engine, ip: ip);
+    final hand = PiHandSource(service: _handService, ip: ip);
+    _piCamera = camera;
+    _piHand = hand;
+
+    try {
+      await camera.start();
+      await hand.start();
+      await Future.wait([
+        camera.waitForFirstFrame(),
+        hand.waitForFirstFrame(),
+      ]);
+      if (!mounted) return;
+      setState(() => _cameraError = null);
+    } catch (error) {
+      await camera.stop();
+      await hand.stop();
+      camera.dispose();
+      hand.dispose();
+      if (identical(_piCamera, camera)) _piCamera = null;
+      if (identical(_piHand, hand)) _piHand = null;
+      rethrow;
+    }
+  }
+
+  Future<void> _retryCameraConnection() async {
+    if (_isRestarting) return;
+    _isRestarting = true;
+    if (mounted) setState(() => _cameraError = null);
+    try {
+      if (_isExternalCamera) {
+        await _connectExternalCamera(_lastPiIp!);
+      } else {
+        await _engine.startPhoneCamera();
+      }
+    } catch (error) {
+      if (mounted) {
+        setState(() {
+          _cameraError = _isExternalCamera
+              ? '仍無法連接樹莓派鏡頭（${_lastPiIp ?? 'IP 不明'}）。\n請確認服務已啟動後再次重試。'
+              : '手機相機仍無法啟動，請確認相機權限後再次重試。';
+        });
+      }
+    } finally {
+      _isRestarting = false;
+    }
   }
 
   // 🚀 樹莓派新增:切回手機內建鏡頭
@@ -827,16 +925,16 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
     // 等於同一個 CameraController 連續啟動兩次串流；部分裝置會因此拋錯，
     // 切回手機鏡頭後只剩預覽、沒有再餵 RTMPose 推論。
     try {
-      final cam = _engine.cameraController;
-      if (cam != null && !cam.value.isStreamingImages) {
-        await _engine.startCamera();
-      }
+      await _engine.startPhoneCamera();
     } catch (error) {
       debugPrint('切回手機鏡頭失敗：$error');
     }
 
     if (!mounted) return;
-    setState(() => _isExternalCamera = false);
+    setState(() {
+      _isExternalCamera = false;
+      _cameraError = null;
+    });
   }
 
   Future<void> _handleStopButtonTap() async {
@@ -947,15 +1045,7 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
 
     switch (result.kind) {
       case _CompletionKind.retry:
-        Navigator.of(context).pushReplacement(MaterialPageRoute(
-          builder: (_) => BodyTrainingScreen(
-            action: widget.action,
-            trainingActionMeta: widget.trainingActionMeta,
-            difficultyMeta: widget.difficultyMeta,
-            selectedTemplate: widget.selectedTemplate,
-            autoLevelUp: widget.autoLevelUp, // 🆕(原本漏了,補上)
-          ),
-        ));
+        await _restartTraining();
         break;
       case _CompletionKind.home:
         Navigator.of(context).pop();
@@ -965,6 +1055,61 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
             result.action!, result.difficulty!, result.autoLevelUp!); // 🆕
         break;
     }
+  }
+
+  TrainingCameraSelection get _currentCameraSelection => _isExternalCamera
+      ? TrainingCameraSelection.raspberryPi(_lastPiIp!)
+      : const TrainingCameraSelection.phone();
+
+  DifficultyOption? get _currentDifficultyForRetry {
+    final meta = widget.trainingActionMeta;
+    if (meta == null) return widget.difficultyMeta;
+    final index = _levelToInt(_previousLevel) - 1;
+    final base = index >= 0 && index < meta.difficulties.length
+        ? meta.difficulties[index]
+        : widget.difficultyMeta;
+    return base?.copyWithReps(_currentLevelTargetReps);
+  }
+
+  Future<void> _restartTraining() async {
+    await _restartGuard.run(() async {
+      if (_isRestarting) return;
+      _isRestarting = true;
+
+      final cameraSelection = _currentCameraSelection;
+      final retryDifficulty = _currentDifficultyForRetry;
+      final controllable = widget.action is LevelUpControllable
+          ? widget.action as LevelUpControllable
+          : null;
+      controllable?.declineLevelUp();
+
+      _aiTrajectoryCollector.reset();
+      _engine.poseNotifier.removeListener(_onPoseUpdate);
+      _engine.imageNotifier.removeListener(_onImageUpdate);
+
+      _resourcesReleased = true;
+      await _piCamera?.stop();
+      _piCamera?.dispose();
+      _piCamera = null;
+      await _piHand?.stop();
+      _piHand?.dispose();
+      _piHand = null;
+      await _engine.dispose();
+      if (!mounted) return;
+
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute(
+          builder: (_) => BodyTrainingScreen(
+            action: widget.action,
+            trainingActionMeta: widget.trainingActionMeta,
+            difficultyMeta: retryDifficulty,
+            selectedTemplate: widget.selectedTemplate,
+            autoLevelUp: widget.autoLevelUp,
+            initialCameraSelection: cameraSelection,
+          ),
+        ),
+      );
+    });
   }
 
   Future<void> _navigateToAction(TrainingAction action,
@@ -1118,10 +1263,12 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
     _remoteRenderer.dispose();
     _remoteState.dispose();
     _engine.poseNotifier.removeListener(_onPoseUpdate);
-    _piCamera?.dispose(); // 🚀 樹莓派新增
-    _piHand?.dispose(); // 🚀 樹莓派手部新增
+    if (!_resourcesReleased) {
+      _piCamera?.dispose(); // 🚀 樹莓派新增
+      _piHand?.dispose(); // 🚀 樹莓派手部新增
+      _engine.dispose();
+    }
     _handService.dispose(); // 🚀 樹莓派手部新增
-    _engine.dispose();
     _levelUpRepsController.dispose(); // 🆕
     super.dispose();
   }
@@ -1158,6 +1305,13 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
           ),
         ),
         if (_levelUpDialogShowing) _buildLevelUpOverlay(), // 🆕
+        if (_cameraError != null)
+          Positioned.fill(
+            child: CameraConnectionErrorOverlay(
+              message: _cameraError!,
+              onRetry: _retryCameraConnection,
+            ),
+          ),
       ],
     );
   }
@@ -1411,7 +1565,9 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
                             color: Colors.white,
                             fontSize: 22,
                             fontWeight: FontWeight.w700,
-                            shadows: [Shadow(blurRadius: 8, color: Colors.black)],
+                            shadows: [
+                              Shadow(blurRadius: 8, color: Colors.black)
+                            ],
                           ),
                         ),
                         const SizedBox(height: 36),
@@ -1428,7 +1584,8 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
                             const SizedBox(width: 28),
                             _handButton('右手', () {
                               setState(() {
-                                (widget.action as ReachAction).selectRightHand();
+                                (widget.action as ReachAction)
+                                    .selectRightHand();
                                 _feedback = '已選擇右手,請將手自然放下';
                                 _instruction = '';
                               });
@@ -1957,7 +2114,12 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
       child: Row(
         children: [
-          Expanded(child: _statCard('完成次數', '$_repCount')),
+          Expanded(
+            child: _statCard(
+              '完成次數',
+              formatRepProgress(_repCount, _currentLevelTargetReps),
+            ),
+          ),
           const SizedBox(width: 12),
           Expanded(child: _statCard('目前難度', widget.action.difficultyLabel)),
           const SizedBox(width: 12),
@@ -1973,7 +2135,12 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
       child: Row(
         children: [
-          Expanded(child: _statCard('完成次數', '${state.repCount}')),
+          Expanded(
+            child: _statCard(
+              '完成次數',
+              formatRepProgress(state.repCount, state.targetReps),
+            ),
+          ),
           const SizedBox(width: 12),
           Expanded(child: _statCard('目前難度', widget.action.difficultyLabel)),
           const SizedBox(width: 12),
@@ -2337,11 +2504,26 @@ class _PiHandSkeletonPainter extends CustomPainter {
   _PiHandSkeletonPainter(this.landmarks, {this.sourceSize});
 
   static const _connections = [
-    [0, 1], [1, 2], [2, 3], [3, 4],
-    [0, 5], [5, 6], [6, 7], [7, 8],
-    [0, 9], [9, 10], [10, 11], [11, 12],
-    [0, 13], [13, 14], [14, 15], [15, 16],
-    [0, 17], [17, 18], [18, 19], [19, 20],
+    [0, 1],
+    [1, 2],
+    [2, 3],
+    [3, 4],
+    [0, 5],
+    [5, 6],
+    [6, 7],
+    [7, 8],
+    [0, 9],
+    [9, 10],
+    [10, 11],
+    [11, 12],
+    [0, 13],
+    [13, 14],
+    [14, 15],
+    [15, 16],
+    [0, 17],
+    [17, 18],
+    [18, 19],
+    [19, 20],
   ];
 
   ({double scale, double dx, double dy}) _coverTransform(Size canvasSize) {

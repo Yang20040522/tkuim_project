@@ -116,7 +116,7 @@ class _PlanScreenState extends State<PlanScreen> {
       (a) => a.name == exercise.name,
       orElse: () => kTrainingActions.first,
     );
-    final difficulty = action.difficulties.first;
+    final difficulty = action.difficulties.first.copyWithReps(item.repsPerSet);
     final templateSelection = await MotionTemplateTrainingPicker.choose(
       context: context,
       action: action,

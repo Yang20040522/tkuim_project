@@ -76,6 +76,25 @@ class PiCameraSource {
     connected.value = true;
   }
 
+  Future<void> waitForFirstFrame({
+    Duration timeout = const Duration(seconds: 10),
+  }) async {
+    if (latestJpeg.value != null) return;
+    final completer = Completer<void>();
+    void listener() {
+      if (latestJpeg.value != null && !completer.isCompleted) {
+        completer.complete();
+      }
+    }
+
+    latestJpeg.addListener(listener);
+    try {
+      await completer.future.timeout(timeout);
+    } finally {
+      if (!_disposed) latestJpeg.removeListener(listener);
+    }
+  }
+
   void _onData(dynamic data) {
     if (_disposed) return;
     if (data is! Uint8List) return;
@@ -126,10 +145,11 @@ class PiCameraSource {
     await _channel?.sink.close();
     _sub = null;
     _channel = null;
-    connected.value = false;
+    if (!_disposed) connected.value = false;
   }
 
   void dispose() {
+    if (_disposed) return;
     _disposed = true;
     stop();
     connected.dispose();
