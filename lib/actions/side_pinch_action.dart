@@ -39,7 +39,7 @@ class SidePinchAction extends BaseRehabAction implements LevelUpControllable {
   SidePinchAction({
     required RehabActionCallback callback,
     this.difficulty = 1,
-    this.targetReps = 10,   // ← 新增
+    this.targetReps = 10, // ← 新增
   }) : super(callback) {
     _startLevel(difficulty);
   }
@@ -54,7 +54,10 @@ class SidePinchAction extends BaseRehabAction implements LevelUpControllable {
 
   @override
   String get initialInstruction => '準備開始側捏訓練';
-
+  @override
+  List<String> get currentMistakeLogs => List<String>.unmodifiable(
+        _mistakeLogs,
+      );
   @override
   void dispose() {
     _transitionTimer?.cancel();
@@ -72,25 +75,30 @@ class SidePinchAction extends BaseRehabAction implements LevelUpControllable {
       return;
     }
 
-    final thumbTip  = landmarks[4];
-    final indexPip  = landmarks[6];
-    final wrist     = landmarks[0];
+    final thumbTip = landmarks[4];
+    final indexPip = landmarks[6];
+    final wrist = landmarks[0];
     final middleMcp = landmarks[9];
 
-    final palmLen   = _hypot(middleMcp.x - wrist.x, middleMcp.y - wrist.y);
+    final palmLen = _hypot(middleMcp.x - wrist.x, middleMcp.y - wrist.y);
     final pinchDist = _hypot(thumbTip.x - indexPip.x, thumbTip.y - indexPip.y);
     final ratio = (pinchDist / palmLen) * 100;
 
-    _smoothedPinchDistance =
-        (_smoothingFactor * ratio) + ((1 - _smoothingFactor) * _smoothedPinchDistance);
+    _smoothedPinchDistance = (_smoothingFactor * ratio) +
+        ((1 - _smoothingFactor) * _smoothedPinchDistance);
 
     callback.onStatsChanged(accuracy: _smoothedPinchDistance);
 
-    final pinchThreshold = _currentLevel == 1 ? 55.0 : _currentLevel == 2 ? 45.0 : 40.0;
-    final openThreshold  = _currentLevel == 1 ? 58.0 : 65.0;
-    final totalRange     = openThreshold - pinchThreshold;
-    final rawProgress    = 1.0 - ((_smoothedPinchDistance - pinchThreshold) / totalRange);
-    final progress       = rawProgress.clamp(0.0, 1.0);
+    final pinchThreshold = _currentLevel == 1
+        ? 55.0
+        : _currentLevel == 2
+            ? 45.0
+            : 40.0;
+    final openThreshold = _currentLevel == 1 ? 58.0 : 65.0;
+    final totalRange = openThreshold - pinchThreshold;
+    final rawProgress =
+        1.0 - ((_smoothedPinchDistance - pinchThreshold) / totalRange);
+    final progress = rawProgress.clamp(0.0, 1.0);
 
     callback.onStatsChanged(progress: progress, speedState: 0);
 
@@ -103,8 +111,10 @@ class SidePinchAction extends BaseRehabAction implements LevelUpControllable {
     _pinchStateBuffer.add(currentState);
     if (_pinchStateBuffer.length > 8) _pinchStateBuffer.removeAt(0);
 
-    final isStablePinch = _pinchStateBuffer.where((s) => s == 'PINCHED').length >= 5;
-    final isStableOpen  = _pinchStateBuffer.where((s) => s == 'OPENED').length >= 5;
+    final isStablePinch =
+        _pinchStateBuffer.where((s) => s == 'PINCHED').length >= 5;
+    final isStableOpen =
+        _pinchStateBuffer.where((s) => s == 'OPENED').length >= 5;
 
     if (isStablePinch && _lastConfirmedPinchState != 'PINCHED') {
       if (_lastConfirmedPinchState == 'OPENED') {
@@ -117,7 +127,8 @@ class SidePinchAction extends BaseRehabAction implements LevelUpControllable {
           var score = 100;
 
           if (_currentLevel == 3) {
-            final wristMove = _hypot(wrist.x - _repStartWristX, wrist.y - _repStartWristY);
+            final wristMove =
+                _hypot(wrist.x - _repStartWristX, wrist.y - _repStartWristY);
             if (wristMove > 0.05) {
               score -= 20;
               _mistakeLogs.add('第 $_repCount 次：手腕晃動過大');
@@ -144,7 +155,6 @@ class SidePinchAction extends BaseRehabAction implements LevelUpControllable {
         callback.onFeedbackChanged('✅ 捏緊完成', '請將手指完全打開');
       }
       _lastConfirmedPinchState = 'PINCHED';
-
     } else if (isStableOpen && _lastConfirmedPinchState != 'OPENED') {
       callback.onFeedbackChanged('✅ 已張開', '請用力側捏');
       _repStartWristX = wrist.x;
@@ -171,8 +181,11 @@ class SidePinchAction extends BaseRehabAction implements LevelUpControllable {
         : level == 2
             ? '中階 (標準側捏)'
             : '進階 (懸空連擊)';
-    
-    callback.onLevelUp(newLevel: level, levelLabel: 'Lv.$level - $levelName', newTargetReps: targetReps);
+
+    callback.onLevelUp(
+        newLevel: level,
+        levelLabel: 'Lv.$level - $levelName',
+        newTargetReps: targetReps);
 
     callback.onFeedbackChanged('側捏訓練 Lv.$level - $levelName', '準備進入關卡...');
     callback.onStatsChanged(repCount: 0);
@@ -185,7 +198,8 @@ class SidePinchAction extends BaseRehabAction implements LevelUpControllable {
   }
 
   void _handleTransition() {
-    final elapsed = DateTime.now().difference(_transitionStartTime).inMilliseconds;
+    final elapsed =
+        DateTime.now().difference(_transitionStartTime).inMilliseconds;
 
     if (elapsed < 3000) {
       final remain = 3 - (elapsed ~/ 1000);
@@ -233,7 +247,8 @@ class SidePinchAction extends BaseRehabAction implements LevelUpControllable {
   bool get isPendingLevelUp => _pendingLevelUp; // 🆕
 
   @override
-  void confirmLevelUp({int? customTargetReps}) { // 🆕
+  void confirmLevelUp({int? customTargetReps}) {
+    // 🆕
     _pendingLevelUp = false;
     if (customTargetReps != null && customTargetReps > 0) {
       targetReps = customTargetReps;
@@ -242,7 +257,8 @@ class SidePinchAction extends BaseRehabAction implements LevelUpControllable {
   }
 
   @override
-  void declineLevelUp() { // 🆕 選不要升級 → 直接結束訓練
+  void declineLevelUp() {
+    // 🆕 選不要升級 → 直接結束訓練
     _pendingLevelUp = false;
     final durationSeconds =
         DateTime.now().difference(_sessionStartTime).inSeconds;

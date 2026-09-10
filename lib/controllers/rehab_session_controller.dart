@@ -1,16 +1,17 @@
 // lib/controllers/rehab_session_controller.dart
 //
-// 動作判斷邏輯已全部移至 Dart（side_pinch_action / turn_palm_action）
-// trainingStream 不再使用，KT 只負責送 landmark
+// 動作判斷邏輯全部在 Dart Action。
+// Kotlin / MediaPipe 只負責 landmarks。
 //
-// ✅ pause()/resume(),支援「暫停選單」真正的接續(不重建、不歸零)
-// 🚀 樹莓派新增:currentModel getter,讓 training_screen.dart 判斷
-//    目前用的是 MediaPipeModel 還是 PiPoseModel,以顯示對應畫面
-// 🚀 修正:TurnPalmAction 的 overlayMirrored 必須依「目前來源是手機還是
-//    樹莓派」動態決定,兩者座標鏡像方向相反,共用同一個 false 會導致
-//    樹莓派模式角度算反(偏差顯示接近 180 度)。
+// 本版新增：
+// 1. 每一幀把 Action.currentMistakeLogs 同步進 state。
+// 2. 升到下一難度時清空 state.mistakeLogs。
+// 3. 因此 TrainingScreen 原本的 state.mistakeLogs
+//    就會自然變成「目前難度自己的錯誤」。
 
 import 'dart:async';
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 
 import '../actions/base_rehab_action.dart';
@@ -19,23 +20,29 @@ import '../actions/side_pinch_action.dart';
 import '../actions/turn_palm_action.dart';
 import '../actions/wrist_extension_action.dart';
 import '../actions/wrist_side_bend_action.dart';
-import '../models/training_action.dart';
-import '../services/mediapipe_service.dart';
-import '../services/pose_model_interface.dart';
-import '../services/pi_pose_model.dart'; // 🚀 新增:判斷是否為樹莓派來源
 
-// ── Session 狀態快照 ──────────────────────────────────────────────
+import '../models/training_action.dart';
+
+import '../services/mediapipe_service.dart';
+import '../services/pi_pose_model.dart';
+import '../services/pose_model_interface.dart';
+
 class RehabSessionState {
   final List<Landmark> handLandmarks;
   final bool handDetected;
+
   final List<Offset> bodyLandmarks;
 
   final String feedback;
   final String instruction;
+
   final int repCount;
+
   final double accuracy;
   final double progress;
+
   final int speedState;
+
   final bool isComplete;
 
   final bool isCountingDown;
@@ -43,13 +50,20 @@ class RehabSessionState {
   final bool countdownDone;
 
   final int durationSeconds;
+
+  /// 只代表「目前這一階」的錯誤。
   final List<String> mistakeLogs;
-  final int targetReps;   // ← 新增
-  final String currentLevelLabel;   // ✅ 加這行(欄位宣告)
-  final int currentLevel;   // ✅ 新增
-  final bool pendingLevelUp;   // 🆕 是否正等待使用者確認升級
-  final int pendingNextLevel;  // 🆕 等待確認的下一階是第幾階
-  final String pendingNextLevelLabel; // 🆕 等待確認的下一階標籤文字
+
+  final int targetReps;
+
+  final String currentLevelLabel;
+  final int currentLevel;
+
+  final bool pendingLevelUp;
+  final int pendingNextLevel;
+  final String pendingNextLevelLabel;
+
+  final Uint8List? imageBytes;
 
   const RehabSessionState({
     this.handLandmarks = const [],
@@ -67,12 +81,13 @@ class RehabSessionState {
     this.countdownDone = false,
     this.durationSeconds = 0,
     this.mistakeLogs = const [],
-    this.targetReps = 10,   // ← 新增
-    this.currentLevelLabel = '',    // ✅ 加這行(預設值)
-    this.currentLevel = 1,   // ✅ 新增
-    this.pendingLevelUp = false,   // 🆕
-    this.pendingNextLevel = 1,     // 🆕
-    this.pendingNextLevelLabel = '', // 🆕
+    this.targetReps = 10,
+    this.imageBytes,
+    this.currentLevelLabel = '',
+    this.currentLevel = 1,
+    this.pendingLevelUp = false,
+    this.pendingNextLevel = 1,
+    this.pendingNextLevelLabel = '',
   });
 
   RehabSessionState copyWith({
@@ -91,12 +106,13 @@ class RehabSessionState {
     bool? countdownDone,
     int? durationSeconds,
     List<String>? mistakeLogs,
-    int? targetReps,   // ← 新增
-    String? currentLevelLabel,      // ✅ 加這行(copyWith 參數)
-    int? currentLevel,   // ✅ 新增
-    bool? pendingLevelUp,   // 🆕
-    int? pendingNextLevel,  // 🆕
-    String? pendingNextLevelLabel, // 🆕
+    int? targetReps,
+    Uint8List? imageBytes,
+    String? currentLevelLabel,
+    int? currentLevel,
+    bool? pendingLevelUp,
+    int? pendingNextLevel,
+    String? pendingNextLevelLabel,
   }) {
     return RehabSessionState(
       handLandmarks: handLandmarks ?? this.handLandmarks,
@@ -114,37 +130,50 @@ class RehabSessionState {
       countdownDone: countdownDone ?? this.countdownDone,
       durationSeconds: durationSeconds ?? this.durationSeconds,
       mistakeLogs: mistakeLogs ?? this.mistakeLogs,
-      targetReps: targetReps ?? this.targetReps,   // ← 新增
-      currentLevelLabel: currentLevelLabel ?? this.currentLevelLabel,  // ✅ 加這行(組裝新物件)
-      currentLevel: currentLevel ?? this.currentLevel,   // ✅ 新增
-      pendingLevelUp: pendingLevelUp ?? this.pendingLevelUp,   // 🆕
-      pendingNextLevel: pendingNextLevel ?? this.pendingNextLevel,  // 🆕
-      pendingNextLevelLabel: pendingNextLevelLabel ?? this.pendingNextLevelLabel, // 🆕
+      targetReps: targetReps ?? this.targetReps,
+      imageBytes: imageBytes ?? this.imageBytes,
+      currentLevelLabel: currentLevelLabel ?? this.currentLevelLabel,
+      currentLevel: currentLevel ?? this.currentLevel,
+      pendingLevelUp: pendingLevelUp ?? this.pendingLevelUp,
+      pendingNextLevel: pendingNextLevel ?? this.pendingNextLevel,
+      pendingNextLevelLabel:
+          pendingNextLevelLabel ?? this.pendingNextLevelLabel,
     );
   }
 }
 
-// ── Controller ────────────────────────────────────────────────────
 class RehabSessionController implements RehabActionCallback {
   final IPoseModel model;
+
   final TrainingAction action;
+
   final DifficultyOption difficulty;
 
-  late final BaseRehabAction _actionLogic;
+  BaseRehabAction? _actionLogic;
 
   StreamSubscription? _frameSub;
 
   final _stateCtrl = StreamController<RehabSessionState>.broadcast();
+
   Stream<RehabSessionState> get stateStream => _stateCtrl.stream;
 
   RehabSessionState _state = const RehabSessionState();
+
   RehabSessionState get currentState => _state;
 
-  // 🚀 樹莓派新增:讓 UI 層(training_screen.dart)拿到目前用的 model,
-  // 用來判斷是不是 PiPoseModel、進而取得底層 PiHandSource 顯示畫面
   IPoseModel get currentModel => model;
 
-  // 暫停中:frame 監聽會直接忽略新的一幀,凍結畫面與計次
+  /// 目前這一階 Action 真正保存的錯誤。
+  ///
+  /// 某些 Action 在 constructor 裡就會立刻透過 callback 回呼
+  /// onLevelUp / onFeedbackChanged。那個時間點 `_actionLogic`
+  /// 可能還沒完成指派，所以這裡必須容許 null。
+  List<String> get currentMistakeLogs => _safeCurrentMistakeLogs();
+
+  List<String> _safeCurrentMistakeLogs() => List<String>.from(
+        _actionLogic?.currentMistakeLogs ?? _state.mistakeLogs,
+      );
+
   bool _isPaused = false;
 
   RehabSessionController({
@@ -152,92 +181,128 @@ class RehabSessionController implements RehabActionCallback {
     required this.action,
     required this.difficulty,
   }) {
-    //final diffIdx = action.difficulties.indexOf(difficulty) + 1;
-    final diffIdx = action.difficulties.indexWhere((d) => d.level == difficulty.level) + 1;
+    final diffIdx = action.difficulties.indexWhere(
+          (d) => d.level == difficulty.level,
+        ) +
+        1;
+
     _state = _state.copyWith(
       targetReps: difficulty.targetReps,
-      currentLevel: diffIdx,   // ✅ 新增
-    );   // ← 新加這行
+      currentLevel: diffIdx,
+    );
 
-    // 🚀 修正:樹莓派來源跟手機來源的 landmark 座標左右鏡像方向相反,
-    // TurnPalmAction 的角度計算公式是針對手機原生鏡像後的座標調校的,
-    // 樹莓派模式必須把 overlayMirrored 反過來,角度才會算對,
-    // 不然會出現偏差角度接近 180 度(方向算反)的情況。
     final bool isExternalSource = model is PiPoseModel;
 
     switch (action.type) {
       case ActionType.turnPalm:
         _actionLogic = TurnPalmAction(
           callback: this,
-          targetReps: difficulty.targetReps,   // ← 新增
-          overlayMirrored: isExternalSource,   // 🚀 新增:依來源動態決定鏡像方向
+          startingLevel: diffIdx,
+          targetReps: difficulty.targetReps,
+          overlayMirrored: isExternalSource,
         );
+        break;
 
       case ActionType.wristExtension:
         _actionLogic = WristExtensionAction(
           callback: this,
-          targetReps: difficulty.targetReps,   // ← 新增
+          targetReps: difficulty.targetReps,
         );
-        // 有 3 秒倒數，countdownDone 由 action 自己透過 onCountdownChanged 設定
+        break;
 
       case ActionType.wristSideBend:
         _actionLogic = WristSideBendAction(
           callback: this,
-          targetReps: difficulty.targetReps,   // ← 新增
+          targetReps: difficulty.targetReps,
         );
-        // 有 3 秒倒數，countdownDone 由 action 自己透過 onCountdownChanged 設定
+        break;
 
-      default:
-        // sidePinch 及其他手部動作
+      case ActionType.sidePinch:
         _actionLogic = SidePinchAction(
           callback: this,
           difficulty: diffIdx,
-          targetReps: difficulty.targetReps,   // ← 新增
+          targetReps: difficulty.targetReps,
         );
-        _state = _state.copyWith(countdownDone: true);
+        break;
+
+      default:
+        _actionLogic = SidePinchAction(
+          callback: this,
+          difficulty: diffIdx,
+          targetReps: difficulty.targetReps,
+        );
+
+        _state = _state.copyWith(
+          countdownDone: true,
+        );
+        break;
     }
   }
 
-  // ── 生命週期 ──────────────────────────────────────────────────────
-
   Future<void> start() async {
-    //final diffIdx = action.difficulties.indexOf(difficulty) + 1;
-    final diffIdx = action.difficulties.indexWhere((d) => d.level == difficulty.level) + 1;
+    final diffIdx = action.difficulties.indexWhere(
+          (d) => d.level == difficulty.level,
+        ) +
+        1;
 
     String actionCode = 'SECOND_ACTION';
-    if (action.type == ActionType.turnPalm) actionCode = 'TURN_PALM';
 
-    await model.start(PoseModelConfig(
-      actionType: actionCode,
-      difficulty: diffIdx,
-      useFrontCamera: true,
-    ));
+    if (action.type == ActionType.turnPalm) {
+      actionCode = 'TURN_PALM';
+    }
 
-    // 只訂閱 frameStream，不再訂閱 trainingStream
-    _frameSub = model.frameStream.listen((frame) {
-      if (_isPaused) return; // 暫停中:忽略這一幀,不更新畫面、不計次
+    await model.start(
+      PoseModelConfig(
+        actionType: actionCode,
+        difficulty: diffIdx,
+        useFrontCamera: true,
+      ),
+    );
 
-      _emit(_state.copyWith(
-        handLandmarks: frame.handLandmarks,
-        handDetected: frame.handDetected,
-        bodyLandmarks: frame.standardJoints.values.toList(),
-      ));
+    _frameSub = model.frameStream.listen(
+      (frame) {
+        if (_isPaused) return;
 
-      // 動作判斷全部交給 Dart action
-      _actionLogic.processLandmarks(frame.handLandmarks);
-    });
+        _emit(
+          _state.copyWith(
+            handLandmarks: frame.handLandmarks,
+            handDetected: frame.handDetected,
+            bodyLandmarks: frame.standardJoints.values.toList(),
+            imageBytes: frame.imageBytes,
+          ),
+        );
 
-    _emit(_state.copyWith(
-      feedback: _actionLogic.initialFeedback,
-      instruction: _actionLogic.initialInstruction,
-    ));
+        /// Action 先處理這一幀。
+        _actionLogic?.processLandmarks(
+          frame.handLandmarks,
+        );
+
+        /// 關鍵：
+        /// 每一幀處理完後，把目前這一階 Action
+        /// 的 mistakeLogs 同步到 SessionState。
+        ///
+        /// 所以升級前 TrainingScreen 原本的：
+        ///
+        /// state.mistakeLogs
+        ///
+        /// 就會是該難度自己的錯誤。
+        _emit(
+          _state.copyWith(
+            mistakeLogs: _safeCurrentMistakeLogs(),
+          ),
+        );
+      },
+    );
+
+    _emit(
+      _state.copyWith(
+        feedback: _actionLogic?.initialFeedback ?? _state.feedback,
+        instruction: _actionLogic?.initialInstruction ?? _state.instruction,
+        mistakeLogs: _safeCurrentMistakeLogs(),
+      ),
+    );
   }
 
-  // ─── 暫停 / 繼續 ─────────────────────────────────────────────────
-  // 暫停時相機/原生偵測仍在背景運作,但這裡直接忽略每一幀的結果,
-  // 不更新畫面、不餵進動作判斷邏輯,達到「凍結進度」的效果。
-  // 繼續時單純把旗標關掉,下一幀開始就會照原本邏輯接續處理,
-  // 不需要重新 start()、不會遺失或錯亂目前的 rep 數與狀態。
   void pause() {
     _isPaused = true;
   }
@@ -246,66 +311,118 @@ class RehabSessionController implements RehabActionCallback {
     _isPaused = false;
   }
 
-  // 🆕 使用者確認要升級
-  void confirmLevelUp({int? customTargetReps}) {
-    final logic = _actionLogic;
-    if (logic is LevelUpControllable) {
-      (logic as LevelUpControllable).confirmLevelUp(customTargetReps: customTargetReps);
-    }
-    _emit(_state.copyWith(pendingLevelUp: false));
+  void confirmLevelUp({
+    int? customTargetReps,
+  }) {
+    // _actionLogic 目前允許為 null，因為某些 Action 在 constructor
+    // 尚未完成指派前就可能先 callback。
+    //
+    // 這裡明確轉成 nullable 的 LevelUpControllable，
+    // 再使用 ?. 呼叫，避免 analyzer 的 nullable receiver 錯誤。
+    final LevelUpControllable? controllable =
+        _actionLogic is LevelUpControllable
+            ? _actionLogic as LevelUpControllable
+            : null;
+
+    controllable?.confirmLevelUp(
+      customTargetReps: customTargetReps,
+    );
+
+    _emit(
+      _state.copyWith(
+        pendingLevelUp: false,
+
+        /// 進入下一階後，畫面端的錯誤紀錄重新開始。
+        mistakeLogs: const <String>[],
+      ),
+    );
   }
 
-  // 🆕 使用者選擇不升級 → 結束訓練
   void declineLevelUp() {
-    final logic = _actionLogic;
-    if (logic is LevelUpControllable) {
-      (logic as LevelUpControllable).declineLevelUp();
-    }
-    _emit(_state.copyWith(pendingLevelUp: false));
+    final LevelUpControllable? controllable =
+        _actionLogic is LevelUpControllable
+            ? _actionLogic as LevelUpControllable
+            : null;
+
+    controllable?.declineLevelUp();
+
+    _emit(
+      _state.copyWith(
+        pendingLevelUp: false,
+      ),
+    );
   }
 
   Future<void> flipCamera() async {
-    _emit(_state.copyWith(handLandmarks: [], handDetected: false, bodyLandmarks: []));
-    if (_actionLogic is TurnPalmAction) {
-      (_actionLogic as TurnPalmAction).resetForCameraFlip();
+    _emit(
+      _state.copyWith(
+        handLandmarks: const [],
+        handDetected: false,
+        bodyLandmarks: const [],
+      ),
+    );
+
+    final logic = _actionLogic;
+
+    if (logic is TurnPalmAction) {
+      logic.resetForCameraFlip();
     }
+
     await model.flipCamera();
   }
 
-  // 等資源真的釋放完才返回,給切換動作時用
   Future<void> disposeAsync() async {
-    _actionLogic.dispose();
+    _actionLogic?.dispose();
+
     await _frameSub?.cancel();
 
     try {
       await model.stop();
-    } catch (_) {
-      // 即使原生端拋錯也不要卡住流程,確保一定會往下走
-    }
+    } catch (_) {}
 
-    // 給 Kotlin 端時間完整清理相機 / MediaPipe 資源
-    await Future.delayed(const Duration(milliseconds: 350));
+    await Future.delayed(
+      const Duration(
+        milliseconds: 350,
+      ),
+    );
 
     try {
       model.dispose();
     } catch (_) {}
 
-    if (!_stateCtrl.isClosed) await _stateCtrl.close();
+    if (!_stateCtrl.isClosed) {
+      await _stateCtrl.close();
+    }
   }
 
   void dispose() {
-    _actionLogic.dispose();
+    _actionLogic?.dispose();
+
     _frameSub?.cancel();
+
     model.stop();
+
     model.dispose();
-    _stateCtrl.close();
+
+    if (!_stateCtrl.isClosed) {
+      _stateCtrl.close();
+    }
   }
 
-  // ── RehabActionCallback 實作 ──────────────────────────────────────
-
   @override
-  void onFeedbackChanged(String feedback, String instruction) {
-    _emit(_state.copyWith(feedback: feedback, instruction: instruction));
+  void onFeedbackChanged(
+    String feedback,
+    String instruction,
+  ) {
+    _emit(
+      _state.copyWith(
+        feedback: feedback,
+        instruction: instruction,
+
+        /// 同步目前難度錯誤。
+        mistakeLogs: _safeCurrentMistakeLogs(),
+      ),
+    );
   }
 
   @override
@@ -315,12 +432,15 @@ class RehabSessionController implements RehabActionCallback {
     double? progress,
     int? speedState,
   }) {
-    _emit(_state.copyWith(
-      repCount: repCount ?? _state.repCount,
-      accuracy: accuracy ?? _state.accuracy,
-      progress: progress ?? _state.progress,
-      speedState: speedState ?? _state.speedState,
-    ));
+    _emit(
+      _state.copyWith(
+        repCount: repCount ?? _state.repCount,
+        accuracy: accuracy ?? _state.accuracy,
+        progress: progress ?? _state.progress,
+        speedState: speedState ?? _state.speedState,
+        mistakeLogs: _safeCurrentMistakeLogs(),
+      ),
+    );
   }
 
   @override
@@ -329,11 +449,13 @@ class RehabSessionController implements RehabActionCallback {
     required int seconds,
     required bool isDone,
   }) {
-    _emit(_state.copyWith(
-      isCountingDown: isCountingDown,
-      countdownSeconds: seconds,
-      countdownDone: isDone,
-    ));
+    _emit(
+      _state.copyWith(
+        isCountingDown: isCountingDown,
+        countdownSeconds: seconds,
+        countdownDone: isDone,
+      ),
+    );
   }
 
   @override
@@ -342,12 +464,20 @@ class RehabSessionController implements RehabActionCallback {
     required String levelLabel,
     required int newTargetReps,
   }) {
-    _emit(_state.copyWith(
-      currentLevelLabel: levelLabel,
-      currentLevel: newLevel,   // ✅ 補上這行,之前漏加了
-      targetReps: newTargetReps, // 🆕 補上這行,自訂次數/新一階的目標次數才會真的同步到畫面
-      repCount: 0, // 🆕 新一階開始,完成次數重新歸零
-    ));
+    _emit(
+      _state.copyWith(
+        currentLevelLabel: levelLabel,
+        currentLevel: newLevel,
+        targetReps: newTargetReps,
+
+        /// 新難度全部重新計算。
+        repCount: 0,
+
+        /// 關鍵：
+        /// 不要把上一階的錯誤帶進下一階。
+        mistakeLogs: const <String>[],
+      ),
+    );
   }
 
   @override
@@ -355,11 +485,16 @@ class RehabSessionController implements RehabActionCallback {
     required int nextLevel,
     required String nextLevelLabel,
   }) {
-    _emit(_state.copyWith(
-      pendingLevelUp: true,
-      pendingNextLevel: nextLevel,
-      pendingNextLevelLabel: nextLevelLabel,
-    ));
+    /// 此時還沒真正升級，
+    /// 所以保留目前難度的 mistakeLogs。
+    _emit(
+      _state.copyWith(
+        pendingLevelUp: true,
+        pendingNextLevel: nextLevel,
+        pendingNextLevelLabel: nextLevelLabel,
+        mistakeLogs: _safeCurrentMistakeLogs(),
+      ),
+    );
   }
 
   @override
@@ -368,16 +503,27 @@ class RehabSessionController implements RehabActionCallback {
     required int durationSeconds,
     required List<String> mistakeLogs,
   }) {
-    _emit(_state.copyWith(
-      isComplete: true,
-      repCount: repCount,
-      durationSeconds: durationSeconds,
-      mistakeLogs: mistakeLogs,
-    ));
+    _emit(
+      _state.copyWith(
+        isComplete: true,
+        repCount: repCount,
+        durationSeconds: durationSeconds,
+
+        /// 完成時 Action 傳進來的就是目前這一階。
+        mistakeLogs: List<String>.from(
+          mistakeLogs,
+        ),
+      ),
+    );
   }
 
-  void _emit(RehabSessionState next) {
+  void _emit(
+    RehabSessionState next,
+  ) {
     _state = next;
-    if (!_stateCtrl.isClosed) _stateCtrl.add(_state);
+
+    if (!_stateCtrl.isClosed) {
+      _stateCtrl.add(_state);
+    }
   }
 }

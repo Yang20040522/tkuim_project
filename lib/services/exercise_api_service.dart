@@ -1,18 +1,30 @@
 import 'dart:convert';
 
 import 'package:http/http.dart' as http;
+import 'package:http_parser/http_parser.dart';
 
 import '../core/api_config.dart';
+import '../features/account/app_session.dart';
 
 class ExerciseApiService {
   // Flutter Windows 使用 localhost。
-  static const String baseUrl =
-    'https://trianing-system.onrender.com';
+  static const String baseUrl = 'https://trianing-system.onrender.com';
 
-  // 🆕 自由訓練歷史紀錄（/api/training-history）用的後端網址。
-  //    刻意改用 ApiConfig.baseUrl（跟能正常運作的「姿勢訓練紀錄」同一台），
-  //    避免上面那個舊 baseUrl 跟 ApiConfig 指到不同部署造成「傳到 A、讀不到」。
+  // 自由訓練歷史紀錄使用 ApiConfig.baseUrl。
   static const String _historyBaseUrl = ApiConfig.baseUrl;
+
+  static Map<String, String> _historyIdentityHeaders() {
+    final userId = AppSession.userId?.trim();
+    final token = AppSession.customExerciseToken?.trim();
+    if (userId == null || userId.isEmpty || token == null || token.isEmpty) {
+      throw StateError('訓練紀錄同步需要有效登入授權');
+    }
+    return {
+      'X-User-Id': userId,
+      'X-Custom-Exercise-Token': token,
+    };
+  }
+
   /// 取得復健動作清單
   static Future<List<Map<String, dynamic>>> fetchExercises() async {
     final uri = Uri.parse(
@@ -74,23 +86,24 @@ class ExerciseApiService {
       'isComplete': isComplete,
     };
 
-    final response = await http.post(
-      uri,
-      headers: {
-        'Content-Type': 'application/json; charset=UTF-8',
-        'Accept': 'application/json',
-      },
-      body: jsonEncode(requestBody),
-    ).timeout(
-      const Duration(seconds: 90),
-    );
+    final response = await http
+        .post(
+          uri,
+          headers: {
+            'Content-Type': 'application/json; charset=UTF-8',
+            'Accept': 'application/json',
+          },
+          body: jsonEncode(requestBody),
+        )
+        .timeout(
+          const Duration(seconds: 90),
+        );
 
     final responseText = utf8.decode(
       response.bodyBytes,
     );
 
-    if (response.statusCode < 200 ||
-        response.statusCode >= 300) {
+    if (response.statusCode < 200 || response.statusCode >= 300) {
       throw Exception(
         '儲存訓練結果失敗：${response.statusCode}\n'
         '$responseText',
@@ -178,22 +191,25 @@ class ExerciseApiService {
     );
   }
 
-  // 🆕 ═══════════════════════════════════════════════════════════
-  //  自由訓練歷史紀錄（訓練進步曲線）—— 對接 /api/training-history
-  // ═══════════════════════════════════════════════════════════════
+  // ═════════════════════════════════════════════════════════════
+  // 自由訓練歷史紀錄
+  // ═════════════════════════════════════════════════════════════
 
-  /// 上傳單筆自由訓練紀錄到後端。
+  /// 上傳單筆自由訓練 metadata。
   ///
-  /// 欄位直接對齊 TrainingRecord，後端用 (userId, clientTimestamp) 做冪等
-  /// upsert，所以同一筆重複上傳不會在資料庫產生重複列。
+  /// sessionId：
+  /// - auto:xxxx   = 同一次自動升級訓練
+  /// - manual:xxxx = 手動升級／單獨紀錄
   static Future<Map<String, dynamic>> uploadTrainingHistory({
     required int userId,
     required String clientTimestamp,
     required String actionName,
     required int difficulty,
     required int durationSeconds,
+    required int completedReps,
     required int targetReps,
     required List<String> mistakeLogs,
+    String? sessionId,
   }) async {
     final uri = Uri.parse(
       '$_historyBaseUrl/api/training-history',
@@ -205,27 +221,31 @@ class ExerciseApiService {
       'actionName': actionName,
       'difficulty': difficulty,
       'durationSeconds': durationSeconds,
+      'completedReps': completedReps,
       'targetReps': targetReps,
       'mistakeLogs': mistakeLogs,
+      'sessionId': sessionId,
     };
 
-    final response = await http.post(
-      uri,
-      headers: {
-        'Content-Type': 'application/json; charset=UTF-8',
-        'Accept': 'application/json',
-      },
-      body: jsonEncode(requestBody),
-    ).timeout(
-      const Duration(seconds: 90),
-    );
+    final response = await http
+        .post(
+          uri,
+          headers: {
+            'Content-Type': 'application/json; charset=UTF-8',
+            'Accept': 'application/json',
+            ..._historyIdentityHeaders(),
+          },
+          body: jsonEncode(requestBody),
+        )
+        .timeout(
+          const Duration(seconds: 90),
+        );
 
     final responseText = utf8.decode(
       response.bodyBytes,
     );
 
-    if (response.statusCode < 200 ||
-        response.statusCode >= 300) {
+    if (response.statusCode < 200 || response.statusCode >= 300) {
       throw Exception(
         '上傳訓練紀錄失敗：${response.statusCode}\n'
         '$responseText',
@@ -239,25 +259,81 @@ class ExerciseApiService {
     );
   }
 
-  /// 取得某使用者在後端的自由訓練紀錄（新到舊)。
-  ///
-  /// 回傳的每一筆欄位已對齊 TrainingRecord.toJson()，
-  /// 呼叫端可以直接用 TrainingRecord.fromJson() 解析。
+  /// 將手機上的真正影片檔案以 multipart binary 上傳。
+  static Future<void> uploadTrainingHistoryVideo({
+    required int historyId,
+    required int userId,
+    required String videoPath,
+  }) async {
+    final uri = Uri.parse(
+      '$_historyBaseUrl/api/training-history/$historyId/video',
+    );
+
+    final fileName = videoPath.split(RegExp(r'[/\\]')).last;
+
+    final extension =
+        fileName.contains('.') ? fileName.split('.').last.toLowerCase() : '';
+
+    final contentType = switch (extension) {
+      'mov' => MediaType('video', 'quicktime'),
+      'webm' => MediaType('video', 'webm'),
+      'm4v' => MediaType('video', 'x-m4v'),
+      _ => MediaType('video', 'mp4'),
+    };
+
+    final request = http.MultipartRequest('POST', uri)
+      ..headers.addAll(_historyIdentityHeaders())
+      ..fields['userId'] = '$userId'
+      ..files.add(
+        await http.MultipartFile.fromPath(
+          'file',
+          videoPath,
+          filename: fileName,
+          contentType: contentType,
+        ),
+      );
+
+    final streamed = await request.send().timeout(
+          const Duration(minutes: 3),
+        );
+
+    final response = await http.Response.fromStream(streamed);
+
+    final responseText = utf8.decode(response.bodyBytes);
+
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw Exception(
+        '上傳訓練影片失敗：${response.statusCode}\n'
+        '$responseText',
+      );
+    }
+  }
+
+  /// 取得某使用者在後端的自由訓練紀錄（新到舊）。
   static Future<List<Map<String, dynamic>>> fetchTrainingHistory({
     required int userId,
+    int? requesterUserId,
+    String? identityToken,
   }) async {
     final uri = Uri.parse(
       '$_historyBaseUrl/api/training-history/$userId',
     );
 
-    final response = await http.get(
-      uri,
-      headers: {
-        'Accept': 'application/json',
-      },
-    ).timeout(
-      const Duration(seconds: 90),
-    );
+    final headers = <String, String>{
+      'Accept': 'application/json',
+      if (requesterUserId != null) 'X-User-Id': '$requesterUserId',
+      if (identityToken != null && identityToken.trim().isNotEmpty)
+        'X-Custom-Exercise-Token': identityToken.trim(),
+    };
+
+    final response = await http
+        .get(
+          uri,
+          headers: headers,
+        )
+        .timeout(
+          const Duration(seconds: 90),
+        );
 
     final responseText = utf8.decode(
       response.bodyBytes,
@@ -270,14 +346,19 @@ class ExerciseApiService {
       );
     }
 
-    final List<dynamic> data = jsonDecode(
-      responseText,
-    );
+    final List<dynamic> data = jsonDecode(responseText);
 
-    return data
-        .map(
-          (item) => Map<String, dynamic>.from(item),
-        )
-        .toList();
+    return data.map((item) {
+      final row = Map<String, dynamic>.from(item);
+
+      final rawVideoUrl = row['videoUrl']?.toString();
+
+      if (rawVideoUrl != null && rawVideoUrl.isNotEmpty) {
+        row['videoUrl'] =
+            Uri.parse(_historyBaseUrl).resolve(rawVideoUrl).toString();
+      }
+
+      return row;
+    }).toList();
   }
 }

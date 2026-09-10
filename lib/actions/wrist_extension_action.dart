@@ -20,7 +20,7 @@ class WristExtensionAction extends BaseRehabAction {
   int _repCount = 0;
   bool _isTransitioning = false;
   bool _countdownDone = false;
-  final int targetReps;   // ← 新增
+  final int targetReps; // ← 新增
 
   final List<String> _stateBuffer = [];
   String _lastConfirmedState = '';
@@ -58,7 +58,10 @@ class WristExtensionAction extends BaseRehabAction {
   //    的語音提示一致，避免使用者看到兩種不同的順序說明。
   @override
   String get initialInstruction => '手腕先往下壓 → 再往上翹，算一次';
-
+  @override
+  List<String> get currentMistakeLogs => List<String>.unmodifiable(
+        _mistakeLogs,
+      );
   @override
   void dispose() {
     _transitionTimer?.cancel();
@@ -71,8 +74,8 @@ class WristExtensionAction extends BaseRehabAction {
     if (landmarks.length < 10) return;
     if (_isTransitioning) return;
 
-    final wrist     = landmarks[0];   // 手腕
-    final middleMcp = landmarks[9];   // 中指掌指關節
+    final wrist = landmarks[0]; // 手腕
+    final middleMcp = landmarks[9]; // 中指掌指關節
 
     // wrist → middleMcp 連線的仰角（度）
     // dy = middleMcp.y - wrist.y（影像座標，往下為正）
@@ -101,7 +104,7 @@ class WristExtensionAction extends BaseRehabAction {
 
     // 背屈（上翹）門檻：-20 度；掌屈（下壓）門檻：+20 度
     const extensionThreshold = 20.0; // 上翹（背屈）
-    const flexionThreshold   = 20.0; // 下壓（掌屈）
+    const flexionThreshold = 20.0; // 下壓（掌屈）
 
     // 進度條：以當前方向的門檻為基準
     final rawProgress = (_smoothedAngle.abs() /
@@ -114,7 +117,7 @@ class WristExtensionAction extends BaseRehabAction {
     if (_smoothedAngle < -extensionThreshold) {
       state = 'EXTENSION'; // 背屈（往上翹）
     } else if (_smoothedAngle > flexionThreshold) {
-      state = 'FLEXION';   // 掌屈（往下壓）
+      state = 'FLEXION'; // 掌屈（往下壓）
     } else if (_smoothedAngle.abs() < 8.0) {
       state = 'NEUTRAL';
     } else {
@@ -171,11 +174,9 @@ class WristExtensionAction extends BaseRehabAction {
         callback.onFeedbackChanged('✅ 往上翹', '請換往下壓');
       }
       _lastConfirmedState = 'EXTENSION';
-
     } else if (isStableFlexion && _lastConfirmedState != 'FLEXION') {
       callback.onFeedbackChanged('✅ 往下壓', '請換往上翹');
       _lastConfirmedState = 'FLEXION';
-
     } else if (state == 'NEUTRAL' && _lastConfirmedState == '') {
       // 初始中立時自動校準基準
       _baseAngleDeg = angleDeg;

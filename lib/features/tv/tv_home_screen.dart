@@ -5,6 +5,8 @@ import '../../services/history_service.dart';
 import '../../widgets/pi_ip_dialog.dart';
 import '../account/app_session.dart';
 import '../account/role_select_screen.dart';
+import '../history/history_session_group.dart';
+import '../history/network_video_playback_screen.dart';
 import '../plan/plan_screen.dart';
 import '../training/action_list_screen.dart';
 
@@ -134,7 +136,10 @@ class TvHistoryScreen extends StatefulWidget {
 class _TvHistoryScreenState extends State<TvHistoryScreen> {
   late Future<List<TrainingRecord>> records = HistoryService().getHistory();
   bool busy = false;
-  Future<void> _sync() async {
+
+  void _reload() => setState(() => records = HistoryService().getHistory());
+
+  Future<void> _upload() async {
     setState(() => busy = true);
     try {
       final id = int.tryParse(AppSession.userId ?? '');
@@ -143,9 +148,9 @@ class _TvHistoryScreenState extends State<TvHistoryScreen> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
           content: Text('上傳成功 ${result.success} 筆，失敗 ${result.failed} 筆')));
-      setState(() => records = HistoryService().getHistory());
+      _reload();
     } catch (error) {
-      debugPrint('TV history sync: $error');
+      debugPrint('TV history upload: $error');
       if (mounted) {
         ScaffoldMessenger.of(context)
             .showSnackBar(const SnackBar(content: Text('同步失敗，請檢查網路後重試')));
@@ -155,13 +160,63 @@ class _TvHistoryScreenState extends State<TvHistoryScreen> {
     }
   }
 
+  Future<void> _pull() async {
+    setState(() => busy = true);
+    try {
+      final id = int.tryParse(AppSession.userId ?? '');
+      if (id == null) throw StateError('請重新登入');
+      final added = await HistoryService().syncFromCloud(userId: id);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(added == 0 ? '雲端紀錄已是最新' : '已下載 $added 筆雲端紀錄')),
+      );
+      _reload();
+    } catch (error) {
+      debugPrint('TV history pull: $error');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('下載失敗，本機紀錄仍可正常查看')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => busy = false);
+    }
+  }
+
+  void _play(TrainingRecord record) {
+    final url = record.videoUrl?.trim();
+    final userId = AppSession.userId?.trim();
+    final token = AppSession.customExerciseToken?.trim();
+    if (url == null || url.isEmpty || userId == null || token == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('影片或登入授權資料不完整')),
+      );
+      return;
+    }
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => NetworkVideoPlaybackScreen(
+          videoUrl: url,
+          title: record.actionName,
+          httpHeaders: {
+            'X-User-Id': userId,
+            'X-Custom-Exercise-Token': token,
+          },
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) => TvPage(
       title: '訓練紀錄',
       actions: [
         TextButton(
             autofocus: true,
-            onPressed: busy ? null : _sync,
+            onPressed: busy ? null : _pull,
+            child: const Text('下載雲端紀錄')),
+        TextButton(
+            onPressed: busy ? null : _upload,
             child: Text(busy ? '同步中…' : '上傳待同步紀錄')),
       ],
       child: FutureBuilder<List<TrainingRecord>>(
@@ -180,21 +235,49 @@ class _TvHistoryScreenState extends State<TvHistoryScreen> {
             if (snapshot.data!.isEmpty) {
               return const Center(child: Text('尚無訓練紀錄'));
             }
+            final groups = groupTrainingRecords(snapshot.data!);
             return ListView(
-                children: snapshot.data!.reversed
-                    .map((record) => Padding(
+                children: groups
+                    .map((group) => Padding(
                           padding: const EdgeInsets.only(bottom: 12),
                           child: OutlinedButton(
                               onPressed: () => showDialog<void>(
                                   context: context,
                                   builder: (ctx) => AlertDialog(
-                                        title: Text(record.actionName),
+                                        title:
+                                            Text(group.firstRecord.actionName),
                                         content: SingleChildScrollView(
-                                            child: Text(
-                                                '${record.timestamp}\n${record.difficulty}\n訓練時間 ${record.durationSeconds} 秒\n目標 ${record.targetReps} 下\n\n${record.mistakeLogs.isEmpty ? "沒有錯誤紀錄" : record.mistakeLogs.join("\n")}')),
+                                            child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            for (final record in group.records)
+                                              Padding(
+                                                padding: const EdgeInsets.only(
+                                                    bottom: 14),
+                                                child: Text(
+                                                  'Lv.${record.difficulty} · ${record.completedReps}/${record.targetReps} 次\n'
+                                                  '訓練時間 ${record.durationSeconds} 秒 · ${record.isSynced ? "已同步" : "尚未同步"}\n'
+                                                  '${record.mistakeLogs.isEmpty ? "沒有錯誤紀錄" : record.mistakeLogs.join("\n")}',
+                                                ),
+                                              ),
+                                            if (group.remoteVideoRecord
+                                                case final video?)
+                                              FilledButton.icon(
+                                                autofocus: true,
+                                                onPressed: () {
+                                                  Navigator.pop(ctx);
+                                                  _play(video);
+                                                },
+                                                icon: const Icon(
+                                                    Icons.play_arrow),
+                                                label: const Text('播放訓練影片'),
+                                              ),
+                                          ],
+                                        )),
                                         actions: [
                                           FilledButton(
-                                              autofocus: true,
                                               onPressed: () =>
                                                   Navigator.pop(ctx),
                                               child: const Text('返回'))
@@ -205,8 +288,15 @@ class _TvHistoryScreenState extends State<TvHistoryScreen> {
                                   child: Row(children: [
                                     Expanded(
                                         child: Text(
-                                            '${record.actionName} · ${record.difficulty}\n${record.timestamp}')),
-                                    Text(record.isSynced ? '已同步' : '尚未同步'),
+                                            '${group.firstRecord.actionName} · ${group.records.length} 個難度\n${group.firstRecord.timestamp}')),
+                                    Text(group.records.every((r) => r.isSynced)
+                                        ? '已同步'
+                                        : '尚未同步'),
+                                    if (group.remoteVideoRecord != null)
+                                      const Padding(
+                                        padding: EdgeInsets.only(left: 12),
+                                        child: Icon(Icons.ondemand_video),
+                                      ),
                                   ]))),
                         ))
                     .toList());

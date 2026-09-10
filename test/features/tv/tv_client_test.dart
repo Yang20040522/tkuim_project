@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter_body/main.dart' as entry;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -49,16 +51,19 @@ void main() {
           throw MissingPluginException();
         });
   });
-  testWidgets('actual TV entry point starts without notification plugin', (tester) async {
+  testWidgets('actual TV entry point starts without notification plugin',
+      (tester) async {
     var notificationCalls = 0;
     tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
-      const MethodChannel('dexterous.com/flutter/local_notifications'), (call) async {
-        notificationCalls++;
-        throw MissingPluginException('TV notifications unavailable');
-      });
+        const MethodChannel('dexterous.com/flutter/local_notifications'),
+        (call) async {
+      notificationCalls++;
+      throw MissingPluginException('TV notifications unavailable');
+    });
     await tester.runAsync(entry.main);
     await tester.pump();
-    await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 1700)));
+    await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 1700)));
     await tester.pump(const Duration(seconds: 2));
     await tester.pumpAndSettle();
     expect(find.byType(RoleSelectScreen), findsOneWidget);
@@ -73,6 +78,8 @@ void main() {
     expect(tv.supportsNotifications, isFalse);
     expect(tv.supportsTouchInput, isFalse);
     expect(tv.supportsDpad, isTrue);
+    expect(tv.supportsVideoCalls, isFalse);
+    expect(tv.supportsScreenRecording, isFalse);
   });
   test('IPv4 input validates complete addresses', () {
     expect(isValidPiIpv4('192.168.0.103'), isTrue);
@@ -194,6 +201,42 @@ void main() {
     expect(find.text('目標次數'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
+  testWidgets(
+      'TV history groups cloud records and exposes a focusable video action',
+      (tester) async {
+    SharedPreferences.setMockInitialValues({
+      'rehab_history': jsonEncode([
+        TrainingRecord(
+          id: 7,
+          sessionId: 'auto:tv',
+          timestamp: '2026-09-10 12:00:00',
+          actionName: '翻掌訓練',
+          difficulty: 1,
+          durationSeconds: 5,
+          mistakeLogs: const [],
+          videoUrl: 'https://example.test/api/training-history/7/video',
+          completedReps: 5,
+          targetReps: 5,
+          isSynced: true,
+          isVideoSynced: true,
+        ).toJson(),
+      ]),
+    });
+    await tester.pumpWidget(app(const TvHistoryScreen()));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('翻掌訓練'), findsOneWidget);
+    await tester.tap(find.textContaining('翻掌訓練'));
+    await tester.pumpAndSettle();
+    expect(find.text('播放訓練影片'), findsOneWidget);
+    expect(
+      tester
+          .widget<FilledButton>(
+            find.widgetWithText(FilledButton, '播放訓練影片'),
+          )
+          .autofocus,
+      isTrue,
+    );
+  });
   testWidgets('IP dialog accepts IME done and persists IPv4', (tester) async {
     await tester.pumpWidget(app(Builder(
         builder: (context) => Scaffold(
@@ -242,7 +285,8 @@ void main() {
     tester.view.resetPhysicalSize();
     tester.view.resetDevicePixelRatio();
   });
-  testWidgets('TV numeric inputs can leave editing with D-pad Down', (tester) async {
+  testWidgets('TV numeric inputs can leave editing with D-pad Down',
+      (tester) async {
     await tester.pumpWidget(app(const ActionListScreen()));
     await tester.pumpAndSettle();
     await key(tester, LogicalKeyboardKey.select);
@@ -253,8 +297,4 @@ void main() {
     expect(field.focusNode.hasFocus, isFalse);
     expect(FocusManager.instance.primaryFocus, isNotNull);
   });
-
 }
-
-
-

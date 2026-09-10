@@ -110,7 +110,10 @@ class TurnPalmAction extends BaseRehabAction implements LevelUpControllable {
 
   @override
   String get initialInstruction => '對齊後保持5秒，才開始計算次數';
-
+  @override
+  List<String> get currentMistakeLogs => List<String>.unmodifiable(
+        _mistakeLogs,
+      );
   @override
   void dispose() {
     _countdownTimer?.cancel();
@@ -157,8 +160,8 @@ class TurnPalmAction extends BaseRehabAction implements LevelUpControllable {
     final deviation = (angle - (-90)).abs();
     final rawDev = deviation > 180 ? 360 - deviation : deviation;
 
-    _smoothedAngleStage1 =
-        (_smoothingFactor * rawDev) + ((1 - _smoothingFactor) * _smoothedAngleStage1);
+    _smoothedAngleStage1 = (_smoothingFactor * rawDev) +
+        ((1 - _smoothingFactor) * _smoothedAngleStage1);
     final displayAngle = _smoothedAngleStage1.toInt();
 
     callback.onStatsChanged(accuracy: displayAngle.toDouble());
@@ -218,14 +221,16 @@ class TurnPalmAction extends BaseRehabAction implements LevelUpControllable {
 
     // 用較短的 tick（100ms）讓畫面更即時，但完成判定一律用真實經過時間，
     // 不再依賴額外一份「duration >= 5000」的判斷邏輯。
-    _countdownTimer = Timer.periodic(const Duration(milliseconds: 100), (timer) {
+    _countdownTimer =
+        Timer.periodic(const Duration(milliseconds: 100), (timer) {
       if (!_isCurrentlyStable) {
         // 已經在別處被判定失敗並 reset 了，這個 timer 沒事做了
         timer.cancel();
         return;
       }
 
-      final elapsedMs = DateTime.now().difference(_holdStartTime).inMilliseconds;
+      final elapsedMs =
+          DateTime.now().difference(_holdStartTime).inMilliseconds;
       final secondsLeft = ((5000 - elapsedMs) / 1000).ceil();
       final displaySeconds = secondsLeft > 0 ? secondsLeft : 0;
 
@@ -298,15 +303,16 @@ class TurnPalmAction extends BaseRehabAction implements LevelUpControllable {
   // ── 階段二：偵測內外翻轉 ─────────────────────────────────────────
 
   void _detectStage2(List<Landmark> landmarks) {
-    final wrist     = landmarks[0];
+    final wrist = landmarks[0];
     final middleMcp = landmarks[9];
-    final indexMcp  = landmarks[5];
-    final pinkyMcp  = landmarks[17];
+    final indexMcp = landmarks[5];
+    final pinkyMcp = landmarks[17];
 
     // 晃動偵測
     final wobbleDx = middleMcp.x - wrist.x;
     final wobbleDy = middleMcp.y - wrist.y;
-    final wobbleAngle = (_atan2(wobbleDy, wobbleDx) * (180 / 3.14159265) - (-90)).abs();
+    final wobbleAngle =
+        (_atan2(wobbleDy, wobbleDx) * (180 / 3.14159265) - (-90)).abs();
     final rawWobble = wobbleAngle > 180 ? 360 - wobbleAngle : wobbleAngle;
     if (rawWobble > _currentRepMaxWobble) _currentRepMaxWobble = rawWobble;
 
@@ -353,7 +359,8 @@ class TurnPalmAction extends BaseRehabAction implements LevelUpControllable {
 
           if (_currentRepMaxWobble > 25.0) {
             score -= 20;
-            _mistakeLogs.add('第 $_repCount 次：嚴重晃動 (偏移 ${_currentRepMaxWobble.toInt()} 度)');
+            _mistakeLogs.add(
+                '第 $_repCount 次：嚴重晃動 (偏移 ${_currentRepMaxWobble.toInt()} 度)');
           } else if (_currentRepMaxWobble > 15.0) {
             score -= 10;
             _mistakeLogs.add('第 $_repCount 次：輕微晃動');
@@ -373,7 +380,8 @@ class TurnPalmAction extends BaseRehabAction implements LevelUpControllable {
           if (_repCount >= targetReps) {
             if (_currentLevel == 1 && score >= 80) {
               _pendingLevelUp = true;
-              callback.onLevelUpReady(nextLevel: 2, nextLevelLabel: '中階 (幅度加大)');
+              callback.onLevelUpReady(
+                  nextLevel: 2, nextLevelLabel: '中階 (幅度加大)');
             } else {
               final durationSeconds =
                   DateTime.now().difference(_sessionStartTime).inSeconds;
@@ -396,7 +404,6 @@ class TurnPalmAction extends BaseRehabAction implements LevelUpControllable {
         callback.onFeedbackChanged('✅ 已向內轉', '很好，請向外轉');
       }
       _lastConfirmedState = 'INWARD';
-
     } else if (isStableOutward && _lastConfirmedState != 'OUTWARD') {
       callback.onFeedbackChanged('✅ 已向外轉', '很好，請向內轉');
       _lastConfirmedState = 'OUTWARD';
@@ -424,10 +431,12 @@ class TurnPalmAction extends BaseRehabAction implements LevelUpControllable {
     _hasSpokenTilted = false; // 🆕 每次重新開始關卡都重置語音旗標
 
     final diffText = level == 1 ? '初階' : '中階 (幅度加大)';
-    callback.onLevelUp(newLevel: level, levelLabel: diffText, newTargetReps: targetReps);
+    callback.onLevelUp(
+        newLevel: level, levelLabel: diffText, newTargetReps: targetReps);
     callback.onFeedbackChanged('$diffText 翻掌', '請握住短棍，對齊虛線保持直立 5 秒');
     callback.onStatsChanged(repCount: 0);
-    callback.onCountdownChanged(isCountingDown: false, seconds: 5, isDone: false);
+    callback.onCountdownChanged(
+        isCountingDown: false, seconds: 5, isDone: false);
   }
 
   @override
@@ -489,6 +498,10 @@ class TurnPalmAction extends BaseRehabAction implements LevelUpControllable {
       return pi4 * x - x * (x.abs() - 1) * (0.2447 + 0.0663 * x.abs());
     }
     return pi2 -
-        (1 / x) * (pi4 - (1 / x) * ((1 / x).abs() - 1) * (0.2447 + 0.0663 * (1 / x).abs()));
+        (1 / x) *
+            (pi4 -
+                (1 / x) *
+                    ((1 / x).abs() - 1) *
+                    (0.2447 + 0.0663 * (1 / x).abs()));
   }
 }

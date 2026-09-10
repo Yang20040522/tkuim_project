@@ -76,7 +76,10 @@ class WristSideBendAction extends BaseRehabAction {
 
   @override
   String get initialInstruction => '手腕向左彎到底（停留1秒） → 向右彎到底（停留1秒），算一次';
-
+  @override
+  List<String> get currentMistakeLogs => List<String>.unmodifiable(
+        _mistakeLogs,
+      );
   @override
   void dispose() {
     _transitionTimer?.cancel();
@@ -108,7 +111,8 @@ class WristSideBendAction extends BaseRehabAction {
     if (angleDiff < -180) angleDiff += 360;
 
     // 低通濾波平滑化數據，避免抖動
-    _smoothedAngle = (_smoothingFactor * angleDiff) + ((1 - _smoothingFactor) * _smoothedAngle);
+    _smoothedAngle = (_smoothingFactor * angleDiff) +
+        ((1 - _smoothingFactor) * _smoothedAngle);
 
     // 將偏角數據傳回介面（此處將角度作為精確度參考繪製）
     callback.onStatsChanged(accuracy: _smoothedAngle);
@@ -201,7 +205,9 @@ class WristSideBendAction extends BaseRehabAction {
         _hasHeldEnough = true;
         _confirmSide('LEFT_DONE', isLeft: true);
       }
-    } else if (_rightHoldActive && !_hasHeldEnough && _stateHoldStartTime != null) {
+    } else if (_rightHoldActive &&
+        !_hasHeldEnough &&
+        _stateHoldStartTime != null) {
       final holdDuration =
           DateTime.now().difference(_stateHoldStartTime!).inMilliseconds;
       if (holdDuration >= _requiredHoldMs) {
@@ -226,15 +232,14 @@ class WristSideBendAction extends BaseRehabAction {
 
         if (durationMs > 5000) {
           score -= 10;
-          _mistakeLogs.add(
-              '第 $_repCount 次：${isLeft ? "換側引導速度較慢" : "右彎擺動引導偏慢"}');
+          _mistakeLogs
+              .add('第 $_repCount 次：${isLeft ? "換側引導速度較慢" : "右彎擺動引導偏慢"}');
         }
-        final angleForCheck =
-            isLeft ? _smoothedAngle : _smoothedAngle.abs();
+        final angleForCheck = isLeft ? _smoothedAngle : _smoothedAngle.abs();
         if (angleForCheck < 15.0 * 1.1) {
           score -= 5;
-          _mistakeLogs.add(
-              '第 $_repCount 次：${isLeft ? "左彎幅度可再加大" : "右彎幅度可再加深"}');
+          _mistakeLogs
+              .add('第 $_repCount 次：${isLeft ? "左彎幅度可再加大" : "右彎幅度可再加深"}');
         }
 
         callback.onFeedbackChanged(
@@ -274,20 +279,23 @@ class WristSideBendAction extends BaseRehabAction {
 
     _transitionTimer?.cancel();
     _transitionTimer = Timer.periodic(const Duration(seconds: 1), (_) {
-      final elapsed = DateTime.now().difference(_transitionStartTime).inMilliseconds;
+      final elapsed =
+          DateTime.now().difference(_transitionStartTime).inMilliseconds;
 
       if (elapsed < 3000) {
         final remain = 3 - (elapsed ~/ 1000);
         if (remain != _lastCountdownSec && remain > 0) {
           _lastCountdownSec = remain;
-          callback.onCountdownChanged(isCountingDown: true, seconds: remain, isDone: false);
+          callback.onCountdownChanged(
+              isCountingDown: true, seconds: remain, isDone: false);
         }
       } else {
         _transitionTimer?.cancel();
         _isTransitioning = false;
         _countdownDone = true;
         _lastRepTime = DateTime.now();
-        callback.onCountdownChanged(isCountingDown: false, seconds: 0, isDone: true);
+        callback.onCountdownChanged(
+            isCountingDown: false, seconds: 0, isDone: true);
         callback.onFeedbackChanged(
           '開始！請由健側手帶領換側手擺動',
           '向左彎到底停留 ➔ 向右彎到底停留，算一次',
@@ -297,7 +305,8 @@ class WristSideBendAction extends BaseRehabAction {
   }
 
   void _finish() {
-    final durationSeconds = DateTime.now().difference(_sessionStartTime).inSeconds;
+    final durationSeconds =
+        DateTime.now().difference(_sessionStartTime).inSeconds;
     callback.onFeedbackChanged('🎉 完成 $targetReps 次手腕左右彎擺！', '辛苦了，手腕復健表現得很好！');
     callback.onTrainingComplete(
       repCount: _repCount,

@@ -8,24 +8,37 @@ abstract class BaseRehabAction {
 
   BaseRehabAction(this.callback);
 
-  /// 每幀 landmark 進來時觸發，各動作自行處理
-  void processLandmarks(List<Landmark> landmarks);
+  /// 每幀 landmark 進來時觸發，各動作自行處理。
+  void processLandmarks(
+    List<Landmark> landmarks,
+  );
 
-  /// trainingStream 是否可接收
-  /// 翻掌要等倒數完才 true；側捏直接 true
+  /// trainingStream 是否可接收。
   bool get isReadyToReceiveUpdates;
 
-  /// 初始化完成後顯示的提示
+  /// 初始化完成後顯示的提示。
   String get initialFeedback;
+
   String get initialInstruction;
 
-  /// 釋放資源（Timer 等），子類別視需要 override
+  /// 目前「這一個難度」累積的錯誤。
+  ///
+  /// 預設沒有錯誤資料的動作回傳空陣列。
+  ///
+  /// 有自己維護 _mistakeLogs 的 Action 必須 override。
+  List<String> get currentMistakeLogs => const <String>[];
+
+  /// 釋放 Timer 等資源。
   void dispose() {}
 }
 
-// 🆕 可選介面:動作若想支援「使用者自行決定要不要升級」就實作這個
-  abstract class LevelUpControllable {
-    bool get isPendingLevelUp;
-    void confirmLevelUp({int? customTargetReps});
-    void declineLevelUp();
-  }
+/// 支援難度升級的動作實作這個介面。
+abstract class LevelUpControllable {
+  bool get isPendingLevelUp;
+
+  void confirmLevelUp({
+    int? customTargetReps,
+  });
+
+  void declineLevelUp();
+}
