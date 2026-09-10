@@ -375,10 +375,14 @@ class _HomeScreenState extends State<HomeScreen> {
         orElse: () => kTrainingActions.first,
       ),
     );
-    final difficulty = action.difficulties.firstWhere(
+    final baseDifficulty = action.difficulties.firstWhere(
       (d) => d.level.name == levelName,
       orElse: () => action.difficulties.first,
     );
+    final requestedTargetReps = (msg['targetReps'] as num?)?.toInt();
+    final difficulty = requestedTargetReps != null && requestedTargetReps > 0
+        ? baseDifficulty.copyWithReps(requestedTargetReps)
+        : baseDifficulty;
 
     if (_isBodyAction(action.type)) {
       // 🖥️ 全身動作 → 電視端開全身骨架顯示畫面

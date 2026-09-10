@@ -292,7 +292,15 @@ class BodyPoseEngine {
   // ── 啟動相機串流 ──────────────────────────────────────────────────
   Future<void> startCamera() async {
     if (_cam == null) return;
+    if (_cam!.value.isStreamingImages) return;
     await _cam!.startImageStream(_onFrame);
+  }
+
+  Future<void> startPhoneCamera() async {
+    if (_cam == null) {
+      await _initCamera();
+    }
+    await startCamera();
   }
 
   // ── 切換鏡頭 ──────────────────────────────────────────────────────

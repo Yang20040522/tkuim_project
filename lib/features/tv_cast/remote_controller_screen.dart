@@ -12,6 +12,7 @@ import '../../actions/body_rehab_action.dart';
 import '../../models/body_frame.dart';
 import '../../services/voice_service.dart';
 import 'webrtc_service.dart';
+import '../rehab/training_camera_session.dart';
 
 class RemoteControllerScreen extends StatefulWidget {
   final TrainingAction action;
@@ -39,6 +40,7 @@ class _RemoteControllerScreenState extends State<RemoteControllerScreen> {
   final BodyPoseEngine _engine = BodyPoseEngine();
 
   int _repCount = 0;
+  late int _targetReps;
   String _feedback = '等待連線中...';
   String _instruction = '';
   StreamSubscription? _socketSub;
@@ -46,6 +48,7 @@ class _RemoteControllerScreenState extends State<RemoteControllerScreen> {
   @override
   void initState() {
     super.initState();
+    _targetReps = widget.difficulty.targetReps;
 
     // Listen to whichever service is active/connected
     if (_clientService.isConnected) {
@@ -68,6 +71,7 @@ class _RemoteControllerScreenState extends State<RemoteControllerScreen> {
         'type': 'START_TRAINING',
         'actionName': widget.action.name,
         'difficultyLevel': widget.difficulty.level.name,
+        'targetReps': _targetReps,
       };
       if (_clientService.isConnected) {
         _clientService.sendCommand(startMsg);
@@ -225,6 +229,7 @@ class _RemoteControllerScreenState extends State<RemoteControllerScreen> {
       final statusMsg = {
         'type': 'TRAINING_UPDATE',
         'repCount': _repCount,
+        'targetReps': _targetReps,
         'feedback': _feedback,
         'instruction': _instruction,
       };
@@ -272,6 +277,7 @@ class _RemoteControllerScreenState extends State<RemoteControllerScreen> {
       } else if (type == 'TRAINING_UPDATE') {
         setState(() {
           _repCount = msg['repCount'] ?? _repCount;
+          _targetReps = msg['targetReps'] ?? _targetReps;
           _feedback = msg['feedback'] ?? _feedback;
           _instruction = msg['instruction'] ?? _instruction;
         });
@@ -497,7 +503,7 @@ class _RemoteControllerScreenState extends State<RemoteControllerScreen> {
           ),
           const SizedBox(height: 8),
           Text(
-            '$_repCount',
+            formatRepProgress(_repCount, _targetReps),
             style: const TextStyle(
               color: Color(0xFF1A1D2E),
               fontSize: 64,
