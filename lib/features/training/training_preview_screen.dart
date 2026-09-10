@@ -8,24 +8,18 @@
 // 只有「有對應 3D 的動作」才會走到這頁;沒有 3D 的動作由入口直接進訓練頁。
 
 import 'package:flutter/material.dart';
-import 'package:model_viewer_plus/model_viewer_plus.dart';
 import '../../models/training_action.dart';
+import '../demo/rehab_demo_model_viewer.dart';
 import 'action_tips_dialog.dart';
 
 /// 一個動作的 3D 示範資料
 class ActionDemo3D {
   final List<String> modelSrcs; // 一或多個 glb(左右手/腳)
   final List<String> tabLabels; // 對應的分頁標籤
-  final String? cameraOrbit;   // ← 新增,選填,沒設就用 ModelViewer 預設
-  final String? fieldOfView;   // ← 新增
-  final String? cameraTarget;   // 新增
 
   const ActionDemo3D({
     required this.modelSrcs,
     required this.tabLabels,
-    this.cameraOrbit,           // ← 新增
-    this.fieldOfView,           // ← 新增
-    this.cameraTarget,
   });
 }
 
@@ -35,30 +29,21 @@ const Map<ActionType, ActionDemo3D> kActionDemo3DMap = {
   ActionType.turnPalm: ActionDemo3D(
     modelSrcs: ['assets/models/forearm_supination.glb'],
     tabLabels: ['示範'],
-    cameraOrbit: '0deg 75deg 5%',   // ← 只有翻掌拉近
-    fieldOfView: '5deg',   // ← 只有翻掌放大
-    cameraTarget: '0m 5m 0m',   // ← 對準點,調這個
   ),
   ActionType.sidePinch: ActionDemo3D(
     modelSrcs: ['assets/models/lateral_pinch.glb'],
     tabLabels: ['示範'],
-    cameraOrbit: '0deg 75deg 5%',    // 太小就加,數字自己調
-    fieldOfView: '5deg',             // 太小就加
-    cameraTarget: '0m 5m 0m',        // 不置中就加,X Y Z 自己調
   ),
   ActionType.wristExtension: ActionDemo3D(
     modelSrcs: ['assets/models/wrist_extension.glb'],
     tabLabels: ['示範'],
-    cameraOrbit: '0deg 75deg 5%',    // 太小就加,數字自己調
-    fieldOfView: '5deg',
-    cameraTarget: '0m 5m 0m',        // 不置中就調 X Y Z
   ),
   ActionType.reach: ActionDemo3D(
     modelSrcs: [
       'assets/models/turn_Right_hand.glb',
       'assets/models/turn_Left_hand.glb',
     ],
-    tabLabels: ['右手', '左手'],
+    tabLabels: ['左手', '右手'],
   ),
   ActionType.drawCircle: ActionDemo3D(
     modelSrcs: ['assets/models/arm_circle_right.glb'],
@@ -96,18 +81,18 @@ class TrainingPreviewScreen extends StatefulWidget {
   final ActionType actionType;
   final String actionName;
   final Widget targetScreen;
-  final String difficultyLabel;  // ← 新增
-  final int targetReps;          // ← 新增
-  final String description;      // ← 新增
+  final String difficultyLabel; // ← 新增
+  final int targetReps; // ← 新增
+  final String description; // ← 新增
 
   const TrainingPreviewScreen({
     super.key,
     required this.actionType,
     required this.actionName,
     required this.targetScreen,
-    required this.difficultyLabel,  // ← 新增
-    required this.targetReps,       // ← 新增
-    required this.description,      // ← 新增
+    required this.difficultyLabel, // ← 新增
+    required this.targetReps, // ← 新增
+    required this.description, // ← 新增
   });
 
   @override
@@ -135,8 +120,7 @@ class _TrainingPreviewScreenState extends State<TrainingPreviewScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: Colors.white,
-        shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: const Text('確定要跳過示範嗎?',
             style: TextStyle(
                 color: Color(0xFF1A1D2E),
@@ -149,13 +133,13 @@ class _TrainingPreviewScreenState extends State<TrainingPreviewScreen> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('再看一下',
-                style: TextStyle(color: Color(0xFF6B7280))),
+            child:
+                const Text('再看一下', style: TextStyle(color: Color(0xFF6B7280))),
           ),
           TextButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('直接開始',
-                style: TextStyle(color: Color(0xFF4A65FF))),
+            child:
+                const Text('直接開始', style: TextStyle(color: Color(0xFF4A65FF))),
           ),
         ],
       ),
@@ -216,7 +200,7 @@ class _TrainingPreviewScreenState extends State<TrainingPreviewScreen> {
                     ),
                   ),
                   TextButton(
-                    onPressed: _confirmSkip,  // ← 彈窗確認才跳過
+                    onPressed: _confirmSkip, // ← 彈窗確認才跳過
                     child: const Text(
                       '跳過',
                       style: TextStyle(
@@ -246,8 +230,8 @@ class _TrainingPreviewScreenState extends State<TrainingPreviewScreen> {
                     ),
                   ),
                   Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 10, vertical: 5),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                     decoration: BoxDecoration(
                       color: const Color(0xFF4A65FF).withValues(alpha: 0.1),
                       borderRadius: BorderRadius.circular(10),
@@ -305,18 +289,10 @@ class _TrainingPreviewScreenState extends State<TrainingPreviewScreen> {
                 padding: const EdgeInsets.symmetric(horizontal: 24),
                 child: ClipRRect(
                   borderRadius: BorderRadius.circular(20),
-                  child: ModelViewer(
+                  child: RehabDemoModelViewer(
                     key: ValueKey(modelSrc),
                     src: modelSrc,
                     alt: widget.actionName,
-                    autoRotate: true,
-                    autoRotateDelay: 1000,
-                    autoPlay: true,
-                    cameraControls: true,
-                    cameraOrbit: _demo.cameraOrbit,   // ← 新增
-                    cameraTarget: _demo.cameraTarget,   // ← 新增
-                    fieldOfView: _demo.fieldOfView,
-                    backgroundColor: const Color(0xFF1A1D2E),
                   ),
                 ),
               ),
@@ -356,9 +332,8 @@ class _TrainingPreviewScreenState extends State<TrainingPreviewScreen> {
                                     ? Colors.white
                                     : const Color(0xFF6B7280),
                                 fontSize: 13,
-                                fontWeight: active
-                                    ? FontWeight.w800
-                                    : FontWeight.w600,
+                                fontWeight:
+                                    active ? FontWeight.w800 : FontWeight.w600,
                               ),
                             ),
                           ),
@@ -387,8 +362,7 @@ class _TrainingPreviewScreenState extends State<TrainingPreviewScreen> {
                   ),
                   child: const Text(
                     '開始訓練',
-                    style: TextStyle(
-                        fontSize: 16, fontWeight: FontWeight.w800),
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
                   ),
                 ),
               ),

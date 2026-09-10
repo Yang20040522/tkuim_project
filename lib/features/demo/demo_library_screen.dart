@@ -2,8 +2,8 @@
 
 import 'package:flutter/material.dart';
 import 'dart:async'; // 🖥️ 電視投放新增
-import 'package:model_viewer_plus/model_viewer_plus.dart';
 import 'bone_viewer_screen.dart';
+import 'rehab_demo_model_viewer.dart';
 
 // 🖥️ 電視投放新增
 import '../tv_cast/socket_client_service.dart';
@@ -21,9 +21,6 @@ class _DemoItem {
   final List<String> modelSrcs;
   final List<String> modelAlts;
   final DemoCategory category;
-  final String? cameraOrbit; // ← 新增(選填)
-  final String? fieldOfView; // ← 新增(選填)
-  final String? cameraTarget; // ← 新增(選填)
 
   const _DemoItem({
     required this.emoji,
@@ -33,9 +30,6 @@ class _DemoItem {
     required this.modelSrcs,
     required this.modelAlts,
     required this.category,
-    this.cameraOrbit, // ← 新增
-    this.fieldOfView, // ← 新增
-    this.cameraTarget, // ← 新增
   });
 }
 
@@ -63,9 +57,6 @@ class _DemoLibraryScreenState extends State<DemoLibraryScreen>
       modelSrcs: ['assets/models/forearm_supination.glb'],
       modelAlts: ['翻掌示範'],
       category: DemoCategory.arm,
-      cameraOrbit: '0deg 75deg 5%', // ← 你調好的
-      fieldOfView: '5deg', // ← 你調好的
-      cameraTarget: '0m 5m 0m', // ← 你調好的
     ),
     _DemoItem(
       emoji: '🤏',
@@ -75,10 +66,6 @@ class _DemoLibraryScreenState extends State<DemoLibraryScreen>
       modelSrcs: ['assets/models/lateral_pinch.glb'],
       modelAlts: ['手指側捏示範'],
       category: DemoCategory.arm,
-      // 如果訓練示範頁有調鏡頭,這裡也套一樣的參數
-      cameraOrbit: '0deg 75deg 5%',
-      fieldOfView: '5deg',
-      cameraTarget: '0m 5m 0m',
     ),
     _DemoItem(
       emoji: '🤚',
@@ -88,9 +75,6 @@ class _DemoLibraryScreenState extends State<DemoLibraryScreen>
       modelSrcs: ['assets/models/wrist_extension.glb'],
       modelAlts: ['翹手腕示範'],
       category: DemoCategory.arm,
-      cameraOrbit: '0deg 75deg 5%',    // 跟上面同樣的參數
-      fieldOfView: '5deg',
-      cameraTarget: '0m 5m 0m',
     ),
     _DemoItem(
       emoji: '🙋',
@@ -667,18 +651,10 @@ class _DemoLibraryScreenState extends State<DemoLibraryScreen>
                   child: SizedBox(
                     height: 380,
                     child: expanded
-                        ? ModelViewer(
+                        ? RehabDemoModelViewer(
                             key: ValueKey(modelSrc),
                             src: modelSrc,
                             alt: modelAlt,
-                            autoRotate: true,
-                            autoRotateDelay: 1000,
-                            autoPlay: true,
-                            cameraControls: true,
-                            cameraOrbit: item.cameraOrbit,
-                            fieldOfView: item.fieldOfView,
-                            cameraTarget: item.cameraTarget,
-                            backgroundColor: const Color(0xFF1A1D2E),
                           )
                         : const SizedBox.shrink(), // 摺疊時完全不建 WebView
                   ),
