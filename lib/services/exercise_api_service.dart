@@ -7,8 +7,7 @@ import '../core/api_config.dart';
 
 class ExerciseApiService {
   // Flutter Windows 使用 localhost。
-  static const String baseUrl =
-      'https://trianing-system.onrender.com';
+  static const String baseUrl = ApiConfig.baseUrl;
 
   // 自由訓練歷史紀錄使用 ApiConfig.baseUrl。
   static const String _historyBaseUrl =
