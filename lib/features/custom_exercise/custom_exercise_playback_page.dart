@@ -4,8 +4,8 @@ import 'package:provider/provider.dart';
 import '../../models/custom_rehab_exercise.dart';
 import '../../models/assignable_exercise.dart';
 import '../../models/joint_type.dart';
-import '../pose_measurement/pose_training_page.dart';
 import 'controllers/custom_exercise_playback_controller.dart';
+import 'custom_exercise_training_page.dart';
 import 'widgets/custom_exercise_3d_viewer.dart';
 
 typedef CustomExerciseTrainingBuilder = Widget Function(
@@ -22,10 +22,8 @@ class CustomExercisePlaybackPage extends StatelessWidget {
     required this.exercise,
     CustomExerciseTrainingBuilder? trainingBuilder,
   }) : trainingBuilder = trainingBuilder ??
-            ((assignedExercise, customExercise) => PoseTrainingPage(
-                  exercise: assignedExercise,
-                  customExercise: customExercise,
-                ));
+            ((_, customExercise) =>
+                CustomExerciseTrainingPage(exercise: customExercise));
 
   @override
   Widget build(BuildContext context) {

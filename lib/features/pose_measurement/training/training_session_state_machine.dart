@@ -167,6 +167,15 @@ class TrainingSessionStateMachine {
     return _snapshot();
   }
 
+  /// Cancels only an in-progress hold while preserving completed reps/sets.
+  /// Used when the camera stream is deliberately interrupted during a switch.
+  TrainingSessionSnapshot cancelActiveHold() {
+    if (_phase == TrainingSessionPhase.holding) {
+      _cancelHold();
+    }
+    return _snapshot();
+  }
+
   TrainingSessionSnapshot reset() {
     _phase = TrainingSessionPhase.ready;
     _currentRep = 0;

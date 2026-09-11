@@ -291,9 +291,15 @@ class BodyPoseEngine {
 
   // ── 啟動相機串流 ──────────────────────────────────────────────────
   Future<void> startCamera() async {
-    if (_cam == null) return;
+    if (_disposed || _cam == null) return;
     if (_cam!.value.isStreamingImages) return;
     await _cam!.startImageStream(_onFrame);
+  }
+
+  Future<void> stopCamera() async {
+    final camera = _cam;
+    if (camera == null || !camera.value.isStreamingImages) return;
+    await camera.stopImageStream();
   }
 
   Future<void> startPhoneCamera() async {
@@ -308,38 +314,41 @@ class BodyPoseEngine {
     if (_cam == null) return;
     if (_isSwitchingCamera) return; // 🆕 正在切換中,忽略這次多按的
     _isSwitchingCamera = true; // 🆕
+    try {
+      final oldCam = _cam;
+      _cam = null;
+      cameraReady.value = false;
 
-    final oldCam = _cam;
-    _cam = null;
-    cameraReady.value = false;
+      if (oldCam!.value.isStreamingImages) {
+        await oldCam.stopImageStream();
+      }
+      await oldCam.dispose();
 
-    await oldCam!.stopImageStream();
-    await oldCam.dispose();
+      final cameras = await availableCameras();
+      final next = cameras.firstWhere(
+        (c) =>
+            c.lensDirection !=
+            (_isFrontCamera
+                ? CameraLensDirection.front
+                : CameraLensDirection.back),
+        orElse: () => cameras.first,
+      );
+      _isFrontCamera = next.lensDirection == CameraLensDirection.front;
+      _sensorOrientation = next.sensorOrientation;
 
-    final cameras = await availableCameras();
-    final next = cameras.firstWhere(
-      (c) =>
-          c.lensDirection !=
-          (_isFrontCamera
-              ? CameraLensDirection.front
-              : CameraLensDirection.back),
-      orElse: () => cameras.first,
-    );
-    _isFrontCamera = next.lensDirection == CameraLensDirection.front;
-    _sensorOrientation = next.sensorOrientation;
-
-    final ctrl = CameraController(
-      next,
-      ResolutionPreset.low,
-      enableAudio: false,
-      imageFormatGroup: ImageFormatGroup.yuv420,
-    );
-    await ctrl.initialize();
-    _cam = ctrl;
-    cameraReady.value = true;
-    await _cam!.startImageStream(_onFrame);
-
-    _isSwitchingCamera = false; // 🆕 整個流程跑完才解鎖,允許下一次切換
+      final ctrl = CameraController(
+        next,
+        ResolutionPreset.low,
+        enableAudio: false,
+        imageFormatGroup: ImageFormatGroup.yuv420,
+      );
+      await ctrl.initialize();
+      _cam = ctrl;
+      cameraReady.value = true;
+      await _cam!.startImageStream(_onFrame);
+    } finally {
+      _isSwitchingCamera = false;
+    }
   }
 
   // ── 每幀進入點 ────────────────────────────────────────────────────
@@ -519,8 +528,10 @@ class BodyPoseEngine {
 
       final xValue = outputs[0]!.value;
       final yValue = outputs[1]!.value;
-      if (xValue is! List || yValue is! List ||
-          xValue.isEmpty || yValue.isEmpty) {
+      if (xValue is! List ||
+          yValue is! List ||
+          xValue.isEmpty ||
+          yValue.isEmpty) {
         return;
       }
 
@@ -601,9 +612,8 @@ class BodyPoseEngine {
           // 畫面本身已經是正的(needsRotation:false 沒做任何旋轉),
           // 不套用手機鏡頭那套旋轉校正的翻轉公式,
           // 否則骨架會上下顛倒。只有需要鏡像時才翻 x 軸。
-          point = _externalMirror
-              ? Offset(1.0 - rawX, rawY)
-              : Offset(rawX, rawY);
+          point =
+              _externalMirror ? Offset(1.0 - rawX, rawY) : Offset(rawX, rawY);
         } else if (_isFrontCamera) {
           point = Offset(1.0 - rawX, rawY);
         } else {

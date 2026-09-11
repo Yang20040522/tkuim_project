@@ -282,37 +282,34 @@ void main() {
     await platform.close();
   });
 
-  testWidgets(
-      'DEFAULT keeps secondary measurement entry; CUSTOM uses demo flow',
+  testWidgets('assigned list no longer exposes standalone pose measurement',
       (tester) async {
     final repository = _Repository();
-    final destinations = <AssignableExercise>[];
     await tester.pumpWidget(MaterialApp(
       home: PatientAssignedExerciseListPage(
         repository: repository,
-        poseMeasurementBuilder: (exercise) {
-          destinations.add(exercise);
-          return Scaffold(body: Text('量測 ${exercise.identityKey}'));
-        },
+        defaultExerciseBuilder: (exercise) => Scaffold(
+          body: Text('預設原流程 ${exercise.identityKey}'),
+        ),
       ),
     ));
     await tester.pumpAndSettle();
-    expect(find.text('姿勢量測'), findsOneWidget);
-    final firstButton = tester.widget<TextButton>(
+    expect(find.text('姿勢量測'), findsNothing);
+    expect(
       find.byKey(const Key('patient-pose-measurement-DEFAULT:1')),
+      findsNothing,
     );
-    firstButton.onPressed!();
-    firstButton.onPressed!();
-    await tester.pumpAndSettle();
-    expect(destinations.length, 1);
-    expect(destinations.first, same(repository.exercises.first));
-    Navigator.of(tester.element(find.text('量測 DEFAULT:1'))).pop();
-    await tester.pumpAndSettle();
     expect(
       find.byKey(const Key('patient-pose-measurement-CUSTOM:2')),
       findsNothing,
     );
     expect(repository.detailReads, 0);
+
+    await tester.tap(
+      find.byKey(const Key('patient-assigned-exercise-title-DEFAULT:1')),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('預設原流程 DEFAULT:1'), findsOneWidget);
   });
 }
 
