@@ -1,4 +1,5 @@
 import '../../core/platform/app_platform.dart';
+import '../../core/platform/tv_training_capabilities.dart';
 import '../../core/ui/tv_ui.dart';
 // lib/features/rehab/body_training_screen.dart
 //
@@ -73,6 +74,7 @@ import '../../actions/draw_circle_action.dart';
 import '../../actions/reach_action.dart';
 import '../../widgets/completion_dialog.dart';
 import 'training_screen.dart';
+import 'body_training_level_progress.dart';
 
 import '../../services/voice_service.dart';
 import '../../actions/raise_both_arms_action.dart';
@@ -180,9 +182,26 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
       setState(update);
       return;
     }
-    final before = (_bodyVisible, _repCount, _feedback, _lastAiAnalysis);
+    final before = (
+      _bodyVisible,
+      _repCount,
+      _currentLevelTargetReps,
+      _previousLevel,
+      _feedback,
+      _instruction,
+      _lastAiAnalysis,
+    );
     update();
-    if (before != (_bodyVisible, _repCount, _feedback, _lastAiAnalysis)) {
+    if (before !=
+        (
+          _bodyVisible,
+          _repCount,
+          _currentLevelTargetReps,
+          _previousLevel,
+          _feedback,
+          _instruction,
+          _lastAiAnalysis,
+        )) {
       _tvStatsRevision.value++;
     }
   }
@@ -202,7 +221,8 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
   final ValueNotifier<RehabSessionState> _remoteState =
       ValueNotifier(const RehabSessionState());
 
-  int _repCount = 0;
+  late final BodyTrainingLevelProgress _levelProgress;
+  int get _repCount => _levelProgress.completedReps;
   String _feedback = '請將身體放入鏡頭範圍內';
   late String _instruction;
   bool _bodyVisible = false;
@@ -226,9 +246,9 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
       TextEditingController(); // 🆕
 
   DateTime _currentLevelStart = DateTime.now();
-  int _currentLevelReps = 0;
-  int _currentLevelTargetReps = 0; // 🆕 追蹤「目前這一階」實際的目標次數(含自訂值)
-  RehabDifficulty _previousLevel = RehabDifficulty.easy;
+  int get _currentLevelReps => _levelProgress.completedReps;
+  int get _currentLevelTargetReps => _levelProgress.targetReps;
+  RehabDifficulty get _previousLevel => _levelProgress.level;
 
   // Passive template analysis. Existing action remains authoritative for reps.
   final BodyRepTrajectoryCollector _aiTrajectoryCollector =
@@ -277,11 +297,13 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
     _automaticHistorySessionId =
         'auto:${DateTime.now().microsecondsSinceEpoch}';
     _templateAnalysisEnabled = _resolveTemplateAnalysisCapability();
-    _currentLevelTargetReps = widget.difficultyMeta?.targetReps ?? 10; // 🆕
-    _instruction = widget.action.initialHint;
-    _previousLevel = _mapDifficulty(
-      widget.difficultyMeta?.level ?? DifficultyLevel.level1,
+    _levelProgress = BodyTrainingLevelProgress(
+      level: _mapDifficulty(
+        widget.difficultyMeta?.level ?? DifficultyLevel.level1,
+      ),
+      targetReps: widget.difficultyMeta?.targetReps ?? 10,
     );
+    _instruction = widget.action.initialHint;
     VoiceService.init();
     if (_usesTemplateAnalysis) {
       _aiSessionClock.start();
@@ -343,6 +365,7 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
 
   void _onPoseUpdate() {
     if (_isPaused) return;
+    if (_levelProgress.consumePoseFrameBlock()) return;
 
     final data = _engine.poseNotifier.value;
     if (data.keypoints.length < BodyPoseEngine.numKpts) return;
@@ -400,8 +423,7 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
       _updatePosePresentation(() {
         _bodyVisible = visible;
         if (fb.scored) {
-          _repCount++;
-          _currentLevelReps++;
+          _levelProgress.recordScoredRep();
         }
         if (fb.prompt != null) _feedback = fb.prompt!;
         if (completedRepAnalysis != null) {
@@ -432,17 +454,20 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
               currentLevelIdx + 1 < currentMeta.difficulties.length;
 
           if (hasNextLevel) {
-            controllable?.confirmLevelUp();
+            final completedLevel = _levelProgress.beginTransition();
+            if (completedLevel == null) return;
             final nextLevelIdx = currentLevelIdx + 1;
             final nextTargetReps =
                 currentMeta.difficulties[nextLevelIdx].targetReps; // 🆕
-            setState(() {
-              _saveCurrentLevelRecord();
-              _previousLevel = _nextLevel(_previousLevel);
+            final nextLevel = _nextLevel(completedLevel.level);
+            _saveCurrentLevelRecord(completedLevel: completedLevel);
+            controllable?.confirmLevelUp();
+            _updatePosePresentation(() {
+              _levelProgress.completeTransition(
+                nextLevel: nextLevel,
+                nextTargetReps: nextTargetReps,
+              );
               _currentLevelStart = DateTime.now();
-              _currentLevelReps = 0;
-              _repCount = 0;
-              _currentLevelTargetReps = nextTargetReps; // 🆕
               _instruction = '難度提升,請繼續保持';
             });
           } else {
@@ -583,23 +608,25 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
     final controllable =
         action is LevelUpControllable ? action as LevelUpControllable : null;
 
-    _saveCurrentLevelRecord();
+    final completedLevel = _levelProgress.beginTransition();
+    if (completedLevel == null) return;
+    _saveCurrentLevelRecord(completedLevel: completedLevel);
     final customReps = int.tryParse(_levelUpRepsController.text);
+    final nextTargetReps = (customReps != null && customReps > 0)
+        ? customReps
+        : _currentLevelTargetReps;
     controllable?.confirmLevelUp(
       customTargetReps:
           (customReps != null && customReps > 0) ? customReps : null,
     );
 
-    setState(() {
+    _updatePosePresentation(() {
       _levelUpDialogShowing = false;
-      _previousLevel = _nextLevel(_previousLevel);
+      _levelProgress.completeTransition(
+        nextLevel: _nextLevel(completedLevel.level),
+        nextTargetReps: nextTargetReps,
+      );
       _currentLevelStart = DateTime.now();
-      _currentLevelReps = 0;
-      _repCount = 0;
-      _currentLevelTargetReps = (customReps != null && customReps > 0)
-          ? customReps
-          : (int.tryParse(_levelUpRepsController.text) ??
-              _currentLevelTargetReps); // 🆕 優先用自訂值
       _instruction = '難度提升,請繼續保持';
       _isPaused = false;
     });
@@ -616,21 +643,26 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
       ? _automaticHistorySessionId
       : 'manual:${DateTime.now().microsecondsSinceEpoch}';
 
-  void _saveCurrentLevelRecord() {
+  void _saveCurrentLevelRecord({
+    CompletedBodyTrainingLevel? completedLevel,
+  }) {
     if (widget.trainingActionMeta == null) return;
 
     final durationSec = DateTime.now().difference(_currentLevelStart).inSeconds;
+    final level = completedLevel?.level ?? _previousLevel;
+    final completedReps = completedLevel?.completedReps ?? _currentLevelReps;
+    final targetReps = completedLevel?.targetReps ?? _currentLevelTargetReps;
 
     HistoryService().saveRecord(TrainingRecord(
       sessionId: _historySessionIdForCurrentRecord(),
       timestamp: DateTime.now().toString().substring(0, 19),
       actionName: widget.trainingActionMeta!.name,
-      difficulty: _levelToInt(_previousLevel),
+      difficulty: _levelToInt(level),
       durationSeconds: durationSec,
       mistakeLogs: const [],
-      completedReps: _currentLevelReps,
+      completedReps: completedReps,
       //targetReps: widget.difficultyMeta?.targetReps ?? 10,
-      targetReps: _currentLevelTargetReps, // 🩹 修正:改讀「目前這一階」的實際次數,不是畫面一開始的舊難度
+      targetReps: targetReps,
     ));
 
     _recordsSavedThisSession++;
@@ -863,6 +895,13 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
   Future<void> _navigateToAction(TrainingAction action,
       DifficultyOption difficulty, bool autoLevelUp) async {
     // 🆕 多一個參數
+    if (AppPlatform.current.isTv && !isTvSupportedTrainingAction(action.type)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('此動作無法在電視上執行')),
+      );
+      return;
+    }
+
     final templateSelection = await MotionTemplateTrainingPicker.choose(
       context: context,
       action: action,

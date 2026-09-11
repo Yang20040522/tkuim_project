@@ -94,7 +94,9 @@ class StandingKneeRaiseAction
   });
 
   // ── 供 UI 呼叫：選患側腳(標記用) + 直接選支撐腳(決定判定) ──────────
-  bool get legAndModeSelected => _trainedLegIsLeft != null && _supportLegIsLeft != null;
+  @override
+  bool get legAndModeSelected =>
+      _trainedLegIsLeft != null && _supportLegIsLeft != null;
 
   @override
   bool get trainedLegSelected => _trainedLegIsLeft != null; // 🆕
@@ -186,9 +188,8 @@ class StandingKneeRaiseAction
 
   /// 簡單版/困難版的顯示文字,給 UI 顯示用(算出來的,不是選的)
   @override
-  String get roleLabel => role == TrainingLegRole.moveTrainedLeg
-      ? '簡單版(患側動,好腳撐)'
-      : '困難版(患側撐,好腳動)';
+  String get roleLabel =>
+      role == TrainingLegRole.moveTrainedLeg ? '簡單版(患側動,好腳撐)' : '困難版(患側撐,好腳動)';
 
   @override
   String get initialHint => legAndModeSelected
@@ -291,18 +292,18 @@ class StandingKneeRaiseAction
       if (supportHip != null && supportKnee != null && supportAnkle != null) {
         // 支撐腳不能跟著抬起(膝蓋不能比髖部高)
         if (supportKnee.dy < supportHip.dy) {
-          return RehabFeedback(
-              prompt: _speakThrottled('支撐腳請確實踩穩地面，不要跟著抬起'));
+          return RehabFeedback(prompt: _speakThrottled('支撐腳請確實踩穩地面，不要跟著抬起'));
         }
 
         // 🆕 支撐腳膝蓋角度檢查:必須站直,不能一直微彎(腿軟/代償)
         final supportKneeAngle =
             _calculateAngle(supportHip, supportKnee, supportAnkle);
         if (supportKneeAngle < _supportStraightMinAngle) {
-          return RehabFeedback(prompt: _speakThrottled(
-              role == TrainingLegRole.supportOnTrainedLeg
-                  ? '支撐腳(患側)膝蓋請打直,不要彎曲'
-                  : '支撐腳膝蓋請打直,站穩再抬腳'));
+          return RehabFeedback(
+              prompt: _speakThrottled(
+                  role == TrainingLegRole.supportOnTrainedLeg
+                      ? '支撐腳(患側)膝蓋請打直,不要彎曲'
+                      : '支撐腳膝蓋請打直,站穩再抬腳'));
         }
 
         // 困難版才需要細看支撐腳(患側)有沒有左右晃動(平衡挑戰)
@@ -344,13 +345,15 @@ class StandingKneeRaiseAction
         // 中級（影片標準）：大腿抬平接近 90 度（hipAngle 約 90-110 度），且膝蓋自然彎曲（kneeAngle 約 80-110 度）
         isInTargetZone = knee.dy < hip.dy &&
             hipAngle <= 110.0 &&
-            kneeAngle >= 80.0 && kneeAngle <= 110.0;
+            kneeAngle >= 80.0 &&
+            kneeAngle <= 110.0;
         break;
       case RehabDifficulty.hard:
         // 高級：大腿抬得更高（hipAngle < 90 度），且膝蓋能精準控制在約 90 度，停留更穩定
         isInTargetZone = knee.dy < hip.dy &&
             hipAngle < 90.0 &&
-            kneeAngle >= 85.0 && kneeAngle <= 100.0;
+            kneeAngle >= 85.0 &&
+            kneeAngle <= 100.0;
         break;
     }
 
@@ -382,9 +385,11 @@ class StandingKneeRaiseAction
           if (!_isHolding) {
             _isHolding = true;
             _holdStartTime = DateTime.now();
-            return RehabFeedback(prompt: _speakThrottled('很好,慢慢抬,撐住 $holdSeconds 秒'));
+            return RehabFeedback(
+                prompt: _speakThrottled('很好,慢慢抬,撐住 $holdSeconds 秒'));
           }
-          final heldMs = DateTime.now().difference(_holdStartTime).inMilliseconds;
+          final heldMs =
+              DateTime.now().difference(_holdStartTime).inMilliseconds;
           if (heldMs < holdSeconds * 1000) {
             // 還在定格倒數中,不重複給提示,等時間到或掉出目標區
             return RehabFeedback.none;
@@ -434,17 +439,22 @@ class StandingKneeRaiseAction
 
   // ── 私有方法 ──────────────────────────────────────────────
   double _calculateAngle(dynamic p1, dynamic p2, dynamic p3) {
-    final a = math.sqrt(math.pow(p2.dx - p3.dx, 2) + math.pow(p2.dy - p3.dy, 2));
-    final b = math.sqrt(math.pow(p1.dx - p3.dx, 2) + math.pow(p1.dy - p3.dy, 2));
-    final c = math.sqrt(math.pow(p1.dx - p2.dx, 2) + math.pow(p1.dy - p2.dy, 2));
+    final a =
+        math.sqrt(math.pow(p2.dx - p3.dx, 2) + math.pow(p2.dy - p3.dy, 2));
+    final b =
+        math.sqrt(math.pow(p1.dx - p3.dx, 2) + math.pow(p1.dy - p3.dy, 2));
+    final c =
+        math.sqrt(math.pow(p1.dx - p2.dx, 2) + math.pow(p1.dy - p2.dy, 2));
     if (a * c == 0) return 0.0;
-    final cosB = (math.pow(a, 2) + math.pow(c, 2) - math.pow(b, 2)) / (2 * a * c);
+    final cosB =
+        (math.pow(a, 2) + math.pow(c, 2) - math.pow(b, 2)) / (2 * a * c);
     return math.acos(cosB.clamp(-1.0, 1.0)) * (180 / math.pi);
   }
 
   String? _speakThrottled(String text) {
     final now = DateTime.now();
-    if (now.difference(_lastVoiceTime).inSeconds > 3) { // 稍微加長語音間隔，避免抬腳過程中頻繁打擾
+    if (now.difference(_lastVoiceTime).inSeconds > 3) {
+      // 稍微加長語音間隔，避免抬腳過程中頻繁打擾
       _lastVoiceTime = now;
       return text;
     }
@@ -453,7 +463,10 @@ class StandingKneeRaiseAction
 
   void _upgradeDifficulty() {
     successCount = 0;
-    _hasTriggeredRaise = false;
+    // The level-completing frame is still a raised knee. Keep the latch armed
+    // until the patient lowers the knee, otherwise that same physical raise is
+    // immediately counted again as the first repetition of the new level.
+    _hasTriggeredRaise = true;
     _isHolding = false; // 🆕
     _supportHipXHistory.clear();
     if (difficulty == RehabDifficulty.easy) {
@@ -467,7 +480,8 @@ class StandingKneeRaiseAction
   bool get isPendingLevelUp => _pendingLevelUp; // 🆕
 
   @override
-  void confirmLevelUp({int? customTargetReps}) { // 🆕
+  void confirmLevelUp({int? customTargetReps}) {
+    // 🆕
     _pendingLevelUp = false;
     _upgradeDifficulty();
     if (customTargetReps != null && customTargetReps > 0) {
@@ -476,7 +490,8 @@ class StandingKneeRaiseAction
   }
 
   @override
-  void declineLevelUp() { // 🆕
+  void declineLevelUp() {
+    // 🆕
     _pendingLevelUp = false;
     successCount = 0;
     _hasTriggeredRaise = false;

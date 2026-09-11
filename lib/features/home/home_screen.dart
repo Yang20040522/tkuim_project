@@ -10,7 +10,9 @@
 
 import 'package:flutter/material.dart';
 
+import '../../core/platform/app_platform.dart';
 import '../../core/ui/app_colors.dart';
+import '../../core/platform/tv_training_capabilities.dart';
 import 'package:flutter/services.dart';
 
 import '../../models/training_action.dart';
@@ -366,23 +368,32 @@ class _HomeScreenState extends State<HomeScreen> {
     final levelName = msg['difficultyLevel'] as String?;
     if (actionName == null) return;
 
-    final action = kTrainingActions.firstWhere(
-      (a) => a.name == actionName,
-      orElse: () => kTrainingActions.first,
-    );
-    final difficulty = action.difficulties.firstWhere(
+    TrainingAction? action;
+    for (final candidate in kTrainingActions) {
+      if (candidate.name == actionName) {
+        action = candidate;
+        break;
+      }
+    }
+    if (action == null ||
+        (AppPlatform.current.isTv &&
+            !isTvSupportedTrainingAction(action.type))) {
+      return;
+    }
+    final selectedAction = action;
+    final difficulty = selectedAction.difficulties.firstWhere(
       (d) => d.level.name == levelName,
-      orElse: () => action.difficulties.first,
+      orElse: () => selectedAction.difficulties.first,
     );
 
-    if (_isBodyAction(action.type)) {
+    if (_isBodyAction(selectedAction.type)) {
       // 🖥️ 全身動作 → 電視端開全身骨架顯示畫面
       _rtcService.init(isController: false);
 
       Navigator.of(context).push(MaterialPageRoute(
         builder: (_) => BodyTrainingScreen(
-          action: _createBodyRehabAction(action, difficulty),
-          trainingActionMeta: action,
+          action: _createBodyRehabAction(selectedAction, difficulty),
+          trainingActionMeta: selectedAction,
           difficultyMeta: difficulty,
           isDisplay: true, // ← 電視顯示端
         ),
@@ -392,7 +403,7 @@ class _HomeScreenState extends State<HomeScreen> {
       // (修正前這裡是 return,手部動作被直接忽略)
       Navigator.of(context).push(MaterialPageRoute(
         builder: (_) => TrainingScreen(
-          action: action,
+          action: selectedAction,
           difficulty: difficulty,
           isDisplay: true, // ← 電視顯示端
         ),

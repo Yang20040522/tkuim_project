@@ -1,4 +1,5 @@
 import '../../core/platform/app_platform.dart';
+import '../../core/platform/tv_training_capabilities.dart';
 import '../../core/ui/tv_ui.dart';
 import '../../services/pi_camera_source.dart' show PiConnectionStatus;
 // lib/features/rehab/training_screen.dart
@@ -809,6 +810,13 @@ class _TrainingScreenState extends State<TrainingScreen>
   /// 🆕 加上 autoLevelUp 參數,把使用者換動作時選的升級模式一併帶過去
   Future<void> _navigateToAction(TrainingAction action,
       DifficultyOption difficulty, bool autoLevelUp) async {
+    if (AppPlatform.current.isTv && !isTvSupportedTrainingAction(action.type)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('此動作無法在電視上執行')),
+      );
+      return;
+    }
+
     await WidgetsBinding.instance.endOfFrame;
     if (!mounted) return;
 

@@ -1,4 +1,5 @@
 import '../../core/platform/app_platform.dart';
+import '../../core/platform/tv_training_capabilities.dart';
 import '../../core/ui/tv_ui.dart';
 import 'package:flutter/material.dart';
 
@@ -114,10 +115,16 @@ class _PlanScreenState extends State<PlanScreen> {
   // 點今日計畫項目 → 導去實際辨識頁面，做完才算完成
   Future<void> _startExercise(
       Exercise exercise, PlanItem item, int realIndex) async {
-    final action = kTrainingActions.firstWhere(
-      (a) => a.name == exercise.name,
-      orElse: () => kTrainingActions.first,
-    );
+    final matchedAction = _findTrainingAction(exercise);
+    if (AppPlatform.current.isTv &&
+        (matchedAction == null ||
+            !isTvSupportedTrainingAction(matchedAction.type))) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('此動作無法在電視上執行')),
+      );
+      return;
+    }
+    final action = matchedAction ?? kTrainingActions.first;
     final difficulty = action.difficulties.first;
     final templateSelection = await MotionTemplateTrainingPicker.choose(
       context: context,
@@ -216,6 +223,18 @@ class _PlanScreenState extends State<PlanScreen> {
     }
   }
 
+  TrainingAction? _findTrainingAction(Exercise exercise) {
+    for (final action in kTrainingActions) {
+      if (action.name == exercise.name) return action;
+    }
+    return null;
+  }
+
+  bool _isTvExecutablePlanItem(PlanItem item) {
+    final action = _findTrainingAction(findExerciseById(item.exerciseId));
+    return action != null && isTvSupportedTrainingAction(action.type);
+  }
+
   @override
   Widget build(BuildContext context) {
     if (AppPlatform.current.isTv) return _buildTvPlan();
@@ -257,30 +276,109 @@ class _PlanScreenState extends State<PlanScreen> {
     );
   }
 
-  Widget _buildTvPlan() => TvPage(title: '復健計畫', child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-    SizedBox(width: 210, child: ListView(children: [
-      for (int offset = -3; offset <= 3; offset++) Padding(padding: const EdgeInsets.only(bottom: 10),
-        child: OutlinedButton(autofocus: offset == 0, onPressed: () => _onSelectDay(DateTime.now().add(Duration(days: offset))),
-          child: Text(offset == 0 ? '今天' : '${DateTime.now().add(Duration(days: offset)).month}/${DateTime.now().add(Duration(days: offset)).day}'))),
-      OutlinedButton(onPressed: () => _loadPlan(selectedDate), child: const Text('重新整理')),
-    ])),
-    const SizedBox(width: 28),
-    Expanded(child: isLoading ? const Center(child: CircularProgressIndicator()) : SingleChildScrollView(child: Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-        Text(_planSectionTitle(), style: const TextStyle(fontSize: 30, fontWeight: FontWeight.bold)),
-        const SizedBox(height: 18),
-        if (loadError != null) Text(loadError!)
-        else if (currentPlan == null || currentPlan!.items.isEmpty) const Text('治療師尚未安排這一天的復健計畫')
-        else for (final entry in currentPlan!.items.asMap().entries) Padding(padding: const EdgeInsets.only(bottom: 14),
-          child: OutlinedButton(onPressed: _isToday && !entry.value.done
-            ? () => _startExercise(findExerciseById(entry.value.exerciseId), entry.value, entry.key) : null,
-            child: Padding(padding: const EdgeInsets.all(18), child: Row(children: [
-              Expanded(child: Text(findExerciseById(entry.value.exerciseId).name)),
-              Text('${entry.value.sets} 組 × ${entry.value.repsPerSet} 下${entry.value.done ? " · 已完成" : ""}'),
-            ])),
-          )),
-      ]))),
-  ]));
+  Widget _buildTvPlan() {
+    final planEntries = currentPlan?.items.asMap().entries.toList() ?? const [];
+    final executableEntries = planEntries
+        .where((entry) => _isTvExecutablePlanItem(entry.value))
+        .toList();
+    return TvPage(
+      title: '復健計畫',
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          SizedBox(
+            width: 210,
+            child: ListView(
+              children: [
+                for (int offset = -3; offset <= 3; offset++)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 10),
+                    child: OutlinedButton(
+                      autofocus: offset == 0,
+                      onPressed: () => _onSelectDay(
+                        DateTime.now().add(Duration(days: offset)),
+                      ),
+                      child: Text(
+                        offset == 0
+                            ? '今天'
+                            : '${DateTime.now().add(Duration(days: offset)).month}/'
+                                '${DateTime.now().add(Duration(days: offset)).day}',
+                      ),
+                    ),
+                  ),
+                OutlinedButton(
+                  onPressed: () => _loadPlan(selectedDate),
+                  child: const Text('重新整理'),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 28),
+          Expanded(
+            child: isLoading
+                ? const Center(child: CircularProgressIndicator())
+                : SingleChildScrollView(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Text(
+                          _planSectionTitle(),
+                          style: const TextStyle(
+                            fontSize: 30,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        const SizedBox(height: 18),
+                        if (loadError != null)
+                          Text(loadError!)
+                        else if (currentPlan == null ||
+                            currentPlan!.items.isEmpty)
+                          const Text('治療師尚未安排這一天的復健計畫')
+                        else if (executableEntries.isEmpty)
+                          const Text('今天的復健計畫沒有可在電視上執行的動作')
+                        else
+                          for (final entry in executableEntries)
+                            Padding(
+                              padding: const EdgeInsets.only(bottom: 14),
+                              child: OutlinedButton(
+                                onPressed: _isToday && !entry.value.done
+                                    ? () => _startExercise(
+                                          findExerciseById(
+                                            entry.value.exerciseId,
+                                          ),
+                                          entry.value,
+                                          entry.key,
+                                        )
+                                    : null,
+                                child: Padding(
+                                  padding: const EdgeInsets.all(18),
+                                  child: Row(
+                                    children: [
+                                      Expanded(
+                                        child: Text(
+                                          findExerciseById(
+                                            entry.value.exerciseId,
+                                          ).name,
+                                        ),
+                                      ),
+                                      Text(
+                                        '${entry.value.sets} 組 × '
+                                        '${entry.value.repsPerSet} 下'
+                                        '${entry.value.done ? " · 已完成" : ""}',
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ),
+                      ],
+                    ),
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
 
   Widget _buildTopBar() {
     return const Padding(
