@@ -41,6 +41,11 @@ class RehabSessionState {
 
   final int repCount;
 
+  /// 全身投放畫面使用；-1 代表手機尚未產生有效分數。
+  final double currentRepScore;
+  final double templateScore;
+  final String templateScoreStatus;
+
   final double accuracy;
   final double progress;
 
@@ -75,6 +80,9 @@ class RehabSessionState {
     this.feedback = '請將手放入鏡頭範圍內',
     this.instruction = '等待偵測中...',
     this.repCount = 0,
+    this.currentRepScore = -1,
+    this.templateScore = -1,
+    this.templateScoreStatus = '',
     this.accuracy = 0,
     this.progress = 0,
     this.speedState = 0,
@@ -100,6 +108,9 @@ class RehabSessionState {
     String? feedback,
     String? instruction,
     int? repCount,
+    double? currentRepScore,
+    double? templateScore,
+    String? templateScoreStatus,
     double? accuracy,
     double? progress,
     int? speedState,
@@ -118,63 +129,37 @@ class RehabSessionState {
     String? pendingNextLevelLabel,
   }) {
     return RehabSessionState(
-      handLandmarks:
-          handLandmarks ?? this.handLandmarks,
-      handDetected:
-          handDetected ?? this.handDetected,
-      bodyLandmarks:
-          bodyLandmarks ?? this.bodyLandmarks,
-      feedback:
-          feedback ?? this.feedback,
-      instruction:
-          instruction ?? this.instruction,
-      repCount:
-          repCount ?? this.repCount,
-      accuracy:
-          accuracy ?? this.accuracy,
-      progress:
-          progress ?? this.progress,
-      speedState:
-          speedState ?? this.speedState,
-      isComplete:
-          isComplete ?? this.isComplete,
-      isCountingDown:
-          isCountingDown ?? this.isCountingDown,
-      countdownSeconds:
-          countdownSeconds ??
-              this.countdownSeconds,
-      countdownDone:
-          countdownDone ?? this.countdownDone,
-      durationSeconds:
-          durationSeconds ??
-              this.durationSeconds,
-      mistakeLogs:
-          mistakeLogs ?? this.mistakeLogs,
-      targetReps:
-          targetReps ?? this.targetReps,
-      imageBytes:
-          imageBytes ?? this.imageBytes,
-      currentLevelLabel:
-          currentLevelLabel ??
-              this.currentLevelLabel,
-      currentLevel:
-          currentLevel ??
-              this.currentLevel,
-      pendingLevelUp:
-          pendingLevelUp ??
-              this.pendingLevelUp,
-      pendingNextLevel:
-          pendingNextLevel ??
-              this.pendingNextLevel,
+      handLandmarks: handLandmarks ?? this.handLandmarks,
+      handDetected: handDetected ?? this.handDetected,
+      bodyLandmarks: bodyLandmarks ?? this.bodyLandmarks,
+      feedback: feedback ?? this.feedback,
+      instruction: instruction ?? this.instruction,
+      repCount: repCount ?? this.repCount,
+      currentRepScore: currentRepScore ?? this.currentRepScore,
+      templateScore: templateScore ?? this.templateScore,
+      templateScoreStatus: templateScoreStatus ?? this.templateScoreStatus,
+      accuracy: accuracy ?? this.accuracy,
+      progress: progress ?? this.progress,
+      speedState: speedState ?? this.speedState,
+      isComplete: isComplete ?? this.isComplete,
+      isCountingDown: isCountingDown ?? this.isCountingDown,
+      countdownSeconds: countdownSeconds ?? this.countdownSeconds,
+      countdownDone: countdownDone ?? this.countdownDone,
+      durationSeconds: durationSeconds ?? this.durationSeconds,
+      mistakeLogs: mistakeLogs ?? this.mistakeLogs,
+      targetReps: targetReps ?? this.targetReps,
+      imageBytes: imageBytes ?? this.imageBytes,
+      currentLevelLabel: currentLevelLabel ?? this.currentLevelLabel,
+      currentLevel: currentLevel ?? this.currentLevel,
+      pendingLevelUp: pendingLevelUp ?? this.pendingLevelUp,
+      pendingNextLevel: pendingNextLevel ?? this.pendingNextLevel,
       pendingNextLevelLabel:
-          pendingNextLevelLabel ??
-              this.pendingNextLevelLabel,
+          pendingNextLevelLabel ?? this.pendingNextLevelLabel,
     );
   }
 }
 
-class RehabSessionController
-    implements RehabActionCallback {
+class RehabSessionController implements RehabActionCallback {
   final IPoseModel model;
 
   final TrainingAction action;
@@ -185,19 +170,13 @@ class RehabSessionController
 
   StreamSubscription? _frameSub;
 
-  final _stateCtrl =
-      StreamController<RehabSessionState>
-          .broadcast();
+  final _stateCtrl = StreamController<RehabSessionState>.broadcast();
 
-  Stream<RehabSessionState>
-      get stateStream =>
-          _stateCtrl.stream;
+  Stream<RehabSessionState> get stateStream => _stateCtrl.stream;
 
-  RehabSessionState _state =
-      const RehabSessionState();
+  RehabSessionState _state = const RehabSessionState();
 
-  RehabSessionState get currentState =>
-      _state;
+  RehabSessionState get currentState => _state;
 
   IPoseModel get currentModel => model;
 
@@ -206,13 +185,10 @@ class RehabSessionController
   /// 某些 Action 在 constructor 裡就會立刻透過 callback 回呼
   /// onLevelUp / onFeedbackChanged。那個時間點 `_actionLogic`
   /// 可能還沒完成指派，所以這裡必須容許 null。
-  List<String> get currentMistakeLogs =>
-      _safeCurrentMistakeLogs();
+  List<String> get currentMistakeLogs => _safeCurrentMistakeLogs();
 
-  List<String> _safeCurrentMistakeLogs() =>
-      List<String>.from(
-        _actionLogic?.currentMistakeLogs ??
-            _state.mistakeLogs,
+  List<String> _safeCurrentMistakeLogs() => List<String>.from(
+        _actionLogic?.currentMistakeLogs ?? _state.mistakeLogs,
       );
 
   bool _isPaused = false;
@@ -222,72 +198,55 @@ class RehabSessionController
     required this.action,
     required this.difficulty,
   }) {
-    final diffIdx =
-        action.difficulties.indexWhere(
-              (d) =>
-                  d.level ==
-                  difficulty.level,
-            ) +
-            1;
+    final diffIdx = action.difficulties.indexWhere(
+          (d) => d.level == difficulty.level,
+        ) +
+        1;
 
     _state = _state.copyWith(
-      targetReps:
-          difficulty.targetReps,
-      currentLevel:
-          diffIdx,
+      targetReps: difficulty.targetReps,
+      currentLevel: diffIdx,
     );
 
-    final bool isExternalSource =
-        model is PiPoseModel;
+    final bool isExternalSource = model is PiPoseModel;
 
     switch (action.type) {
       case ActionType.turnPalm:
-        _actionLogic =
-            TurnPalmAction(
+        _actionLogic = TurnPalmAction(
           callback: this,
           startingLevel: diffIdx,
-          targetReps:
-              difficulty.targetReps,
-          overlayMirrored:
-              isExternalSource,
+          targetReps: difficulty.targetReps,
+          overlayMirrored: isExternalSource,
         );
         break;
 
       case ActionType.wristExtension:
-        _actionLogic =
-            WristExtensionAction(
+        _actionLogic = WristExtensionAction(
           callback: this,
-          targetReps:
-              difficulty.targetReps,
+          targetReps: difficulty.targetReps,
         );
         break;
 
       case ActionType.wristSideBend:
-        _actionLogic =
-            WristSideBendAction(
+        _actionLogic = WristSideBendAction(
           callback: this,
-          targetReps:
-              difficulty.targetReps,
+          targetReps: difficulty.targetReps,
         );
         break;
 
       case ActionType.sidePinch:
-        _actionLogic =
-            SidePinchAction(
+        _actionLogic = SidePinchAction(
           callback: this,
           difficulty: diffIdx,
-          targetReps:
-              difficulty.targetReps,
+          targetReps: difficulty.targetReps,
         );
         break;
 
       default:
-        _actionLogic =
-            SidePinchAction(
+        _actionLogic = SidePinchAction(
           callback: this,
           difficulty: diffIdx,
-          targetReps:
-              difficulty.targetReps,
+          targetReps: difficulty.targetReps,
         );
 
         _state = _state.copyWith(
@@ -298,60 +257,43 @@ class RehabSessionController
   }
 
   Future<void> start() async {
-    final diffIdx =
-        action.difficulties.indexWhere(
-              (d) =>
-                  d.level ==
-                  difficulty.level,
-            ) +
-            1;
+    final diffIdx = action.difficulties.indexWhere(
+          (d) => d.level == difficulty.level,
+        ) +
+        1;
 
-    String actionCode =
-        'SECOND_ACTION';
+    String actionCode = 'SECOND_ACTION';
 
-    if (action.type ==
-        ActionType.turnPalm) {
+    if (action.type == ActionType.turnPalm) {
       actionCode = 'TURN_PALM';
     }
 
-    final socketClient =
-        SocketClientService();
+    final socketClient = SocketClientService();
 
-    final socketServer =
-        SocketServerService();
+    final socketServer = SocketServerService();
 
     final bool tvConnected =
-        socketClient.isConnected ||
-            socketServer
-                .isClientConnected;
+        socketClient.isConnected || socketServer.isClientConnected;
 
     await model.start(
       PoseModelConfig(
         actionType: actionCode,
         difficulty: diffIdx,
         useFrontCamera: true,
-        enableImageStream:
-            tvConnected,
+        enableImageStream: tvConnected,
       ),
     );
 
-    _frameSub =
-        model.frameStream.listen(
+    _frameSub = model.frameStream.listen(
       (frame) {
         if (_isPaused) return;
 
         _emit(
           _state.copyWith(
-            handLandmarks:
-                frame.handLandmarks,
-            handDetected:
-                frame.handDetected,
-            bodyLandmarks:
-                frame.standardJoints
-                    .values
-                    .toList(),
-            imageBytes:
-                frame.imageBytes,
+            handLandmarks: frame.handLandmarks,
+            handDetected: frame.handDetected,
+            bodyLandmarks: frame.standardJoints.values.toList(),
+            imageBytes: frame.imageBytes,
           ),
         );
 
@@ -371,8 +313,7 @@ class RehabSessionController
         /// 就會是該難度自己的錯誤。
         _emit(
           _state.copyWith(
-            mistakeLogs:
-                _safeCurrentMistakeLogs(),
+            mistakeLogs: _safeCurrentMistakeLogs(),
           ),
         );
       },
@@ -380,14 +321,9 @@ class RehabSessionController
 
     _emit(
       _state.copyWith(
-        feedback:
-            _actionLogic?.initialFeedback ??
-                _state.feedback,
-        instruction:
-            _actionLogic?.initialInstruction ??
-                _state.instruction,
-        mistakeLogs:
-            _safeCurrentMistakeLogs(),
+        feedback: _actionLogic?.initialFeedback ?? _state.feedback,
+        instruction: _actionLogic?.initialInstruction ?? _state.instruction,
+        mistakeLogs: _safeCurrentMistakeLogs(),
       ),
     );
   }
@@ -445,11 +381,9 @@ class RehabSessionController
   Future<void> flipCamera() async {
     _emit(
       _state.copyWith(
-        handLandmarks:
-            const [],
+        handLandmarks: const [],
         handDetected: false,
-        bodyLandmarks:
-            const [],
+        bodyLandmarks: const [],
       ),
     );
 
@@ -511,8 +445,7 @@ class RehabSessionController
         instruction: instruction,
 
         /// 同步目前難度錯誤。
-        mistakeLogs:
-            _safeCurrentMistakeLogs(),
+        mistakeLogs: _safeCurrentMistakeLogs(),
       ),
     );
   }
@@ -526,21 +459,11 @@ class RehabSessionController
   }) {
     _emit(
       _state.copyWith(
-        repCount:
-            repCount ??
-                _state.repCount,
-        accuracy:
-            accuracy ??
-                _state.accuracy,
-        progress:
-            progress ??
-                _state.progress,
-        speedState:
-            speedState ??
-                _state.speedState,
-
-        mistakeLogs:
-            _safeCurrentMistakeLogs(),
+        repCount: repCount ?? _state.repCount,
+        accuracy: accuracy ?? _state.accuracy,
+        progress: progress ?? _state.progress,
+        speedState: speedState ?? _state.speedState,
+        mistakeLogs: _safeCurrentMistakeLogs(),
       ),
     );
   }
@@ -553,12 +476,9 @@ class RehabSessionController
   }) {
     _emit(
       _state.copyWith(
-        isCountingDown:
-            isCountingDown,
-        countdownSeconds:
-            seconds,
-        countdownDone:
-            isDone,
+        isCountingDown: isCountingDown,
+        countdownSeconds: seconds,
+        countdownDone: isDone,
       ),
     );
   }
@@ -571,20 +491,16 @@ class RehabSessionController
   }) {
     _emit(
       _state.copyWith(
-        currentLevelLabel:
-            levelLabel,
-        currentLevel:
-            newLevel,
-        targetReps:
-            newTargetReps,
+        currentLevelLabel: levelLabel,
+        currentLevel: newLevel,
+        targetReps: newTargetReps,
 
         /// 新難度全部重新計算。
         repCount: 0,
 
         /// 關鍵：
         /// 不要把上一階的錯誤帶進下一階。
-        mistakeLogs:
-            const <String>[],
+        mistakeLogs: const <String>[],
       ),
     );
   }
@@ -599,12 +515,9 @@ class RehabSessionController
     _emit(
       _state.copyWith(
         pendingLevelUp: true,
-        pendingNextLevel:
-            nextLevel,
-        pendingNextLevelLabel:
-            nextLevelLabel,
-        mistakeLogs:
-            _safeCurrentMistakeLogs(),
+        pendingNextLevel: nextLevel,
+        pendingNextLevelLabel: nextLevelLabel,
+        mistakeLogs: _safeCurrentMistakeLogs(),
       ),
     );
   }
@@ -619,12 +532,10 @@ class RehabSessionController
       _state.copyWith(
         isComplete: true,
         repCount: repCount,
-        durationSeconds:
-            durationSeconds,
+        durationSeconds: durationSeconds,
 
         /// 完成時 Action 傳進來的就是目前這一階。
-        mistakeLogs:
-            List<String>.from(
+        mistakeLogs: List<String>.from(
           mistakeLogs,
         ),
       ),

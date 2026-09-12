@@ -28,18 +28,15 @@ class UploadResult {
     required this.total,
   });
 
-  bool get allSucceeded =>
-      failed == 0 && total > 0;
+  bool get allSucceeded => failed == 0 && total > 0;
 
-  bool get hasNothingToUpload =>
-      total == 0;
+  bool get hasNothingToUpload => total == 0;
 }
 
 class HistoryService extends ChangeNotifier {
   HistoryService._(this._repository);
 
-  static final HistoryService _instance =
-      HistoryService._(historyRepository);
+  static final HistoryService _instance = HistoryService._(historyRepository);
 
   factory HistoryService() => _instance;
 
@@ -50,8 +47,7 @@ class HistoryService extends ChangeNotifier {
 
   final HistoryRepository _repository;
 
-  Future<List<TrainingRecord>> getHistory() =>
-      _repository.getHistory();
+  Future<List<TrainingRecord>> getHistory() => _repository.getHistory();
 
   /// 所有新紀錄都必須有 sessionId。
   ///
@@ -64,17 +60,14 @@ class HistoryService extends ChangeNotifier {
   TrainingRecord _ensureSessionId(
     TrainingRecord record,
   ) {
-    final current =
-        record.sessionId?.trim();
+    final current = record.sessionId?.trim();
 
-    if (current != null &&
-        current.isNotEmpty) {
+    if (current != null && current.isNotEmpty) {
       return record;
     }
 
     return record.copyWith(
-      sessionId:
-          'manual:${DateTime.now().microsecondsSinceEpoch}',
+      sessionId: 'manual:${DateTime.now().microsecondsSinceEpoch}',
       replaceSessionId: true,
     );
   }
@@ -82,47 +75,32 @@ class HistoryService extends ChangeNotifier {
   Future<void> saveRecord(
     TrainingRecord record,
   ) async {
-    final normalized =
-        _ensureSessionId(record);
+    final normalized = _ensureSessionId(record);
 
     await _repository.saveRecord(
       normalized,
     );
 
-    final mistakes =
-        normalized.mistakeLogs.length;
+    final mistakes = normalized.mistakeLogs.length;
 
     final completed =
-        normalized.completedReps < 0
-            ? 0
-            : normalized.completedReps;
+        normalized.completedReps < 0 ? 0 : normalized.completedReps;
 
-    final attempts =
-        completed + mistakes;
+    final attempts = completed + mistakes;
 
     final denominator =
-        attempts > normalized.targetReps
-            ? attempts
-            : normalized.targetReps;
+        attempts > normalized.targetReps ? attempts : normalized.targetReps;
 
     final acc = denominator > 0
-        ? (completed / denominator * 100)
-            .clamp(0, 100)
-            .round()
+        ? (completed / denominator * 100).clamp(0, 100).round()
         : 0;
 
-    final fullyCompleted =
-        normalized.completedReps >=
-            normalized.targetReps;
+    final fullyCompleted = normalized.completedReps >= normalized.targetReps;
 
     NotificationService()
         .addAchievement(
-          title:
-              fullyCompleted && mistakes == 0
-                  ? '完美完成一組訓練 🎯'
-                  : '完成一組訓練 ✅',
-          body:
-              '「${normalized.actionName}」'
+          title: fullyCompleted && mistakes == 0 ? '完美完成一組訓練 🎯' : '完成一組訓練 ✅',
+          body: '「${normalized.actionName}」'
               '${normalized.completedReps} / '
               '${normalized.targetReps} 下 · '
               '準確度 $acc%',
@@ -132,13 +110,11 @@ class HistoryService extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void>
-      updateLastRecordsVideoPath(
+  Future<void> updateLastRecordsVideoPath(
     int count,
     String? videoPath,
   ) async {
-    await _repository
-        .updateLastRecordsVideoPath(
+    await _repository.updateLastRecordsVideoPath(
       count,
       videoPath,
     );
@@ -162,9 +138,7 @@ class HistoryService extends ChangeNotifier {
   }
 
   Future<int> getPendingUploadCount() async {
-    final pending =
-        await _repository
-            .getUnsyncedRecords();
+    final pending = await _repository.getUnsyncedRecords();
 
     return pending.length;
   }
@@ -172,11 +146,9 @@ class HistoryService extends ChangeNotifier {
   bool _isAutoRecord(
     TrainingRecord record,
   ) {
-    final sessionId =
-        record.sessionId?.trim();
+    final sessionId = record.sessionId?.trim();
 
-    return sessionId != null &&
-        sessionId.startsWith('auto:');
+    return sessionId != null && sessionId.startsWith('auto:');
   }
 
   /// 舊的整批上傳功能仍保留。
@@ -184,13 +156,10 @@ class HistoryService extends ChangeNotifier {
   /// 現在行為改成：
   /// - auto session：整組一起處理，只傳一次影片。
   /// - manual / 單筆：維持逐筆處理。
-  Future<UploadResult>
-      uploadPendingRecords({
+  Future<UploadResult> uploadPendingRecords({
     required int userId,
   }) async {
-    final pending =
-        await _repository
-            .getUnsyncedRecords();
+    final pending = await _repository.getUnsyncedRecords();
 
     if (pending.isEmpty) {
       return const UploadResult(
@@ -200,11 +169,9 @@ class HistoryService extends ChangeNotifier {
       );
     }
 
-    final autoGroups =
-        <String, List<TrainingRecord>>{};
+    final autoGroups = <String, List<TrainingRecord>>{};
 
-    final manualRecords =
-        <TrainingRecord>[];
+    final manualRecords = <TrainingRecord>[];
 
     for (final record in pending) {
       if (_isAutoRecord(record)) {
@@ -325,32 +292,26 @@ class HistoryService extends ChangeNotifier {
     }
   }
 
-  Future<void>
-      _uploadAutoLevelSessionInternal(
+  Future<void> _uploadAutoLevelSessionInternal(
     List<TrainingRecord> source, {
     required int userId,
   }) async {
-    final records =
-        List<TrainingRecord>.from(source)
-          ..sort(
-            (a, b) =>
-                a.difficulty.compareTo(
-              b.difficulty,
-            ),
-          );
+    final records = List<TrainingRecord>.from(source)
+      ..sort(
+        (a, b) => a.difficulty.compareTo(
+          b.difficulty,
+        ),
+      );
 
     final sessionIds = records
         .map(
-          (record) =>
-              record.sessionId?.trim() ??
-              '',
+          (record) => record.sessionId?.trim() ?? '',
         )
         .toSet();
 
     if (sessionIds.length != 1 ||
         sessionIds.first.isEmpty ||
-        !sessionIds.first
-            .startsWith('auto:')) {
+        !sessionIds.first.startsWith('auto:')) {
       throw const FormatException(
         '這不是有效的自動升級 session',
       );
@@ -363,26 +324,22 @@ class HistoryService extends ChangeNotifier {
     TrainingRecord? videoOwner;
 
     for (final record in records) {
-      final path =
-          record.videoPath?.trim();
+      final path = record.videoPath?.trim();
 
-      if (path != null &&
-          path.isNotEmpty) {
+      if (path != null && path.isNotEmpty) {
         videoOwner = record;
       }
     }
 
     for (final record in records) {
       final shouldUploadVideo =
-          videoOwner != null &&
-          identical(record, videoOwner);
+          videoOwner != null && identical(record, videoOwner);
 
       await _uploadSingleRecord(
         record,
         userId: userId,
         uploadVideo: shouldUploadVideo,
-        markSharedVideoAsHandled:
-            !shouldUploadVideo,
+        markSharedVideoAsHandled: !shouldUploadVideo,
       );
     }
   }
@@ -390,19 +347,15 @@ class HistoryService extends ChangeNotifier {
   Future<int> syncFromCloud({
     required int userId,
   }) async {
-    final rows =
-        await ExerciseApiService
-            .fetchTrainingHistory(
+    final rows = await ExerciseApiService.fetchTrainingHistory(
       userId: userId,
       requesterUserId: userId,
-      identityToken:
-          AppSession.customExerciseToken,
+      identityToken: AppSession.customExerciseToken,
     );
 
     final cloud = rows
         .map(
-          (row) =>
-              TrainingRecord.fromJson(
+          (row) => TrainingRecord.fromJson(
             Map<String, dynamic>.from(
               row,
             ),
@@ -410,8 +363,7 @@ class HistoryService extends ChangeNotifier {
         )
         .toList();
 
-    final added =
-        await _repository.mergeRecords(
+    final added = await _repository.mergeRecords(
       cloud,
     );
 
@@ -426,8 +378,7 @@ class HistoryService extends ChangeNotifier {
     TrainingRecord record, {
     required int userId,
     bool uploadVideo = true,
-    bool markSharedVideoAsHandled =
-        false,
+    bool markSharedVideoAsHandled = false,
   }) async {
     debugPrint(
       '===== TRAINING HISTORY UPLOAD =====',
@@ -472,25 +423,27 @@ class HistoryService extends ChangeNotifier {
     // 1. metadata
     // ───────────────────────────────────────────
 
-    final response =
-        await ExerciseApiService
-            .uploadTrainingHistory(
+    final response = await ExerciseApiService.uploadTrainingHistory(
       userId: userId,
       clientTimestamp: record.timestamp,
       actionName: record.actionName,
       difficulty: record.difficulty,
-      durationSeconds:
-          record.durationSeconds,
-      completedReps:
-          record.completedReps,
+      durationSeconds: record.durationSeconds,
+      completedReps: record.completedReps,
       targetReps: record.targetReps,
       mistakeLogs: record.mistakeLogs,
       sessionId: record.sessionId,
+      averageBodyScore: record.averageBodyScore,
+      bodyRepScores: record.bodyRepScores,
+      templateScore: record.templateScore,
+      templateId: record.templateId,
+      templateName: record.templateName,
+      templateValidRepCount: record.templateValidRepCount,
+      templateRepScores: record.templateRepScores,
+      templateDifferenceSummary: record.templateDifferenceSummary,
     );
 
-    final historyId =
-        (response['id'] as num?)
-            ?.toInt();
+    final historyId = (response['id'] as num?)?.toInt();
 
     if (historyId == null) {
       throw const FormatException(
@@ -506,15 +459,13 @@ class HistoryService extends ChangeNotifier {
     // 自動升級 group 裡非 videoOwner 的 row：
     // metadata 已經成功，且不需要重複傳同一支影片。
     if (!uploadVideo) {
-      final path =
-          record.videoPath?.trim();
+      final path = record.videoPath?.trim();
 
       if (markSharedVideoAsHandled &&
           path != null &&
           path.isNotEmpty &&
           !record.isVideoSynced) {
-        await _repository
-            .markVideoAsSynced(
+        await _repository.markVideoAsSynced(
           record.timestamp,
         );
       }
@@ -526,11 +477,9 @@ class HistoryService extends ChangeNotifier {
     // 2. video
     // ───────────────────────────────────────────
 
-    final videoPath =
-        record.videoPath;
+    final videoPath = record.videoPath;
 
-    if (videoPath == null ||
-        videoPath.trim().isEmpty) {
+    if (videoPath == null || videoPath.trim().isEmpty) {
       return;
     }
 
@@ -538,8 +487,7 @@ class HistoryService extends ChangeNotifier {
       return;
     }
 
-    final videoFile =
-        File(videoPath);
+    final videoFile = File(videoPath);
 
     if (!await videoFile.exists()) {
       throw FileSystemException(
@@ -548,11 +496,9 @@ class HistoryService extends ChangeNotifier {
       );
     }
 
-    final videoBytes =
-        await videoFile.length();
+    final videoBytes = await videoFile.length();
 
-    final videoSizeMb =
-        videoBytes / 1024 / 1024;
+    final videoSizeMb = videoBytes / 1024 / 1024;
 
     debugPrint('');
     debugPrint(
@@ -581,8 +527,7 @@ class HistoryService extends ChangeNotifier {
     );
 
     try {
-      await ExerciseApiService
-          .uploadTrainingHistoryVideo(
+      await ExerciseApiService.uploadTrainingHistoryVideo(
         historyId: historyId,
         userId: userId,
         videoPath: videoPath,

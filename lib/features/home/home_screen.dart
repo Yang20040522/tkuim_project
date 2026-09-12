@@ -1326,7 +1326,7 @@ class _HomeContentState extends State<_HomeContent>
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    '動作標準分析',
+                    '模板動作分析',
                     style: TextStyle(
                       color: Color(0xFF374151),
                       fontSize: 14,
@@ -1335,7 +1335,7 @@ class _HomeContentState extends State<_HomeContent>
                   ),
                   SizedBox(height: 2),
                   Text(
-                    '從治療師示範影片建立動作標準',
+                    '建立標準動作模板，訓練時可啟用額外的動作品質評分。',
                     style: TextStyle(
                       color: AppColors.secondaryText,
                       fontSize: 11,

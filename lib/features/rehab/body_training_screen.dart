@@ -105,6 +105,7 @@ import '../../features/tv_cast/socket_client_service.dart';
 import '../../controllers/rehab_session_controller.dart';
 import '../training/training_preview_screen.dart';
 import 'training_camera_session.dart';
+import 'body_training_score_tracker.dart';
 
 // 歷史紀錄現在依實際完成次數判斷：目前難度有完成至少 1 下就保存。
 
@@ -242,11 +243,38 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
       const BodyTemplateAnalyzer();
   final Stopwatch _aiSessionClock = Stopwatch();
   BodyTemplateAnalysisResult? _lastAiAnalysis;
+  final BodyTrainingScoreTracker _bodyScoreTracker = BodyTrainingScoreTracker();
+  final List<double> _templateRepScores = <double>[];
+  final List<String> _templateDifferenceSummary = <String>[];
   BodySide? _selectedAiTrainedSide;
   BodySide? _selectedAiMovementSide;
   late final bool _templateAnalysisEnabled;
 
   bool get _usesTemplateAnalysis => _templateAnalysisEnabled;
+
+  MotionActionCapability? get _actionTemplateCapability =>
+      MotionActionRegistry.resolve(
+        widget.trainingActionMeta?.type.name ?? widget.action.title,
+        modelType: MotionTemplateModelType.body,
+      );
+
+  bool get _actionSupportsTemplateAnalysis =>
+      _actionTemplateCapability?.postRepAnalyzerKind ==
+      PostRepAnalyzerKind.bodyTrajectory;
+
+  double? get _averageTemplateScore {
+    if (_templateRepScores.isEmpty) return null;
+    return _templateRepScores.reduce((left, right) => left + right) /
+        _templateRepScores.length;
+  }
+
+  String get _templateUnavailableMessage {
+    if (!_actionSupportsTemplateAnalysis) {
+      return '此動作目前不支援模板額外評分';
+    }
+    if (widget.selectedTemplate == null) return '未啟用模板額外評分';
+    return '所選模板與目前動作不相符';
+  }
 
   bool _resolveTemplateAnalysisCapability() {
     if (widget.isDisplay || widget.selectedTemplate == null) return false;
@@ -518,6 +546,20 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
       }
     }
 
+    // 評分器只觀察 Action 已經產生的結果；scored 仍是唯一計次邊界。
+    // 畫面在 fb.prompt == null 時會保留上一句，因此也用實際顯示中的
+    // prompt，避免 Action 的語音節流 null 讓同一姿勢問題被重複扣分。
+    final completedRepScore = _bodyScoreTracker.observe(
+      feedback: fb,
+      displayedPrompt: fb.prompt ?? _feedback,
+      skeletonValid: detectedNow,
+      trainingActive: !_isPaused &&
+          !_isSwitchingCameraUI &&
+          !_levelUpDialogShowing &&
+          !_waitingHandSelect &&
+          !_waitingLegSelect,
+    );
+
     bool justReachedLevelUp = false;
 
     if (mounted) {
@@ -527,9 +569,26 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
           _repCount++;
           _currentLevelReps++;
         }
-        if (fb.prompt != null) _feedback = fb.prompt!;
+        if (completedRepScore != null) {
+          final original = fb.prompt?.trim();
+          _feedback =
+              '${original == null || original.isEmpty ? '✅ 完成一次！' : original}'
+              '（本次：$completedRepScore 分）';
+        } else if (fb.prompt != null) {
+          _feedback = fb.prompt!;
+        }
         if (completedRepAnalysis != null) {
           _lastAiAnalysis = completedRepAnalysis;
+          final score = completedRepAnalysis.overallScore;
+          if (completedRepAnalysis.valid && score != null) {
+            _templateRepScores.add(score.clamp(0, 100).toDouble());
+            for (final message in BodyTemplateDeviationFormatter.describe(
+                completedRepAnalysis)) {
+              if (!_templateDifferenceSummary.contains(message)) {
+                _templateDifferenceSummary.add(message);
+              }
+            }
+          }
         }
 
         if (fb.leveledUp) {
@@ -565,6 +624,7 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
 
             // 升級前先把這一階存下來。
             _saveCurrentLevelRecord();
+            _resetScoresForNewLevel();
 
             // 把使用者選的次數傳進下一階 action，避免 action 內部回到預設值。
             controllable?.confirmLevelUp(
@@ -606,6 +666,19 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
           'targetReps': _currentLevelTargetReps,
           'feedback': _feedback,
           'instruction': _instruction,
+          'currentRepScore': _bodyScoreTracker.currentRepScore,
+          'templateScore': _lastAiAnalysis?.valid == true
+              ? _lastAiAnalysis?.overallScore
+              : null,
+          'templateStatus': !_actionSupportsTemplateAnalysis
+              ? _templateUnavailableMessage
+              : widget.selectedTemplate == null
+                  ? null
+                  : !_usesTemplateAnalysis
+                      ? _templateUnavailableMessage
+                      : _lastAiAnalysis?.valid == false
+                          ? (_lastAiAnalysis?.unavailableReason ?? '此次無有效模板分數')
+                          : null,
         };
         if (_clientService.isConnected) {
           _clientService.sendCommand(poseMsg);
@@ -673,6 +746,15 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
         targetReps: msg['targetReps'] ?? c.targetReps,
         feedback: msg['feedback'] ?? c.feedback,
         instruction: msg['instruction'] ?? c.instruction,
+        currentRepScore: msg.containsKey('currentRepScore')
+            ? (msg['currentRepScore'] as num?)?.toDouble() ?? -1
+            : c.currentRepScore,
+        templateScore: msg.containsKey('templateScore')
+            ? (msg['templateScore'] as num?)?.toDouble() ?? -1
+            : c.templateScore,
+        templateScoreStatus: msg.containsKey('templateStatus')
+            ? msg['templateStatus']?.toString() ?? ''
+            : c.templateScoreStatus,
       );
     } else if (type == 'RTC_SIGNAL') {
       _rtcService.handleSignal(msg['signal']);
@@ -727,6 +809,7 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
         action is LevelUpControllable ? action as LevelUpControllable : null;
 
     _saveCurrentLevelRecord();
+    _resetScoresForNewLevel();
     final customReps = int.tryParse(_levelUpRepsController.text);
     controllable?.confirmLevelUp(
       customTargetReps:
@@ -776,9 +859,18 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
         actionName: widget.trainingActionMeta!.name,
         difficulty: _levelToInt(_previousLevel),
         durationSeconds: durationSec,
-        mistakeLogs: const [],
+        mistakeLogs: _bodyScoreTracker.mistakeLogs,
         completedReps: _currentLevelReps,
         targetReps: _currentLevelTargetReps,
+        averageBodyScore: _bodyScoreTracker.averageScore,
+        bodyRepScores: _bodyScoreTracker.repScores,
+        templateScore: _averageTemplateScore,
+        templateId: widget.selectedTemplate?.templateId,
+        templateName: widget.selectedTemplate?.templateName,
+        templateValidRepCount: _templateRepScores.length,
+        templateRepScores: List<double>.from(_templateRepScores),
+        templateDifferenceSummary:
+            List<String>.from(_templateDifferenceSummary),
       ),
     );
 
@@ -1020,7 +1112,19 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
         isPaused: false,
         repCount: _repCount,
         durationSeconds: durationSeconds,
-        mistakeLogs: const [],
+        mistakeLogs: _bodyScoreTracker.mistakeLogs,
+        averageBodyScore: _bodyScoreTracker.averageScore,
+        templateScore: _averageTemplateScore,
+        templateScoreStatus: !_actionSupportsTemplateAnalysis
+            ? _templateUnavailableMessage
+            : widget.selectedTemplate == null
+                ? null
+                : !_usesTemplateAnalysis
+                    ? _templateUnavailableMessage
+                    : _averageTemplateScore == null
+                        ? (_lastAiAnalysis?.unavailableReason ??
+                            '本場沒有有效的模板額外評分')
+                        : null,
         currentAction: currentMeta,
         currentDifficulty: currentDiff,
         hasVideo: videoPath != null,
@@ -1292,7 +1396,10 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
                   )
                 else
                   _buildCoachCard(),
-                if (_usesTemplateAnalysis) _buildAiQualityCard(),
+                if (!widget.isDisplay &&
+                    (widget.selectedTemplate != null ||
+                        !_actionSupportsTemplateAnalysis))
+                  _buildAiQualityCard(),
                 if (widget.isDisplay)
                   ValueListenableBuilder<RehabSessionState>(
                     valueListenable: _remoteState,
@@ -1978,14 +2085,21 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
   }
 
   Widget _buildAiQualityCard() {
-    String value = '--';
+    String? value;
+    String? status;
     final result = _lastAiAnalysis;
-    if (result?.valid == true) {
+    if (!_usesTemplateAnalysis) {
+      status = _templateUnavailableMessage;
+    } else if (result?.valid == true && result?.overallScore != null) {
       value = '${_lastAiAnalysis!.overallScore!.round()} 分';
+    } else if (result != null) {
+      status = result.unavailableReason ?? '此次無有效模板分數';
+    } else {
+      status = '完成一次動作後顯示模板額外評分';
     }
-    final deviations = result == null
+    final deviations = result?.valid != true
         ? const <String>[]
-        : BodyTemplateDeviationFormatter.describe(result);
+        : BodyTemplateDeviationFormatter.describe(result!);
 
     return Container(
       width: double.infinity,
@@ -2003,7 +2117,7 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
             children: [
               const Expanded(
                 child: Text(
-                  '本次 AI 動作品質',
+                  '本次模板符合度',
                   style: TextStyle(
                     color: Color(0xFF6B7280),
                     fontSize: 12,
@@ -2011,21 +2125,22 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
                   ),
                 ),
               ),
-              Text(
-                value,
-                textAlign: TextAlign.right,
-                style: const TextStyle(
-                  color: Color(0xFF1A1D2E),
-                  fontSize: 15,
-                  fontWeight: FontWeight.w800,
+              if (value != null)
+                Text(
+                  value,
+                  textAlign: TextAlign.right,
+                  style: const TextStyle(
+                    color: Color(0xFF1A1D2E),
+                    fontSize: 15,
+                    fontWeight: FontWeight.w800,
+                  ),
                 ),
-              ),
             ],
           ),
-          if (result?.unavailableReason != null) ...[
+          if (status != null) ...[
             const SizedBox(height: 4),
             Text(
-              result!.unavailableReason!,
+              status,
               style: const TextStyle(color: Color(0xFF8A8D9F), fontSize: 10),
             ),
           ],
@@ -2056,7 +2171,14 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
 
   void _resetAiForSourceChange() {
     _aiTrajectoryCollector.reset();
+  }
+
+  void _resetScoresForNewLevel() {
+    _bodyScoreTracker.reset();
+    _templateRepScores.clear();
+    _templateDifferenceSummary.clear();
     _lastAiAnalysis = null;
+    _aiTrajectoryCollector.reset();
   }
 
   void _updateAiMovementSide(LegRoleSelectable action) {
@@ -2100,6 +2222,23 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
                     state.instruction,
                     style:
                         const TextStyle(color: Color(0xFF4A65FF), fontSize: 12),
+                  ),
+                if (state.templateScore >= 0)
+                  Text(
+                    '模板符合度：${state.templateScore.round()} 分',
+                    style: const TextStyle(
+                      color: Color(0xFF4A65FF),
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  )
+                else if (state.templateScoreStatus.isNotEmpty)
+                  Text(
+                    state.templateScoreStatus,
+                    style: const TextStyle(
+                      color: Color(0xFF6B7280),
+                      fontSize: 11,
+                    ),
                   ),
               ],
             ),

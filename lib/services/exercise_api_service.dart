@@ -10,8 +10,7 @@ class ExerciseApiService {
   static const String baseUrl = ApiConfig.baseUrl;
 
   // 自由訓練歷史紀錄使用 ApiConfig.baseUrl。
-  static const String _historyBaseUrl =
-      ApiConfig.baseUrl;
+  static const String _historyBaseUrl = ApiConfig.baseUrl;
 
   /// 取得復健動作清單
   static Future<List<Map<String, dynamic>>> fetchExercises() async {
@@ -74,31 +73,31 @@ class ExerciseApiService {
       'isComplete': isComplete,
     };
 
-    final response = await http.post(
-      uri,
-      headers: {
-        'Content-Type': 'application/json; charset=UTF-8',
-        'Accept': 'application/json',
-      },
-      body: jsonEncode(requestBody),
-    ).timeout(
-      const Duration(seconds: 90),
-    );
+    final response = await http
+        .post(
+          uri,
+          headers: {
+            'Content-Type': 'application/json; charset=UTF-8',
+            'Accept': 'application/json',
+          },
+          body: jsonEncode(requestBody),
+        )
+        .timeout(
+          const Duration(seconds: 90),
+        );
 
     final responseText = utf8.decode(
       response.bodyBytes,
     );
 
-    if (response.statusCode < 200 ||
-        response.statusCode >= 300) {
+    if (response.statusCode < 200 || response.statusCode >= 300) {
       throw Exception(
         '儲存訓練結果失敗：${response.statusCode}\n'
         '$responseText',
       );
     }
 
-    final dynamic decoded =
-        jsonDecode(responseText);
+    final dynamic decoded = jsonDecode(responseText);
 
     return Map<String, dynamic>.from(
       decoded as Map,
@@ -172,8 +171,7 @@ class ExerciseApiService {
       );
     }
 
-    final dynamic decoded =
-        jsonDecode(responseText);
+    final dynamic decoded = jsonDecode(responseText);
 
     return Map<String, dynamic>.from(
       decoded as Map,
@@ -199,6 +197,14 @@ class ExerciseApiService {
     required int targetReps,
     required List<String> mistakeLogs,
     String? sessionId,
+    double? averageBodyScore,
+    List<int> bodyRepScores = const <int>[],
+    double? templateScore,
+    String? templateId,
+    String? templateName,
+    int templateValidRepCount = 0,
+    List<double> templateRepScores = const <double>[],
+    List<String> templateDifferenceSummary = const <String>[],
   }) async {
     final uri = Uri.parse(
       '$_historyBaseUrl/api/training-history',
@@ -214,14 +220,21 @@ class ExerciseApiService {
       'targetReps': targetReps,
       'mistakeLogs': mistakeLogs,
       'sessionId': sessionId,
+      'averageBodyScore': averageBodyScore,
+      'bodyRepScores': bodyRepScores,
+      'templateScore': templateValidRepCount > 0 ? templateScore : null,
+      'templateId': templateId,
+      'templateName': templateName,
+      'templateValidRepCount': templateValidRepCount,
+      'templateRepScores': templateRepScores,
+      'templateDifferenceSummary': templateDifferenceSummary,
     };
 
     final response = await http
         .post(
           uri,
           headers: {
-            'Content-Type':
-                'application/json; charset=UTF-8',
+            'Content-Type': 'application/json; charset=UTF-8',
             'Accept': 'application/json',
           },
           body: jsonEncode(requestBody),
@@ -234,16 +247,14 @@ class ExerciseApiService {
       response.bodyBytes,
     );
 
-    if (response.statusCode < 200 ||
-        response.statusCode >= 300) {
+    if (response.statusCode < 200 || response.statusCode >= 300) {
       throw Exception(
         '上傳訓練紀錄失敗：${response.statusCode}\n'
         '$responseText',
       );
     }
 
-    final dynamic decoded =
-        jsonDecode(responseText);
+    final dynamic decoded = jsonDecode(responseText);
 
     return Map<String, dynamic>.from(
       decoded as Map,
@@ -260,12 +271,10 @@ class ExerciseApiService {
       '$_historyBaseUrl/api/training-history/$historyId/video',
     );
 
-    final fileName =
-        videoPath.split(RegExp(r'[/\\]')).last;
+    final fileName = videoPath.split(RegExp(r'[/\\]')).last;
 
-    final extension = fileName.contains('.')
-        ? fileName.split('.').last.toLowerCase()
-        : '';
+    final extension =
+        fileName.contains('.') ? fileName.split('.').last.toLowerCase() : '';
 
     final contentType = switch (extension) {
       'mov' => MediaType('video', 'quicktime'),
@@ -274,30 +283,26 @@ class ExerciseApiService {
       _ => MediaType('video', 'mp4'),
     };
 
-    final request =
-        http.MultipartRequest('POST', uri)
-          ..fields['userId'] = '$userId'
-          ..files.add(
-            await http.MultipartFile.fromPath(
-              'file',
-              videoPath,
-              filename: fileName,
-              contentType: contentType,
-            ),
-          );
+    final request = http.MultipartRequest('POST', uri)
+      ..fields['userId'] = '$userId'
+      ..files.add(
+        await http.MultipartFile.fromPath(
+          'file',
+          videoPath,
+          filename: fileName,
+          contentType: contentType,
+        ),
+      );
 
     final streamed = await request.send().timeout(
           const Duration(minutes: 3),
         );
 
-    final response =
-        await http.Response.fromStream(streamed);
+    final response = await http.Response.fromStream(streamed);
 
-    final responseText =
-        utf8.decode(response.bodyBytes);
+    final responseText = utf8.decode(response.bodyBytes);
 
-    if (response.statusCode < 200 ||
-        response.statusCode >= 300) {
+    if (response.statusCode < 200 || response.statusCode >= 300) {
       throw Exception(
         '上傳訓練影片失敗：${response.statusCode}\n'
         '$responseText',
@@ -317,12 +322,9 @@ class ExerciseApiService {
 
     final headers = <String, String>{
       'Accept': 'application/json',
-      if (requesterUserId != null)
-        'X-User-Id': '$requesterUserId',
-      if (identityToken != null &&
-          identityToken.trim().isNotEmpty)
-        'X-Custom-Exercise-Token':
-            identityToken.trim(),
+      if (requesterUserId != null) 'X-User-Id': '$requesterUserId',
+      if (identityToken != null && identityToken.trim().isNotEmpty)
+        'X-Custom-Exercise-Token': identityToken.trim(),
     };
 
     final response = await http
@@ -345,22 +347,16 @@ class ExerciseApiService {
       );
     }
 
-    final List<dynamic> data =
-        jsonDecode(responseText);
+    final List<dynamic> data = jsonDecode(responseText);
 
     return data.map((item) {
-      final row =
-          Map<String, dynamic>.from(item);
+      final row = Map<String, dynamic>.from(item);
 
-      final rawVideoUrl =
-          row['videoUrl']?.toString();
+      final rawVideoUrl = row['videoUrl']?.toString();
 
-      if (rawVideoUrl != null &&
-          rawVideoUrl.isNotEmpty) {
+      if (rawVideoUrl != null && rawVideoUrl.isNotEmpty) {
         row['videoUrl'] =
-            Uri.parse(_historyBaseUrl)
-                .resolve(rawVideoUrl)
-                .toString();
+            Uri.parse(_historyBaseUrl).resolve(rawVideoUrl).toString();
       }
 
       return row;
