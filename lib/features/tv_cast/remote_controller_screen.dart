@@ -13,6 +13,7 @@ import '../../models/body_frame.dart';
 import '../../services/voice_service.dart';
 import 'webrtc_service.dart';
 import '../rehab/training_camera_session.dart';
+import '../rehab/body_training_score_tracker.dart';
 
 class RemoteControllerScreen extends StatefulWidget {
   final TrainingAction action;
@@ -43,6 +44,10 @@ class _RemoteControllerScreenState extends State<RemoteControllerScreen> {
   late int _targetReps;
   String _feedback = '等待雙螢幕連線…';
   String _instruction = '';
+  final BodyTrainingScoreTracker _bodyScoreTracker = BodyTrainingScoreTracker();
+  int? _currentRepScore;
+  double? _templateScore;
+  String? _templateScoreStatus;
   StreamSubscription? _socketSub;
   StreamSubscription? _binarySub;
 
@@ -219,11 +224,25 @@ class _RemoteControllerScreenState extends State<RemoteControllerScreen> {
     final frame = BodyFrame(joints: joints);
 
     final fb = widget.rehabAction.update(frame);
+    final completedRepScore = _bodyScoreTracker.observe(
+      feedback: fb,
+      displayedPrompt: fb.prompt ?? _feedback,
+      skeletonValid: data.keypoints.length >= 17,
+      trainingActive: true,
+    );
 
     if (mounted) {
       setState(() {
         if (fb.scored) _repCount++;
-        if (fb.prompt != null) _feedback = fb.prompt!;
+        if (completedRepScore != null) {
+          _currentRepScore = completedRepScore;
+          final original = fb.prompt?.trim();
+          _feedback =
+              '${original == null || original.isEmpty ? '✅ 完成一次！' : original}'
+              '（本次：$completedRepScore 分）';
+        } else if (fb.prompt != null) {
+          _feedback = fb.prompt!;
+        }
         if (fb.leveledUp) _instruction = '難度提升，請繼續保持';
       });
 
@@ -234,6 +253,7 @@ class _RemoteControllerScreenState extends State<RemoteControllerScreen> {
         'targetReps': _targetReps,
         'feedback': _feedback,
         'instruction': _instruction,
+        'currentRepScore': _currentRepScore,
       };
 
       if (_clientService.isConnected) {
@@ -283,6 +303,15 @@ class _RemoteControllerScreenState extends State<RemoteControllerScreen> {
           _targetReps = msg['targetReps'] ?? _targetReps;
           _feedback = msg['feedback'] ?? _feedback;
           _instruction = msg['instruction'] ?? _instruction;
+          _currentRepScore = msg.containsKey('currentRepScore')
+              ? (msg['currentRepScore'] as num?)?.round()
+              : _currentRepScore;
+          _templateScore = msg.containsKey('templateScore')
+              ? (msg['templateScore'] as num?)?.toDouble()
+              : _templateScore;
+          _templateScoreStatus = msg.containsKey('templateStatus')
+              ? msg['templateStatus']?.toString()
+              : _templateScoreStatus;
         });
       }
     }
@@ -550,6 +579,26 @@ class _RemoteControllerScreenState extends State<RemoteControllerScreen> {
                       color: Color(0xFF4A65FF),
                       fontSize: 12,
                       fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ],
+                if (_templateScore != null) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    '模板符合度：${_templateScore!.round()} 分',
+                    style: const TextStyle(
+                      color: Color(0xFF4A65FF),
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ] else if (_templateScoreStatus?.isNotEmpty == true) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    _templateScoreStatus!,
+                    style: const TextStyle(
+                      color: Color(0xFF6B7280),
+                      fontSize: 11,
                     ),
                   ),
                 ],

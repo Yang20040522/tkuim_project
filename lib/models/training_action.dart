@@ -12,11 +12,11 @@ enum ActionType {
   wipeBody,
   drawCircle,
   reach,
-  raiseBothArms,   
-  elbowForward,    
-  wristExtension,  // 檢查拼字是否為小寫 w 開頭的 wristExtension
-  wristSideBend,   // 檢查拼字是否為小寫 w 開頭的 wristSideBend
-  sitToStand, 
+  raiseBothArms,
+  elbowForward,
+  wristExtension, // 檢查拼字是否為小寫 w 開頭的 wristExtension
+  wristSideBend, // 檢查拼字是否為小寫 w 開頭的 wristSideBend
+  sitToStand,
   lateralStep,
 }
 
@@ -131,13 +131,19 @@ const List<TrainingAction> kTrainingActions = [
     description: '訓練肩關節活動度與手臂畫圓控制，上半圓大拇指朝上，下半圓自然下垂',
     difficulties: [
       DifficultyOption(
-          level: DifficultyLevel.level1, label: '初級', description: '小圓 — 高容錯',
+          level: DifficultyLevel.level1,
+          label: '初級',
+          description: '小圓 — 高容錯',
           targetReps: 10),
       DifficultyOption(
-          level: DifficultyLevel.level2, label: '中級', description: '標準圓',
+          level: DifficultyLevel.level2,
+          label: '中級',
+          description: '標準圓',
           targetReps: 8),
       DifficultyOption(
-          level: DifficultyLevel.level3, label: '高級', description: '大圓 — 要求手臂完全伸直',
+          level: DifficultyLevel.level3,
+          label: '高級',
+          description: '大圓 — 要求手臂完全伸直',
           targetReps: 6),
     ],
   ),
@@ -148,13 +154,19 @@ const List<TrainingAction> kTrainingActions = [
     description: '訓練肩關節上舉活動度與肌肉控制',
     difficulties: [
       DifficultyOption(
-          level: DifficultyLevel.level1, label: '初級', description: '舉過肩膀即可',
+          level: DifficultyLevel.level1,
+          label: '初級',
+          description: '舉過肩膀即可',
           targetReps: 10),
       DifficultyOption(
-          level: DifficultyLevel.level2, label: '中級', description: '舉過頭頂',
+          level: DifficultyLevel.level2,
+          label: '中級',
+          description: '舉過頭頂',
           targetReps: 8),
       DifficultyOption(
-          level: DifficultyLevel.level3, label: '高級', description: '舉過頭頂並定格 3 秒',
+          level: DifficultyLevel.level3,
+          label: '高級',
+          description: '舉過頭頂並定格 3 秒',
           targetReps: 6),
     ],
   ),
@@ -165,7 +177,9 @@ const List<TrainingAction> kTrainingActions = [
     description: 'RTMPose 全身 133 關鍵點即時追蹤',
     difficulties: [
       DifficultyOption(
-          level: DifficultyLevel.level1, label: 'Beta', description: '測試模式',
+          level: DifficultyLevel.level1,
+          label: 'Beta',
+          description: '測試模式',
           targetReps: 10),
     ],
   ),
@@ -317,6 +331,14 @@ class TrainingRecord {
   final String? videoUrl;
   final int completedReps;
   final int targetReps;
+  final double? averageBodyScore;
+  final List<int> bodyRepScores;
+  final double? templateScore;
+  final String? templateId;
+  final String? templateName;
+  final int templateValidRepCount;
+  final List<double> templateRepScores;
+  final List<String> templateDifferenceSummary;
   final bool isSynced;
   final bool isVideoSynced;
 
@@ -332,6 +354,14 @@ class TrainingRecord {
     this.videoUrl,
     this.completedReps = 0,
     this.targetReps = 10,
+    this.averageBodyScore,
+    this.bodyRepScores = const <int>[],
+    this.templateScore,
+    this.templateId,
+    this.templateName,
+    this.templateValidRepCount = 0,
+    this.templateRepScores = const <double>[],
+    this.templateDifferenceSummary = const <String>[],
     this.isSynced = false,
     bool? isVideoSynced,
   }) : isVideoSynced = isVideoSynced ?? videoPath == null;
@@ -353,6 +383,14 @@ class TrainingRecord {
         'videoUrl': videoUrl,
         'completedReps': completedReps,
         'targetReps': targetReps,
+        'averageBodyScore': averageBodyScore,
+        'bodyRepScores': bodyRepScores,
+        'templateScore': templateScore,
+        'templateId': templateId,
+        'templateName': templateName,
+        'templateValidRepCount': templateValidRepCount,
+        'templateRepScores': templateRepScores,
+        'templateDifferenceSummary': templateDifferenceSummary,
         'isSynced': isSynced,
         'isVideoSynced': isVideoSynced,
       };
@@ -366,16 +404,30 @@ class TrainingRecord {
       timestamp: json['timestamp']?.toString() ?? '',
       actionName: json['actionName']?.toString() ?? '',
       difficulty: (json['difficulty'] as num?)?.toInt() ?? 1,
-      durationSeconds:
-          (json['durationSeconds'] as num?)?.toInt() ?? 0,
-      mistakeLogs:
-          List<String>.from(json['mistakeLogs'] ?? const []),
+      durationSeconds: (json['durationSeconds'] as num?)?.toInt() ?? 0,
+      mistakeLogs: List<String>.from(json['mistakeLogs'] ?? const []),
       videoPath: videoPath,
       videoUrl: json['videoUrl']?.toString(),
-      completedReps:
-          (json['completedReps'] as num?)?.toInt() ?? 0,
-      targetReps:
-          (json['targetReps'] as num?)?.toInt() ?? 10,
+      completedReps: (json['completedReps'] as num?)?.toInt() ?? 0,
+      targetReps: (json['targetReps'] as num?)?.toInt() ?? 10,
+      averageBodyScore: (json['averageBodyScore'] as num?)?.toDouble() ??
+          (json['bodyScore'] as num?)?.toDouble(),
+      bodyRepScores: (json['bodyRepScores'] as List<dynamic>? ?? const [])
+          .whereType<num>()
+          .map((score) => score.round().clamp(0, 100).toInt())
+          .toList(),
+      templateScore: (json['templateScore'] as num?)?.toDouble(),
+      templateId: json['templateId']?.toString(),
+      templateName: json['templateName']?.toString(),
+      templateValidRepCount:
+          (json['templateValidRepCount'] as num?)?.toInt() ?? 0,
+      templateRepScores:
+          (json['templateRepScores'] as List<dynamic>? ?? const [])
+              .whereType<num>()
+              .map((score) => score.toDouble().clamp(0, 100).toDouble())
+              .toList(),
+      templateDifferenceSummary:
+          List<String>.from(json['templateDifferenceSummary'] ?? const []),
       isSynced: json['isSynced'] as bool? ?? false,
       isVideoSynced: json.containsKey('isVideoSynced')
           ? json['isVideoSynced'] as bool? ?? false
@@ -394,29 +446,41 @@ class TrainingRecord {
     bool replaceVideoUrl = false,
     int? completedReps,
     int? targetReps,
+    double? averageBodyScore,
+    List<int>? bodyRepScores,
+    double? templateScore,
+    String? templateId,
+    String? templateName,
+    int? templateValidRepCount,
+    List<double>? templateRepScores,
+    List<String>? templateDifferenceSummary,
     bool? isSynced,
     bool? isVideoSynced,
   }) =>
       TrainingRecord(
         id: clearId ? null : id ?? this.id,
-        sessionId: replaceSessionId
-            ? sessionId
-            : sessionId ?? this.sessionId,
+        sessionId: replaceSessionId ? sessionId : sessionId ?? this.sessionId,
         timestamp: timestamp,
         actionName: actionName,
         difficulty: difficulty,
         durationSeconds: durationSeconds,
         mistakeLogs: List<String>.from(mistakeLogs),
-        videoPath:
-            replaceVideoPath ? videoPath : this.videoPath,
-        videoUrl:
-            replaceVideoUrl ? videoUrl : this.videoUrl,
-        completedReps:
-            completedReps ?? this.completedReps,
+        videoPath: replaceVideoPath ? videoPath : this.videoPath,
+        videoUrl: replaceVideoUrl ? videoUrl : this.videoUrl,
+        completedReps: completedReps ?? this.completedReps,
         targetReps: targetReps ?? this.targetReps,
+        averageBodyScore: averageBodyScore ?? this.averageBodyScore,
+        bodyRepScores: bodyRepScores ?? this.bodyRepScores,
+        templateScore: templateScore ?? this.templateScore,
+        templateId: templateId ?? this.templateId,
+        templateName: templateName ?? this.templateName,
+        templateValidRepCount:
+            templateValidRepCount ?? this.templateValidRepCount,
+        templateRepScores: templateRepScores ?? this.templateRepScores,
+        templateDifferenceSummary:
+            templateDifferenceSummary ?? this.templateDifferenceSummary,
         isSynced: isSynced ?? this.isSynced,
-        isVideoSynced:
-            isVideoSynced ?? this.isVideoSynced,
+        isVideoSynced: isVideoSynced ?? this.isVideoSynced,
       );
 
   TrainingRecord copyWithVideoPath(String? path) => copyWith(

@@ -17,6 +17,14 @@ void main() {
         videoUrl: 'https://example.test/api/training-history/123/video',
         isSynced: true,
         isVideoSynced: true,
+        averageBodyScore: 92.5,
+        bodyRepScores: const [90, 95],
+        templateScore: 88.25,
+        templateId: 'template-1',
+        templateName: '標準抬腳',
+        templateValidRepCount: 2,
+        templateRepScores: const [86.5, 90],
+        templateDifferenceSummary: const ['右膝軌跡差異較大'],
       );
 
       final decoded = TrainingRecord.fromJson(record.toJson());
@@ -31,6 +39,14 @@ void main() {
         'https://example.test/api/training-history/123/video',
       );
       expect(decoded.isVideoSynced, isTrue);
+      expect(decoded.averageBodyScore, 92.5);
+      expect(decoded.bodyRepScores, [90, 95]);
+      expect(decoded.templateScore, 88.25);
+      expect(decoded.templateId, 'template-1');
+      expect(decoded.templateName, '標準抬腳');
+      expect(decoded.templateValidRepCount, 2);
+      expect(decoded.templateRepScores, [86.5, 90]);
+      expect(decoded.templateDifferenceSummary, ['右膝軌跡差異較大']);
     });
 
     test('old JSON does not crash and local video remains eligible to retry',
@@ -62,6 +78,9 @@ void main() {
       expect(decoded.completedReps, 0);
       expect(decoded.targetReps, 10);
       expect(decoded.isVideoSynced, isTrue);
+      expect(decoded.averageBodyScore, isNull);
+      expect(decoded.templateScore, isNull);
+      expect(decoded.templateValidRepCount, 0);
     });
   });
 }

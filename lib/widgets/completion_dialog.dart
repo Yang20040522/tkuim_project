@@ -65,6 +65,11 @@ class CompletionDialog extends StatefulWidget {
   /// 使用者選擇保留(true)或不保留(false)這段錄影時呼叫
   final void Function(bool keep)? onVideoDecision;
 
+  /// 全身訓練才傳入；手部訓練維持原本畫面與資料流。
+  final double? averageBodyScore;
+  final double? templateScore;
+  final String? templateScoreStatus;
+
   const CompletionDialog({
     super.key,
     required this.repCount,
@@ -78,6 +83,9 @@ class CompletionDialog extends StatefulWidget {
     this.isPaused = false,
     this.hasVideo = false,
     this.onVideoDecision,
+    this.averageBodyScore,
+    this.templateScore,
+    this.templateScoreStatus,
   });
 
   @override
@@ -118,7 +126,8 @@ class _CompletionDialogState extends State<CompletionDialog> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Text(widget.isPaused ? '⏸️' : '🎉', style: const TextStyle(fontSize: 48)),
+              Text(widget.isPaused ? '⏸️' : '🎉',
+                  style: const TextStyle(fontSize: 48)),
               const SizedBox(height: 10),
               Text(
                 widget.isPaused ? '訓練暫停' : '訓練完成',
@@ -131,6 +140,13 @@ class _CompletionDialogState extends State<CompletionDialog> {
 
               // ── 資訊區:有溫度的文案 + 時長/難度 ───────────────────
               _buildInfoBlock(timeText),
+
+              if (widget.averageBodyScore != null ||
+                  widget.templateScore != null ||
+                  widget.templateScoreStatus != null) ...[
+                const SizedBox(height: 14),
+                _buildEvaluationBlock(),
+              ],
 
               // ── 保留錄影詢問區塊(選完後會自動收合消失)──────────────
               if (widget.hasVideo)
@@ -154,7 +170,8 @@ class _CompletionDialogState extends State<CompletionDialog> {
               _actionButton(
                 icon: '🔄',
                 label: widget.isPaused ? '繼續訓練' : '再來一組',
-                subtitle: '${widget.currentAction.name} · ${widget.currentDifficulty.label}',
+                subtitle:
+                    '${widget.currentAction.name} · ${widget.currentDifficulty.label}',
                 color: const Color(0xFF4A65FF),
                 onTap: widget.onRetry,
               ),
@@ -167,8 +184,8 @@ class _CompletionDialogState extends State<CompletionDialog> {
                 _DifficultyRow(
                   action: widget.currentAction,
                   currentDifficulty: widget.currentDifficulty,
-                  onSelect: (diff) =>
-                      widget.onStartNew(widget.currentAction, diff, true), // 🆕 同動作切難度預設沿用自動升級
+                  onSelect: (diff) => widget.onStartNew(
+                      widget.currentAction, diff, true), // 🆕 同動作切難度預設沿用自動升級
                 ),
                 const SizedBox(height: 10),
               ],
@@ -244,8 +261,7 @@ class _CompletionDialogState extends State<CompletionDialog> {
               const SizedBox(width: 4),
               Text(
                 '時長 $timeText',
-                style: const TextStyle(
-                    color: Color(0xFF6B7280), fontSize: 12),
+                style: const TextStyle(color: Color(0xFF6B7280), fontSize: 12),
               ),
               const SizedBox(width: 16),
               Container(
@@ -259,11 +275,58 @@ class _CompletionDialogState extends State<CompletionDialog> {
               const SizedBox(width: 16),
               Text(
                 '$difficultyPrefix ${widget.currentDifficulty.label}',
-                style: const TextStyle(
-                    color: Color(0xFF6B7280), fontSize: 12),
+                style: const TextStyle(color: Color(0xFF6B7280), fontSize: 12),
               ),
             ],
           ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildEvaluationBlock() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF0F2FF),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: const Color(0xFF4A65FF).withValues(alpha: 0.25),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (widget.averageBodyScore != null)
+            Text(
+              '基本動作評分：${widget.averageBodyScore!.round()} 分',
+              style: const TextStyle(
+                color: Color(0xFF1A1D2E),
+                fontSize: 14,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          if (widget.templateScore != null) ...[
+            if (widget.averageBodyScore != null) const SizedBox(height: 6),
+            Text(
+              '模板符合度：${widget.templateScore!.round()} 分',
+              style: const TextStyle(
+                color: Color(0xFF4A65FF),
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ] else if (widget.templateScoreStatus != null) ...[
+            if (widget.averageBodyScore != null) const SizedBox(height: 6),
+            Text(
+              widget.templateScoreStatus!,
+              style: const TextStyle(
+                color: Color(0xFF6B7280),
+                fontSize: 12,
+              ),
+            ),
+          ],
         ],
       ),
     );
@@ -276,7 +339,8 @@ class _CompletionDialogState extends State<CompletionDialog> {
       decoration: BoxDecoration(
         color: const Color(0xFFF0F2FF),
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: const Color(0xFF4A65FF).withValues(alpha: 0.3)),
+        border:
+            Border.all(color: const Color(0xFF4A65FF).withValues(alpha: 0.3)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -365,9 +429,7 @@ class _CompletionDialogState extends State<CompletionDialog> {
           color: selected ? const Color(0xFF4A65FF) : Colors.white,
           borderRadius: BorderRadius.circular(10),
           border: Border.all(
-            color: selected
-                ? const Color(0xFF4A65FF)
-                : const Color(0xFFDDE0F0),
+            color: selected ? const Color(0xFF4A65FF) : const Color(0xFFDDE0F0),
           ),
         ),
         child: Row(
@@ -398,8 +460,7 @@ class _CompletionDialogState extends State<CompletionDialog> {
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 10),
           child: Text(label,
-              style: const TextStyle(
-                  color: Color(0xFF9CA3AF), fontSize: 11)),
+              style: const TextStyle(color: Color(0xFF9CA3AF), fontSize: 11)),
         ),
         Expanded(child: Container(height: 1, color: const Color(0xFFDDE0F0))),
       ],
@@ -438,8 +499,8 @@ class _CompletionDialogState extends State<CompletionDialog> {
                         fontSize: 15,
                         fontWeight: FontWeight.w700)),
                 Text(subtitle,
-                    style: const TextStyle(
-                        color: Colors.white70, fontSize: 11)),
+                    style:
+                        const TextStyle(color: Colors.white70, fontSize: 11)),
               ],
             ),
           ],
@@ -498,8 +559,8 @@ class _DifficultyRow extends StatelessWidget {
                   ),
                   if (isCurrent)
                     const Text('目前',
-                        style: TextStyle(
-                            color: Color(0xFF9CA3AF), fontSize: 9)),
+                        style:
+                            TextStyle(color: Color(0xFF9CA3AF), fontSize: 9)),
                 ],
               ),
             ),
@@ -653,7 +714,8 @@ class _OtherActionsSectionState extends State<_OtherActionsSection> {
                       borderRadius: BorderRadius.circular(10),
                     ),
                     child: Center(
-                        child: Text(icon, style: const TextStyle(fontSize: 18))),
+                        child:
+                            Text(icon, style: const TextStyle(fontSize: 18))),
                   ),
                   const SizedBox(width: 10),
                   Expanded(
@@ -721,9 +783,8 @@ class _OtherActionsSectionState extends State<_OtherActionsSection> {
               : (isPending ? const Color(0xFFF0F2FF) : Colors.white),
           borderRadius: BorderRadius.circular(12),
           border: Border.all(
-            color: isPending
-                ? const Color(0xFF4A65FF)
-                : const Color(0xFFDDE0F0),
+            color:
+                isPending ? const Color(0xFF4A65FF) : const Color(0xFFDDE0F0),
             width: isPending ? 1.5 : 1,
           ),
         ),
@@ -776,7 +837,8 @@ class _OtherActionsSectionState extends State<_OtherActionsSection> {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFF4A65FF).withValues(alpha: 0.3)),
+        border:
+            Border.all(color: const Color(0xFF4A65FF).withValues(alpha: 0.3)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -838,7 +900,9 @@ class _OtherActionsSectionState extends State<_OtherActionsSection> {
                         diff.label,
                         textAlign: TextAlign.center,
                         style: TextStyle(
-                          color: isSelected ? Colors.white : const Color(0xFF374151),
+                          color: isSelected
+                              ? Colors.white
+                              : const Color(0xFF374151),
                           fontSize: 12,
                           fontWeight: FontWeight.w700,
                         ),
@@ -887,13 +951,16 @@ class _OtherActionsSectionState extends State<_OtherActionsSection> {
                 ),
               ),
               const SizedBox(width: 3),
-              const Text('下', style: TextStyle(color: Color(0xFF6B7280), fontSize: 11)),
+              const Text('下',
+                  style: TextStyle(color: Color(0xFF6B7280), fontSize: 11)),
               const Spacer(),
               GestureDetector(
-                onTap: () => setState(() => _pendingAutoLevelUp = !_pendingAutoLevelUp),
+                onTap: () =>
+                    setState(() => _pendingAutoLevelUp = !_pendingAutoLevelUp),
                 child: AnimatedContainer(
                   duration: const Duration(milliseconds: 150),
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
                   decoration: BoxDecoration(
                     color: _pendingAutoLevelUp
                         ? const Color(0xFF4A65FF).withValues(alpha: 0.1)

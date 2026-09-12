@@ -195,14 +195,12 @@ class _HistoryScreenState extends State<HistoryScreen> {
     );
   }
 
-
   Future<void> _handleAutoGroupUpload(
     List<TrainingRecord> records,
   ) async {
     if (records.isEmpty) return;
 
-    final sessionId =
-        records.first.sessionId?.trim();
+    final sessionId = records.first.sessionId?.trim();
 
     if (sessionId == null ||
         sessionId.isEmpty ||
@@ -221,8 +219,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
       return;
     }
 
-    final userId =
-        int.tryParse(AppSession.userId ?? '');
+    final userId = int.tryParse(AppSession.userId ?? '');
 
     if (userId == null) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -237,8 +234,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
       () => _uploadingSessionIds.add(sessionId),
     );
 
-    final ok =
-        await _historyService.uploadAutoLevelSession(
+    final ok = await _historyService.uploadAutoLevelSession(
       records,
       userId: userId,
     );
@@ -256,9 +252,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
-          ok
-              ? '本次自動升級紀錄已全部上傳'
-              : '本次自動升級上傳失敗,請確認網路連線後再試',
+          ok ? '本次自動升級紀錄已全部上傳' : '本次自動升級上傳失敗,請確認網路連線後再試',
         ),
       ),
     );
@@ -737,19 +731,14 @@ class _HistoryScreenState extends State<HistoryScreen> {
         _parseTimestamp(record.timestamp) ??
         DateTime.fromMillisecondsSinceEpoch(0);
 
-    final autoGroups =
-        <String, List<TrainingRecord>>{};
-    final singles =
-        <List<TrainingRecord>>[];
+    final autoGroups = <String, List<TrainingRecord>>{};
+    final singles = <List<TrainingRecord>>[];
 
     for (final record in records) {
-      final sessionId =
-          record.sessionId?.trim();
+      final sessionId = record.sessionId?.trim();
 
-      if (sessionId != null &&
-          sessionId.startsWith('auto:')) {
-        final key =
-            '$sessionId|${record.actionName}';
+      if (sessionId != null && sessionId.startsWith('auto:')) {
+        final key = '$sessionId|${record.actionName}';
 
         autoGroups
             .putIfAbsent(
@@ -764,8 +753,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
       }
     }
 
-    final groups =
-        <List<TrainingRecord>>[
+    final groups = <List<TrainingRecord>>[
       ...autoGroups.values,
       ...singles,
     ];
@@ -773,8 +761,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
     for (final group in groups) {
       group.sort(
         (a, b) {
-          final level =
-              a.difficulty.compareTo(
+          final level = a.difficulty.compareTo(
             b.difficulty,
           );
 
@@ -791,17 +778,13 @@ class _HistoryScreenState extends State<HistoryScreen> {
 
     groups.sort(
       (a, b) {
-        final aLatest =
-            a.map(timeOf).reduce(
-                  (x, y) =>
-                      x.isAfter(y) ? x : y,
-                );
+        final aLatest = a.map(timeOf).reduce(
+              (x, y) => x.isAfter(y) ? x : y,
+            );
 
-        final bLatest =
-            b.map(timeOf).reduce(
-                  (x, y) =>
-                      x.isAfter(y) ? x : y,
-                );
+        final bLatest = b.map(timeOf).reduce(
+              (x, y) => x.isAfter(y) ? x : y,
+            );
 
         return bLatest.compareTo(aLatest);
       },
@@ -817,37 +800,27 @@ class _HistoryScreenState extends State<HistoryScreen> {
       return false;
     }
 
-    final sessionId =
-        group.first.sessionId?.trim();
+    final sessionId = group.first.sessionId?.trim();
 
-    if (sessionId == null ||
-        !sessionId.startsWith('auto:')) {
+    if (sessionId == null || !sessionId.startsWith('auto:')) {
       return false;
     }
 
     if (!group.every(
-      (record) =>
-          record.sessionId?.trim() ==
-          sessionId,
+      (record) => record.sessionId?.trim() == sessionId,
     )) {
       return false;
     }
 
-    final levels = group
-        .map((record) => record.difficulty)
-        .toSet()
-        .toList()
+    final levels = group.map((record) => record.difficulty).toSet().toList()
       ..sort();
 
     if (levels.length < 2) {
       return false;
     }
 
-    for (int i = 1;
-        i < levels.length;
-        i++) {
-      if (levels[i] !=
-          levels[i - 1] + 1) {
+    for (int i = 1; i < levels.length; i++) {
+      if (levels[i] != levels[i - 1] + 1) {
         return false;
       }
     }
@@ -864,8 +837,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
 
     if (!mounted) return;
 
-    final timestamps =
-        group.map((r) => r.timestamp).toSet();
+    final timestamps = group.map((r) => r.timestamp).toSet();
 
     setState(() {
       _allRecords.removeWhere(
@@ -873,8 +845,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
       );
     });
 
-    final newPendingCount =
-        await _historyService.getPendingUploadCount();
+    final newPendingCount = await _historyService.getPendingUploadCount();
 
     if (!mounted) return;
 
@@ -885,9 +856,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
-          group.length > 1
-              ? '已刪除這次自動升級訓練'
-              : '已刪除紀錄',
+          group.length > 1 ? '已刪除這次自動升級訓練' : '已刪除紀錄',
         ),
         duration: const Duration(seconds: 2),
       ),
@@ -1040,8 +1009,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
 
     TrainingRecord? videoRecord;
     for (final record in records) {
-      if (record.videoPath != null &&
-          record.videoPath!.trim().isNotEmpty) {
+      if (record.videoPath != null && record.videoPath!.trim().isNotEmpty) {
         videoRecord = record;
         break;
       }
@@ -1070,8 +1038,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
               height: 44,
               alignment: Alignment.center,
               decoration: BoxDecoration(
-                color: const Color(0xFF4A65FF)
-                    .withOpacity(0.12),
+                color: const Color(0xFF4A65FF).withOpacity(0.12),
                 borderRadius: BorderRadius.circular(12),
               ),
               child: Text(
@@ -1104,19 +1071,15 @@ class _HistoryScreenState extends State<HistoryScreen> {
 
           Builder(
             builder: (context) {
-              final sessionId =
-                  first.sessionId!.trim();
+              final sessionId = first.sessionId!.trim();
 
-              final needsUpload =
-                  records.any(
+              final needsUpload = records.any(
                 (record) =>
                     !record.isSynced ||
-                    (record.videoPath != null &&
-                        !record.isVideoSynced),
+                    (record.videoPath != null && !record.isVideoSynced),
               );
 
-              final uploading =
-                  _uploadingSessionIds.contains(
+              final uploading = _uploadingSessionIds.contains(
                 sessionId,
               );
 
@@ -1124,14 +1087,12 @@ class _HistoryScreenState extends State<HistoryScreen> {
                 return const SizedBox.shrink();
               }
 
-              final metadataSynced =
-                  records.every(
+              final metadataSynced = records.every(
                 (record) => record.isSynced,
               );
 
               return Padding(
-                padding:
-                    const EdgeInsets.fromLTRB(
+                padding: const EdgeInsets.fromLTRB(
                   16,
                   6,
                   16,
@@ -1140,38 +1101,29 @@ class _HistoryScreenState extends State<HistoryScreen> {
                 child: GestureDetector(
                   onTap: uploading
                       ? null
-                      : () =>
-                          _handleAutoGroupUpload(
+                      : () => _handleAutoGroupUpload(
                             records,
                           ),
                   child: Container(
                     width: double.infinity,
-                    padding:
-                        const EdgeInsets.symmetric(
+                    padding: const EdgeInsets.symmetric(
                       vertical: 11,
                     ),
                     decoration: BoxDecoration(
-                      color:
-                          const Color(0xFF4A65FF)
-                              .withOpacity(0.12),
-                      borderRadius:
-                          BorderRadius.circular(10),
+                      color: const Color(0xFF4A65FF).withOpacity(0.12),
+                      borderRadius: BorderRadius.circular(10),
                       border: Border.all(
-                        color:
-                            const Color(0xFF4A65FF)
-                                .withOpacity(0.35),
+                        color: const Color(0xFF4A65FF).withOpacity(0.35),
                       ),
                     ),
                     child: Row(
-                      mainAxisAlignment:
-                          MainAxisAlignment.center,
+                      mainAxisAlignment: MainAxisAlignment.center,
                       children: [
                         if (uploading)
                           const SizedBox(
                             width: 16,
                             height: 16,
-                            child:
-                                CircularProgressIndicator(
+                            child: CircularProgressIndicator(
                               strokeWidth: 2,
                               color: Color(
                                 0xFF4A65FF,
@@ -1182,8 +1134,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
                           const Icon(
                             Icons.cloud_upload_outlined,
                             size: 18,
-                            color:
-                                Color(0xFF4A65FF),
+                            color: Color(0xFF4A65FF),
                           ),
                         const SizedBox(width: 6),
                         Text(
@@ -1193,11 +1144,9 @@ class _HistoryScreenState extends State<HistoryScreen> {
                                   ? '補傳本次自動升級錄影'
                                   : '上傳本次自動升級紀錄',
                           style: const TextStyle(
-                            color:
-                                Color(0xFF4A65FF),
+                            color: Color(0xFF4A65FF),
                             fontSize: 13,
-                            fontWeight:
-                                FontWeight.w700,
+                            fontWeight: FontWeight.w700,
                           ),
                         ),
                       ],
@@ -1226,8 +1175,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
                           MaterialPageRoute(
                             builder: (_) => VideoPlaybackScreen(
                               videoPath: videoRecord!.videoPath!,
-                              title:
-                                  '${first.actionName} · ${first.timestamp}',
+                              title: '${first.actionName} · ${first.timestamp}',
                             ),
                           ),
                         );
@@ -1412,6 +1360,47 @@ class _HistoryScreenState extends State<HistoryScreen> {
               ),
             ],
           ),
+
+          if (record.averageBodyScore != null ||
+              record.templateScore != null) ...[
+            const SizedBox(height: 10),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: const Color(0xFFDDE0F0)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (record.averageBodyScore != null)
+                    Text(
+                      '基本動作評分：${record.averageBodyScore!.round()} 分',
+                      style: const TextStyle(
+                        color: Color(0xFF1A1D2E),
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  if (record.templateScore != null &&
+                      record.templateValidRepCount > 0) ...[
+                    if (record.averageBodyScore != null)
+                      const SizedBox(height: 4),
+                    Text(
+                      '模板符合度：${record.templateScore!.round()} 分',
+                      style: const TextStyle(
+                        color: Color(0xFF4A65FF),
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ],
 
           // 🆕 尚未上傳的紀錄底下,獨立一整列顯示大的上傳按鈕。
           // 拿掉原本擠在標題文字旁邊的小圖示,改成佔滿寬度的按鈕列,
