@@ -44,6 +44,7 @@ class _RemoteControllerScreenState extends State<RemoteControllerScreen> {
   String _feedback = '等待連線中...';
   String _instruction = '';
   StreamSubscription? _socketSub;
+  StreamSubscription? _binarySub;
 
   @override
   void initState() {
@@ -93,13 +94,13 @@ class _RemoteControllerScreenState extends State<RemoteControllerScreen> {
 
       // Listen for binary messages for video frames
       if (_clientService.isConnected) {
-        _clientService.binaryMessages.listen((data) {
+        _binarySub = _clientService.binaryMessages.listen((data) {
           if (mounted && widget.isDisplay) {
             _engine.imageNotifier.value = data;
           }
         });
       } else {
-        _serverService.binaryMessages.listen((data) {
+        _binarySub = _serverService.binaryMessages.listen((data) {
           if (mounted && widget.isDisplay) {
             _engine.imageNotifier.value = data;
           }
@@ -144,7 +145,6 @@ class _RemoteControllerScreenState extends State<RemoteControllerScreen> {
       await _engine.init(asReceiver: false);
       if (!mounted) return;
       setState(() {});
-      await _engine.startCamera();
 
       // ⚠️ 修正:這個畫面本身就是「TV 遙控模式」,控制端(手機)的
       // 職責就是把畫面串流給顯示端看。之前這個開關從沒被打開過,
@@ -156,6 +156,8 @@ class _RemoteControllerScreenState extends State<RemoteControllerScreen> {
 
       // Send JPEG frames over socket since WebRTC video is disabled to avoid conflict
       _engine.imageNotifier.addListener(_onImageUpdate);
+      // Enable frame publishing before starting the camera stream.
+      await _engine.startCamera();
     } else {
       // In display mode, just init as receiver to show skeleton
       await _engine.init(asReceiver: true);
@@ -249,6 +251,7 @@ class _RemoteControllerScreenState extends State<RemoteControllerScreen> {
   @override
   void dispose() {
     _socketSub?.cancel();
+    _binarySub?.cancel();
     // ⚠️ 修正:離開畫面時把開關關掉,避免這個 singleton engine
     // 被其他畫面重用時,castEnabled 殘留 true 造成非預期的 JPEG 生成。
     _engine.castEnabled = false;
