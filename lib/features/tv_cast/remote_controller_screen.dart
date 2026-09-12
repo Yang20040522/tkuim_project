@@ -104,8 +104,8 @@ class _RemoteControllerScreenState extends State<RemoteControllerScreen> {
             _engine.imageNotifier.value = data;
           }
         });
-      } else {
-        _binarySub = _serverService.binaryMessages.listen((data) {
+      } else if (_serverService.isClientConnected) {
+        _binarySub = _serverService.binaryMessages. listen((data) {
           if (mounted && widget.isDisplay) {
             _engine.imageNotifier.value = data;
           }
@@ -157,10 +157,19 @@ class _RemoteControllerScreenState extends State<RemoteControllerScreen> {
       // imageNotifier 永遠是 null,電視畫面一直空白/卡轉圈。
       _engine.castEnabled = true;
 
+      // 🖥️ 投放開關:只有真的在投放電視時才生成 JPEG,平常訓練不生成(省效能)
+      final bool tvConnected =
+          _clientService.isConnected || _serverService.isClientConnected;
+      _engine.castEnabled = tvConnected;
+
       _engine.poseNotifier.addListener(_onPoseUpdate);
 
       // Send JPEG frames over socket since WebRTC video is disabled to avoid conflict
-      _engine.imageNotifier.addListener(_onImageUpdate);
+
+      if (_engine.castEnabled) {
+        _engine.imageNotifier.addListener(_onImageUpdate);
+      }
+
       // Enable frame publishing before starting the camera stream.
       await _engine.startCamera();
     } else {

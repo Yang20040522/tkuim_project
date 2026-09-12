@@ -220,8 +220,18 @@ class _TrainingScreenState extends State<TrainingScreen>
       _initRtc();
       if (_clientService.isConnected) {
         _socketSub = _clientService.messages.listen(_handleRemoteCommand);
+        _clientService.binaryMessages.listen((data) {
+          if (mounted && widget.isDisplay) {
+            _remoteState.value = _remoteState.value.copyWith(imageBytes: data);
+          }
+        });
       } else if (_serverService.isClientConnected) {
         _socketSub = _serverService.messages.listen(_handleRemoteCommand);
+        _serverService.binaryMessages.listen((data) {
+          if (mounted && widget.isDisplay) {
+            _remoteState.value = _remoteState.value.copyWith(imageBytes: data);
+          }
+        });
       }
     }
 
@@ -292,7 +302,7 @@ class _TrainingScreenState extends State<TrainingScreen>
           if (state.imageBytes != null) {
             _clientService.sendBinary(state.imageBytes!);
           }
-        } else {
+        } else if (_serverService.isClientConnected) {
           _serverService.sendMessage(poseMsg);
           _serverService.sendMessage(statusMsg);
 
@@ -1418,13 +1428,19 @@ class _TrainingScreenState extends State<TrainingScreen>
                         child: Stack(
                           fit: StackFit.expand,
                           children: [
+                            if (remote.imageBytes != null)
+                              Image.memory(
+                                remote.imageBytes!,
+                                gaplessPlayback: true,
+                                fit: BoxFit.cover,
+                              ),
                             if (remote.handLandmarks.isNotEmpty)
                               HandOverlayWidget(
                                 landmarks: remote.handLandmarks,
                                 progress: remote.progress,
                                 speedState: remote.speedState,
                               )
-                            else
+                            else if (remote.imageBytes == null)
                               const Center(
                                 child: CircularProgressIndicator(
                                     color: Color(0xFF4A65FF)),
@@ -1473,6 +1489,7 @@ class _RemoteHandState {
   final int speedState;
   final bool isCountingDown;
   final int countdownSeconds;
+  final Uint8List? imageBytes;
 
   const _RemoteHandState({
     this.handLandmarks = const [],
@@ -1484,6 +1501,7 @@ class _RemoteHandState {
     this.speedState = 0,
     this.isCountingDown = false,
     this.countdownSeconds = 0,
+    this.imageBytes,
   });
 
   _RemoteHandState copyWith({
@@ -1496,6 +1514,7 @@ class _RemoteHandState {
     int? speedState,
     bool? isCountingDown,
     int? countdownSeconds,
+    Uint8List? imageBytes,
   }) {
     return _RemoteHandState(
       handLandmarks: handLandmarks ?? this.handLandmarks,
@@ -1507,6 +1526,7 @@ class _RemoteHandState {
       speedState: speedState ?? this.speedState,
       isCountingDown: isCountingDown ?? this.isCountingDown,
       countdownSeconds: countdownSeconds ?? this.countdownSeconds,
+      imageBytes: imageBytes ?? this.imageBytes,
     );
   }
 }

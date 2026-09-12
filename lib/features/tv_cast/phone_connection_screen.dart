@@ -219,6 +219,18 @@ class _PhoneConnectionScreenState extends State<PhoneConnectionScreen> {
               style: TextStyle(color: Color(0xFF8A9099), fontSize: 12),
             ),
             children: [
+              const Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  '通訊埠',
+                  style: TextStyle(
+                    color: Color(0xFF6B7280),
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 8),
               TextField(
                 controller: _portController,
                 style: const TextStyle(
@@ -227,7 +239,6 @@ class _PhoneConnectionScreenState extends State<PhoneConnectionScreen> {
                   fontWeight: FontWeight.w600,
                 ),
                 decoration: InputDecoration(
-                  labelText: '通訊埠',
                   prefixIcon: const Icon(
                     Icons.settings_input_component,
                     color: Color(0xFF6B7280),
