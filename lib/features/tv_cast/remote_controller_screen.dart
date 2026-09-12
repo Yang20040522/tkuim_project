@@ -41,7 +41,7 @@ class _RemoteControllerScreenState extends State<RemoteControllerScreen> {
 
   int _repCount = 0;
   late int _targetReps;
-  String _feedback = '等待連線中...';
+  String _feedback = '等待雙螢幕連線…';
   String _instruction = '';
   StreamSubscription? _socketSub;
   StreamSubscription? _binarySub;
@@ -356,10 +356,10 @@ class _RemoteControllerScreenState extends State<RemoteControllerScreen> {
             ),
           ),
           const SizedBox(width: 12),
-          Expanded(
+          const Expanded(
             child: Text(
-              widget.isDisplay ? '同步顯示模式' : 'TV 遙控模式',
-              style: const TextStyle(
+              '雙螢幕輔助訓練',
+              style: TextStyle(
                 color: Color(0xFF1A1D2E),
                 fontSize: 18,
                 fontWeight: FontWeight.w800,
@@ -379,7 +379,7 @@ class _RemoteControllerScreenState extends State<RemoteControllerScreen> {
                 const Icon(Icons.link, color: Colors.green, size: 14),
                 const SizedBox(width: 4),
                 Text(
-                  widget.isDisplay ? '正在接收' : '正在傳輸',
+                  widget.isDisplay ? '正在接收' : '正在同步',
                   style: const TextStyle(
                       color: Colors.green,
                       fontSize: 12,

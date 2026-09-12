@@ -63,6 +63,30 @@ void main() {
     await harness.dispose(tester);
   });
 
+  testWidgets('首頁以雙螢幕輔助訓練呈現既有連線角色', (tester) async {
+    tester.view.physicalSize = const Size(360, 640);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final harness = await _pumpHome(tester);
+
+    await tester.tap(
+      find.byKey(const Key('open-dual-screen-assisted-training')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('雙螢幕輔助訓練'), findsOneWidget);
+    expect(find.text('這台裝置用於訓練'), findsOneWidget);
+    expect(find.text('這台裝置作為輔助螢幕'), findsOneWidget);
+    expect(find.text('電視投放'), findsNothing);
+    expect(find.textContaining('Server'), findsNothing);
+    expect(find.textContaining('Client'), findsNothing);
+
+    Navigator.of(tester.element(find.byType(BottomSheet))).pop();
+    await tester.pumpAndSettle();
+    await harness.dispose(tester);
+  });
+
   testWidgets('All five patient tabs show icons matching selected label colors',
       (tester) async {
     final harness = await _pumpHome(tester);

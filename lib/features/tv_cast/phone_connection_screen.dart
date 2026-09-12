@@ -58,7 +58,7 @@ class _PhoneConnectionScreenState extends State<PhoneConnectionScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     const Text(
-                      '連線至 TV',
+                      '連接輔助螢幕',
                       style: TextStyle(
                         color: Color(0xFF1A1D2E),
                         fontSize: 28,
@@ -67,10 +67,12 @@ class _PhoneConnectionScreenState extends State<PhoneConnectionScreen> {
                     ),
                     const SizedBox(height: 8),
                     const Text(
-                      '請輸入 TV 顯示的 IP 位址以建立控制連線',
+                      '將訓練資訊同步到另一台裝置',
                       style: TextStyle(color: Color(0xFF6B7280), fontSize: 14),
                     ),
                     const SizedBox(height: 32),
+                    _buildOverviewCard(),
+                    const SizedBox(height: 20),
                     _buildInputCard(),
                     const SizedBox(height: 32),
                     _buildStatusCard(),
@@ -83,6 +85,47 @@ class _PhoneConnectionScreenState extends State<PhoneConnectionScreen> {
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildOverviewCard() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: const Color(0xFF4A65FF).withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: const Color(0xFF4A65FF).withValues(alpha: 0.18),
+        ),
+      ),
+      child: const Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.phone_android_rounded, color: Color(0xFF4A65FF)),
+              Padding(
+                padding: EdgeInsets.symmetric(horizontal: 16),
+                child:
+                    Icon(Icons.arrow_forward_rounded, color: Color(0xFF6B7280)),
+              ),
+              Icon(Icons.tablet_android_rounded, color: Color(0xFF4A65FF)),
+            ],
+          ),
+          SizedBox(height: 16),
+          Text(
+            '當手機需要架設在較遠位置進行動作辨識時，'
+            '可連接平板同步查看訓練畫面、完成次數與即時提示。',
+            style: TextStyle(
+              color: Color(0xFF4B5563),
+              fontSize: 13,
+              height: 1.5,
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -124,7 +167,7 @@ class _PhoneConnectionScreenState extends State<PhoneConnectionScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const Text(
-            'TV IP 位址',
+            '輔助螢幕 IP 位址',
             style: TextStyle(
               color: Color(0xFF6B7280),
               fontSize: 13,
@@ -139,8 +182,13 @@ class _PhoneConnectionScreenState extends State<PhoneConnectionScreen> {
               fontWeight: FontWeight.bold,
             ),
             decoration: InputDecoration(
-              hintText: '例如: 192.168.1.150',
-              prefixIcon: const Icon(Icons.tv_rounded),
+              hintText: '例如：192.168.1.150',
+              helperText: '請確認兩台裝置已連接至相同的 Wi-Fi 網路。',
+              helperMaxLines: 2,
+              prefixIcon: const Icon(
+                Icons.tablet_android_rounded,
+                color: Color(0xFF4A65FF),
+              ),
               filled: true,
               fillColor: Colors.white,
               contentPadding: const EdgeInsets.symmetric(
@@ -154,40 +202,50 @@ class _PhoneConnectionScreenState extends State<PhoneConnectionScreen> {
             ),
             keyboardType: TextInputType.url,
           ),
-          const SizedBox(height: 20),
-          const Text(
-            '通訊埠 (Port)',
-            style: TextStyle(
-              color: Color(0xFF6B7280),
-              fontSize: 13,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
           const SizedBox(height: 8),
-          TextField(
-            controller: _portController,
-            style: const TextStyle(
-              color: Colors.black,
-              fontSize: 16,
-              fontWeight: FontWeight.w600,
-            ),
-            decoration: InputDecoration(
-              prefixIcon: const Icon(
-                Icons.settings_input_component,
-                color: Color(0xFF6B7280),
-              ),
-              filled: true,
-              fillColor: Colors.white,
-              contentPadding: const EdgeInsets.symmetric(
-                horizontal: 16,
-                vertical: 18,
-              ),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide.none,
+          ExpansionTile(
+            tilePadding: EdgeInsets.zero,
+            childrenPadding: EdgeInsets.zero,
+            title: const Text(
+              '連線詳細資訊',
+              style: TextStyle(
+                color: Color(0xFF4B5563),
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
               ),
             ),
-            keyboardType: TextInputType.number,
+            subtitle: const Text(
+              '預設通訊埠 4040',
+              style: TextStyle(color: Color(0xFF8A9099), fontSize: 12),
+            ),
+            children: [
+              TextField(
+                controller: _portController,
+                style: const TextStyle(
+                  color: Colors.black,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                ),
+                decoration: InputDecoration(
+                  labelText: '通訊埠',
+                  prefixIcon: const Icon(
+                    Icons.settings_input_component,
+                    color: Color(0xFF6B7280),
+                  ),
+                  filled: true,
+                  fillColor: Colors.white,
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 18,
+                  ),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide.none,
+                  ),
+                ),
+                keyboardType: TextInputType.number,
+              ),
+            ],
           ),
         ],
       ),
@@ -196,7 +254,11 @@ class _PhoneConnectionScreenState extends State<PhoneConnectionScreen> {
 
   Widget _buildStatusCard() {
     final isConnected = _clientService.isConnected;
-    final statusColor = isConnected ? Colors.green : Colors.grey;
+    final statusColor = isConnected
+        ? const Color(0xFF22A06B)
+        : _clientService.status == ClientStatus.error
+            ? const Color(0xFFE24B4A)
+            : const Color(0xFF6B7280);
 
     return Container(
       padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 24),
@@ -217,18 +279,27 @@ class _PhoneConnectionScreenState extends State<PhoneConnectionScreen> {
           ),
           const SizedBox(width: 12),
           Text(
-            '連線狀態: ',
+            '連線狀態：',
             style: TextStyle(
                 color: statusColor.withValues(alpha: 0.8),
                 fontWeight: FontWeight.w600),
           ),
           Text(
-            _clientService.status.name.toUpperCase(),
+            _statusLabel,
             style: TextStyle(color: statusColor, fontWeight: FontWeight.w900),
           ),
         ],
       ),
     );
+  }
+
+  String get _statusLabel {
+    return switch (_clientService.status) {
+      ClientStatus.disconnected => '尚未連接輔助螢幕',
+      ClientStatus.connecting => '正在連接輔助螢幕…',
+      ClientStatus.connected => '輔助螢幕已連線',
+      ClientStatus.error => '無法連接輔助螢幕',
+    };
   }
 
   Widget _buildActionButtons() {
@@ -255,7 +326,7 @@ class _PhoneConnectionScreenState extends State<PhoneConnectionScreen> {
               child: isConnecting
                   ? const CircularProgressIndicator(color: Color(0xFF4A65FF))
                   : Text(
-                      isConnected ? '連線成功' : '開始連線',
+                      isConnected ? '輔助螢幕已連線' : '開始連線',
                       style: TextStyle(
                         color: isConnecting || isConnected
                             ? const Color(0xFFB0B3C5)
@@ -305,14 +376,28 @@ class _PhoneConnectionScreenState extends State<PhoneConnectionScreen> {
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: Colors.red.withValues(alpha: 0.3)),
       ),
-      child: Row(
+      child: const Row(
         children: [
-          const Icon(Icons.error_outline, color: Colors.red),
-          const SizedBox(width: 12),
+          Icon(Icons.error_outline, color: Colors.red),
+          SizedBox(width: 12),
           Expanded(
-            child: Text(
-              _clientService.errorMessage!,
-              style: const TextStyle(color: Colors.red, fontSize: 13),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '無法連接輔助螢幕',
+                  style: TextStyle(
+                    color: Colors.red,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                SizedBox(height: 4),
+                Text(
+                  '請確認 IP 位址正確，且兩台裝置位於相同網路。',
+                  style: TextStyle(color: Color(0xFFB42318), fontSize: 12),
+                ),
+              ],
             ),
           ),
         ],

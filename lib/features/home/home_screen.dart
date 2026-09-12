@@ -793,57 +793,70 @@ class _HomeContentState extends State<_HomeContent>
       ),
       builder: (ctx) {
         return SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Center(
-                  child: Container(
-                    width: 40,
-                    height: 4,
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFDDE0F0),
-                      borderRadius: BorderRadius.circular(2),
+          child: SingleChildScrollView(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Center(
+                    child: Container(
+                      width: 40,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFDDE0F0),
+                        borderRadius: BorderRadius.circular(2),
+                      ),
                     ),
                   ),
-                ),
-                const SizedBox(height: 20),
-                const Text(
-                  '電視投放',
-                  style: TextStyle(
-                    color: Color(0xFF1A1D2E),
-                    fontSize: 20,
-                    fontWeight: FontWeight.w900,
+                  const SizedBox(height: 20),
+                  const Text(
+                    '雙螢幕輔助訓練',
+                    style: TextStyle(
+                      color: Color(0xFF1A1D2E),
+                      fontSize: 20,
+                      fontWeight: FontWeight.w900,
+                    ),
                   ),
-                ),
-                const SizedBox(height: 4),
-                const Text(
-                  '選擇這台裝置的角色',
-                  style: TextStyle(color: Color(0xFF6B7280), fontSize: 13),
-                ),
-                const SizedBox(height: 20),
-                _buildCastOption(
-                  emoji: '📺',
-                  title: '這台當電視',
-                  subtitle: '接收手機傳來的訓練畫面',
-                  onTap: () {
-                    Navigator.of(ctx).pop();
-                    _onCastAsTv();
-                  },
-                ),
-                const SizedBox(height: 12),
-                _buildCastOption(
-                  emoji: '📱',
-                  title: '這台當手機',
-                  subtitle: '遙控電視、傳送訓練畫面',
-                  onTap: () {
-                    Navigator.of(ctx).pop();
-                    _onCastAsPhone();
-                  },
-                ),
-              ],
+                  const SizedBox(height: 4),
+                  const Text(
+                    '將訓練資訊同步到另一台裝置',
+                    style: TextStyle(color: Color(0xFF6B7280), fontSize: 13),
+                  ),
+                  const SizedBox(height: 20),
+                  const Text(
+                    '進行全身動作辨識時，手機可能需要架設在較遠的位置。'
+                    '連接平板作為輔助螢幕後，可同步查看訓練畫面、'
+                    '完成次數與即時動作提示。',
+                    style: TextStyle(
+                      color: Color(0xFF6B7280),
+                      fontSize: 13,
+                      height: 1.5,
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  _buildCastOption(
+                    icon: Icons.tablet_android_rounded,
+                    title: '這台裝置作為輔助螢幕',
+                    subtitle: '接收主要訓練裝置的畫面與即時資訊。',
+                    onTap: () {
+                      Navigator.of(ctx).pop();
+                      _onCastAsTv();
+                    },
+                  ),
+                  const SizedBox(height: 12),
+                  _buildCastOption(
+                    icon: Icons.phone_android_rounded,
+                    title: '這台裝置用於訓練',
+                    subtitle: '使用本裝置進行姿勢辨識與訓練。',
+                    onTap: () {
+                      Navigator.of(ctx).pop();
+                      _onCastAsPhone();
+                    },
+                  ),
+                ],
+              ),
             ),
           ),
         );
@@ -852,7 +865,7 @@ class _HomeContentState extends State<_HomeContent>
   }
 
   Widget _buildCastOption({
-    required String emoji,
+    required IconData icon,
     required String title,
     required String subtitle,
     required VoidCallback onTap,
@@ -875,9 +888,7 @@ class _HomeContentState extends State<_HomeContent>
                 color: Colors.white,
                 borderRadius: BorderRadius.circular(12),
               ),
-              child: Center(
-                child: Text(emoji, style: const TextStyle(fontSize: 22)),
-              ),
+              child: Icon(icon, color: const Color(0xFF4A65FF), size: 24),
             ),
             const SizedBox(width: 14),
             Expanded(
@@ -1010,23 +1021,31 @@ class _HomeContentState extends State<_HomeContent>
           ),
         ),
         // 📺 投放到電視:圓形按鈕,放在通知鈴鐺左邊
-        GestureDetector(
-          onTap: _showCastSheet,
-          child: Container(
-            width: 44,
-            height: 44,
-            decoration: BoxDecoration(
-              color: Colors.white,
-              shape: BoxShape.circle,
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.04),
-                  blurRadius: 8,
-                  offset: const Offset(0, 2),
-                ),
-              ],
+        Tooltip(
+          message: '雙螢幕輔助訓練',
+          child: GestureDetector(
+            key: const Key('open-dual-screen-assisted-training'),
+            onTap: _showCastSheet,
+            child: Container(
+              width: 44,
+              height: 44,
+              decoration: BoxDecoration(
+                color: Colors.white,
+                shape: BoxShape.circle,
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.04),
+                    blurRadius: 8,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
+              ),
+              child: const Icon(
+                Icons.devices_rounded,
+                color: Color(0xFF374151),
+                size: 22,
+              ),
             ),
-            child: const Icon(Icons.cast, color: Color(0xFF374151), size: 22),
           ),
         ),
         const SizedBox(width: 12),
