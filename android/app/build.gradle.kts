@@ -19,10 +19,12 @@ android {
     }
 
     buildTypes {
-        release {
-            signingConfig = signingConfigs.getByName("debug")
-        }
+    release {
+        signingConfig = signingConfigs.getByName("debug")
+        isMinifyEnabled = false
+        isShrinkResources = false
     }
+}
 
     compileOptions {
         isCoreLibraryDesugaringEnabled = true           // ← 新增
