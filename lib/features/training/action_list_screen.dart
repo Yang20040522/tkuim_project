@@ -416,7 +416,10 @@ class _ActionListScreenState extends State<ActionListScreen>
                                         _bodyActions.contains(a.type) &&
                                         a.type != ActionType.bodyTest)
                                     .map(_buildActionCard),
-                                _buildBodyTestCard(),
+                                Visibility(
+                                  visible: false,
+                                  child: _buildBodyTestCard(),
+                                ),
                               ],
                             ),
                           ),

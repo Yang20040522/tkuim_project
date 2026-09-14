@@ -444,67 +444,71 @@ class _DemoLibraryScreenState extends State<DemoLibraryScreen>
           }),
 
           // 即時骨架連動入口
-          GestureDetector(
-            onTap: () {
-              // 🖥️ 電視投放新增:同步跳轉指令
-              if (_clientService.isConnected) {
-                _clientService.sendCommand(
-                    {'type': 'OPEN_SCREEN', 'screen': 'BONE_VIEWER'});
-              }
-              Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const BoneViewerScreen()),
-              );
-            },
-            child: Container(
-              width: double.infinity,
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-              decoration: BoxDecoration(
-                gradient: const LinearGradient(
-                  colors: [Color(0xFF1A1D2E), Color(0xFF2D3250)],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
+          Visibility(
+            visible: false,
+            child: GestureDetector(
+              onTap: () {
+                // 🖥️ 電視投放新增:同步跳轉指令
+                if (_clientService.isConnected) {
+                  _clientService.sendCommand(
+                      {'type': 'OPEN_SCREEN', 'screen': 'BONE_VIEWER'});
+                }
+                Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => const BoneViewerScreen()),
+                );
+              },
+              child: Container(
+                width: double.infinity,
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    colors: [Color(0xFF1A1D2E), Color(0xFF2D3250)],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
+                  borderRadius: BorderRadius.circular(16),
+                  boxShadow: [
+                    BoxShadow(
+                      color: const Color(0xFF1A1D2E).withValues(alpha: 0.3),
+                      blurRadius: 12,
+                      offset: const Offset(0, 4),
+                    ),
+                  ],
                 ),
-                borderRadius: BorderRadius.circular(16),
-                boxShadow: [
-                  BoxShadow(
-                    color: const Color(0xFF1A1D2E).withValues(alpha: 0.3),
-                    blurRadius: 12,
-                    offset: const Offset(0, 4),
-                  ),
-                ],
-              ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  const Icon(Icons.accessibility_new,
-                      color: Color(0xFF00E5FF), size: 20),
-                  const SizedBox(width: 8),
-                  const Text(
-                    '即時骨架連動',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 14,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                  const SizedBox(width: 6),
-                  Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                    decoration: const BoxDecoration(
-                      color: Color(0xFF00E5FF),
-                      borderRadius: BorderRadius.all(Radius.circular(6)),
-                    ),
-                    child: const Text(
-                      'BETA',
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Icon(Icons.accessibility_new,
+                        color: Color(0xFF00E5FF), size: 20),
+                    const SizedBox(width: 8),
+                    const Text(
+                      '即時骨架連動',
                       style: TextStyle(
-                        color: Color(0xFF1A1D2E),
-                        fontSize: 9,
-                        fontWeight: FontWeight.w800,
+                        color: Colors.white,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
                       ),
                     ),
-                  ),
-                ],
+                    const SizedBox(width: 6),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 6, vertical: 2),
+                      decoration: const BoxDecoration(
+                        color: Color(0xFF00E5FF),
+                        borderRadius: BorderRadius.all(Radius.circular(6)),
+                      ),
+                      child: const Text(
+                        'BETA',
+                        style: TextStyle(
+                          color: Color(0xFF1A1D2E),
+                          fontSize: 9,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
           ),
