@@ -41,10 +41,13 @@ class PiPoseModel implements IPoseModel {
 
     void listener() {
       final result = _source!.handResult.value;
+      final size = _source!.frameSize.value;
       _frameCtrl.add(PoseFrame(
         handLandmarks: result.landmarks,
         handDetected: result.handDetected,
         imageBytes: _source!.latestJpeg.value, // 🚀 新增
+        imageWidth: size?.width,
+        imageHeight: size?.height,
       ));
     }
 

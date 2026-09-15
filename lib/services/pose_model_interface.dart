@@ -27,6 +27,8 @@ class PoseFrame {
   final List<Landmark> bodyLandmarks;
   final bool handDetected;
   final Uint8List? imageBytes; // 🚀 新增：原始影像 JPEG bytes
+  final double? imageWidth; // 🚀 新增
+  final double? imageHeight; // 🚀 新增
 
   // 🚀 新增：標準化關節座標映射表！
   // 復健邏輯以後「只讀這個 Map」，徹底與模型的 index (5, 6, 7) 解耦！
@@ -37,7 +39,10 @@ class PoseFrame {
     this.bodyLandmarks = const [],
     this.handDetected = false,
     this.imageBytes, // 🚀 新增
+    this.imageWidth, // 🚀 新增
+    this.imageHeight, // 🚀 新增
     this.standardJoints = const {}, // 🚀 預設為空
+    
   });
 
   factory PoseFrame.empty() => const PoseFrame();

@@ -9,6 +9,7 @@
 import 'dart:async';
 import 'dart:convert'; // 🚀 新增：解碼 Base64
 import 'dart:typed_data'; // 🚀 新增：Uint8List
+import 'dart:ui' as ui; // 🚀 新增
 import 'mediapipe_service.dart';
 import 'pose_model_interface.dart';
 
@@ -21,6 +22,11 @@ class MediaPipeModel implements IPoseModel {
 
   // ── 預測補幀用的前一幀資料 ────────────────────────────────────────
   List<Landmark> _prevLandmarks = [];
+
+  // ── 原始影像尺寸（用於電視投放對齊） ──────────────────────────────
+  double? _imageWidth;
+  double? _imageHeight;
+  bool _gettingSize = false;
 
   // ── IPoseModel ───────────────────────────────────────────────────
 
@@ -41,6 +47,12 @@ class MediaPipeModel implements IPoseModel {
       if (result.imageBase64 != null) {
         try {
           imgBytes = base64Decode(result.imageBase64!);
+
+          // 🖥️ 電視投放新增: 第一次收到影像時解碼出尺寸,供對齊用
+          if (_imageWidth == null && !_gettingSize) {
+            _gettingSize = true;
+            _decodeSize(imgBytes);
+          }
         } catch (_) {}
       }
 
@@ -48,8 +60,21 @@ class MediaPipeModel implements IPoseModel {
         handLandmarks: predicted,
         handDetected: result.handDetected,
         imageBytes: imgBytes, // 🚀 新增
+        imageWidth: _imageWidth,
+        imageHeight: _imageHeight,
       ));
     });
+  }
+
+    Future<void> _decodeSize(Uint8List bytes) async {
+    try {
+      final ui.Codec codec = await ui.instantiateImageCodec(bytes);
+      final ui.FrameInfo fi = await codec.getNextFrame();
+      _imageWidth = fi.image.width.toDouble();
+      _imageHeight = fi.image.height.toDouble();
+      fi.image.dispose();
+    } catch (_) {}
+    _gettingSize = false;
   }
 
   @override

@@ -72,6 +72,8 @@ class RehabSessionState {
   final String pendingNextLevelLabel;
 
   final Uint8List? imageBytes;
+  final double? imageWidth; // 🚀 新增
+  final double? imageHeight; // 🚀 新增
 
   const RehabSessionState({
     this.handLandmarks = const [],
@@ -94,6 +96,8 @@ class RehabSessionState {
     this.mistakeLogs = const [],
     this.targetReps = 10,
     this.imageBytes,
+    this.imageWidth, // 🚀 新增
+    this.imageHeight, // 🚀 新增
     this.currentLevelLabel = '',
     this.currentLevel = 1,
     this.pendingLevelUp = false,
@@ -122,6 +126,8 @@ class RehabSessionState {
     List<String>? mistakeLogs,
     int? targetReps,
     Uint8List? imageBytes,
+    double? imageWidth, // 🚀 新增
+    double? imageHeight, // 🚀 新增
     String? currentLevelLabel,
     int? currentLevel,
     bool? pendingLevelUp,
@@ -149,6 +155,8 @@ class RehabSessionState {
       mistakeLogs: mistakeLogs ?? this.mistakeLogs,
       targetReps: targetReps ?? this.targetReps,
       imageBytes: imageBytes ?? this.imageBytes,
+      imageWidth: imageWidth ?? this.imageWidth, // 🚀 新增
+      imageHeight: imageHeight ?? this.imageHeight, // 🚀 新增
       currentLevelLabel: currentLevelLabel ?? this.currentLevelLabel,
       currentLevel: currentLevel ?? this.currentLevel,
       pendingLevelUp: pendingLevelUp ?? this.pendingLevelUp,
@@ -294,6 +302,8 @@ class RehabSessionController implements RehabActionCallback {
             handDetected: frame.handDetected,
             bodyLandmarks: frame.standardJoints.values.toList(),
             imageBytes: frame.imageBytes,
+            imageWidth: frame.imageWidth,
+            imageHeight: frame.imageHeight,
           ),
         );
 

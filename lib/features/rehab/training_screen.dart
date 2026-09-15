@@ -294,6 +294,11 @@ class _TrainingScreenState extends State<TrainingScreen>
           'targetReps': state.targetReps,
           'isCountingDown': state.isCountingDown,
           'countdownSeconds': state.countdownSeconds,
+          'imageWidth': state.imageWidth, // 🖥️ 電視投放新增
+          'imageHeight': state.imageHeight, // 🖥️ 電視投放新增
+          'showStickGuide': _showStickGuide && !state.isComplete, // 🖥️ 電視投放新增
+          'showPinchGuide': _showPinchGuide && !state.isComplete, // 🖥️ 電視投放新增
+
         };
         if (_clientService.isConnected) {
           _clientService.sendCommand(poseMsg);
@@ -414,6 +419,12 @@ class _TrainingScreenState extends State<TrainingScreen>
         targetReps: msg['targetReps'] ?? c.targetReps,
         isCountingDown: msg['isCountingDown'] ?? c.isCountingDown,
         countdownSeconds: msg['countdownSeconds'] ?? c.countdownSeconds,
+        imageWidth: (msg['imageWidth'] as num?)?.toDouble() ??
+            c.imageWidth, // 🖥️ 電視投放新增
+        imageHeight: (msg['imageHeight'] as num?)?.toDouble() ??
+            c.imageHeight, // 🖥️ 電視投放新增
+        showStickGuide: msg['showStickGuide'] ?? c.showStickGuide, // 🖥️ 電視投放新增
+        showPinchGuide: msg['showPinchGuide'] ?? c.showPinchGuide, // 🖥️ 電視投放新增
       );
     } else if (type == 'RTC_SIGNAL') {
       _rtcService.handleSignal(msg['signal']);
@@ -1439,6 +1450,16 @@ class _TrainingScreenState extends State<TrainingScreen>
                                 landmarks: remote.handLandmarks,
                                 progress: remote.progress,
                                 speedState: remote.speedState,
+                                showStickGuide:
+                                    remote.showStickGuide, // 🖥️ 電視投放新增
+                                showPinchGuide:
+                                    remote.showPinchGuide, // 🖥️ 電視投放新增
+                                // 🖥️ 電視投放新增:傳入原始影像尺寸,讓骨架能正確對齊 BoxFit.cover
+                                sourceSize: remote.imageWidth != null &&
+                                        remote.imageHeight != null
+                                    ? Size(
+                                        remote.imageWidth!, remote.imageHeight!)
+                                    : null,
                               )
                             else if (remote.imageBytes == null)
                               const Center(
@@ -1490,6 +1511,10 @@ class _RemoteHandState {
   final bool isCountingDown;
   final int countdownSeconds;
   final Uint8List? imageBytes;
+  final double? imageWidth; // 🖥️ 電視投放新增
+  final double? imageHeight; // 🖥️ 電視投放新增
+  final bool showStickGuide; // 🖥️ 電視投放新增
+  final bool showPinchGuide; // 🖥️ 電視投放新增
 
   const _RemoteHandState({
     this.handLandmarks = const [],
@@ -1502,6 +1527,10 @@ class _RemoteHandState {
     this.isCountingDown = false,
     this.countdownSeconds = 0,
     this.imageBytes,
+    this.imageWidth, // 🖥️ 電視投放新增
+    this.imageHeight, // 🖥️ 電視投放新增
+    this.showStickGuide = false, // 🖥️ 電視投放新增
+    this.showPinchGuide = false, // 🖥️ 電視投放新增
   });
 
   _RemoteHandState copyWith({
@@ -1515,6 +1544,10 @@ class _RemoteHandState {
     bool? isCountingDown,
     int? countdownSeconds,
     Uint8List? imageBytes,
+    double? imageWidth, // 🖥️ 電視投放新增
+    double? imageHeight, // 🖥️ 電視投放新增
+    bool? showStickGuide, // 🖥️ 電視投放新增
+    bool? showPinchGuide, // 🖥️ 電視投放新增
   }) {
     return _RemoteHandState(
       handLandmarks: handLandmarks ?? this.handLandmarks,
@@ -1527,6 +1560,10 @@ class _RemoteHandState {
       isCountingDown: isCountingDown ?? this.isCountingDown,
       countdownSeconds: countdownSeconds ?? this.countdownSeconds,
       imageBytes: imageBytes ?? this.imageBytes,
+      imageWidth: imageWidth ?? this.imageWidth, // 🖥️ 電視投放新增
+      imageHeight: imageHeight ?? this.imageHeight, // 🖥️ 電視投放新增
+      showStickGuide: showStickGuide ?? this.showStickGuide, // 🖥️ 電視投放新增
+      showPinchGuide: showPinchGuide ?? this.showPinchGuide, // 🖥️ 電視投放新增
     );
   }
 }
