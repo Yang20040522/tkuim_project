@@ -218,8 +218,9 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
   final _rtcService = WebRtcService();
   final _remoteRenderer = RTCVideoRenderer();
   StreamSubscription? _socketSub;
-  final ValueNotifier<RehabSessionState> _remoteState =
-      ValueNotifier(const RehabSessionState());
+  final ValueNotifier<RehabSessionState> _remoteState = ValueNotifier(
+    const RehabSessionState(),
+  );
 
   late final BodyTrainingLevelProgress _levelProgress;
   int get _repCount => _levelProgress.completedReps;
@@ -456,17 +457,20 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
           if (hasNextLevel) {
             final completedLevel = _levelProgress.beginTransition();
             if (completedLevel == null) return;
-            final nextLevelIdx = currentLevelIdx + 1;
-            final nextTargetReps =
-                currentMeta.difficulties[nextLevelIdx].targetReps; // 🆕
             final nextLevel = _nextLevel(completedLevel.level);
             _saveCurrentLevelRecord(completedLevel: completedLevel);
-            controllable?.confirmLevelUp();
             _updatePosePresentation(() {
-              _levelProgress.completeTransition(
-                nextLevel: nextLevel,
-                nextTargetReps: nextTargetReps,
-              );
+              if (controllable != null) {
+                _levelProgress.completeAutomaticTransition(
+                  action: controllable,
+                  nextLevel: nextLevel,
+                );
+              } else {
+                _levelProgress.completeTransition(
+                  nextLevel: nextLevel,
+                  nextTargetReps: completedLevel.targetReps,
+                );
+              }
               _currentLevelStart = DateTime.now();
               _instruction = '難度提升,請繼續保持';
             });
@@ -615,10 +619,7 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
     final nextTargetReps = (customReps != null && customReps > 0)
         ? customReps
         : _currentLevelTargetReps;
-    controllable?.confirmLevelUp(
-      customTargetReps:
-          (customReps != null && customReps > 0) ? customReps : null,
-    );
+    controllable?.confirmLevelUp(customTargetReps: nextTargetReps);
 
     _updatePosePresentation(() {
       _levelUpDialogShowing = false;
@@ -643,9 +644,7 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
       ? _automaticHistorySessionId
       : 'manual:${DateTime.now().microsecondsSinceEpoch}';
 
-  void _saveCurrentLevelRecord({
-    CompletedBodyTrainingLevel? completedLevel,
-  }) {
+  void _saveCurrentLevelRecord({CompletedBodyTrainingLevel? completedLevel}) {
     if (widget.trainingActionMeta == null) return;
 
     final durationSec = DateTime.now().difference(_currentLevelStart).inSeconds;
@@ -653,17 +652,19 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
     final completedReps = completedLevel?.completedReps ?? _currentLevelReps;
     final targetReps = completedLevel?.targetReps ?? _currentLevelTargetReps;
 
-    HistoryService().saveRecord(TrainingRecord(
-      sessionId: _historySessionIdForCurrentRecord(),
-      timestamp: DateTime.now().toString().substring(0, 19),
-      actionName: widget.trainingActionMeta!.name,
-      difficulty: _levelToInt(level),
-      durationSeconds: durationSec,
-      mistakeLogs: const [],
-      completedReps: completedReps,
-      //targetReps: widget.difficultyMeta?.targetReps ?? 10,
-      targetReps: targetReps,
-    ));
+    HistoryService().saveRecord(
+      TrainingRecord(
+        sessionId: _historySessionIdForCurrentRecord(),
+        timestamp: DateTime.now().toString().substring(0, 19),
+        actionName: widget.trainingActionMeta!.name,
+        difficulty: _levelToInt(level),
+        durationSeconds: durationSec,
+        mistakeLogs: const [],
+        completedReps: completedReps,
+        //targetReps: widget.difficultyMeta?.targetReps ?? 10,
+        targetReps: targetReps,
+      ),
+    );
 
     _recordsSavedThisSession++;
   }
@@ -793,6 +794,12 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
 
   Future<void> _handleRealEnd() async {
     _completionShown = true;
+    _isPaused = true;
+    // Completion dialog can remain open: stop Pi frames before showing it.
+    _piCamera?.dispose();
+    _piCamera = null;
+    _piHand?.dispose();
+    _piHand = null;
     _aiTrajectoryCollector.reset();
 
     final videoPath = AppPlatform.current.supportsScreenRecording
@@ -839,15 +846,18 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
         onVideoDecision: (keep) => keepVideo = keep,
         onRetry: () => Navigator.of(dialogCtx).pop(_CompletionResult.retry()),
         onHome: () => Navigator.of(dialogCtx).pop(_CompletionResult.home()),
-        onStartNew: (a, d, autoLvl) => Navigator.of(dialogCtx)
-            .pop(_CompletionResult.startNew(a, d, autoLvl)), // 🆕
+        onStartNew: (a, d, autoLvl) => Navigator.of(
+          dialogCtx,
+        ).pop(_CompletionResult.startNew(a, d, autoLvl)), // 🆕
       ),
     );
 
     if (videoPath != null) {
       if (keepVideo == true) {
-        await HistoryService()
-            .updateLastRecordsVideoPath(_recordsSavedThisSession, videoPath);
+        await HistoryService().updateLastRecordsVideoPath(
+          _recordsSavedThisSession,
+          videoPath,
+        );
       } else {
         File(videoPath).delete().catchError((e) => File(videoPath));
       }
@@ -857,22 +867,27 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
 
     switch (result.kind) {
       case _CompletionKind.retry:
-        Navigator.of(context).pushReplacement(MaterialPageRoute(
-          builder: (_) => BodyTrainingScreen(
-            action: widget.action,
-            trainingActionMeta: widget.trainingActionMeta,
-            difficultyMeta: widget.difficultyMeta,
-            selectedTemplate: widget.selectedTemplate,
-            autoLevelUp: widget.autoLevelUp, // 🆕(原本漏了,補上)
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute(
+            builder: (_) => BodyTrainingScreen(
+              action: widget.action,
+              trainingActionMeta: widget.trainingActionMeta,
+              difficultyMeta: widget.difficultyMeta,
+              selectedTemplate: widget.selectedTemplate,
+              autoLevelUp: widget.autoLevelUp, // 🆕(原本漏了,補上)
+            ),
           ),
-        ));
+        );
         break;
       case _CompletionKind.home:
         Navigator.of(context).pop();
         break;
       case _CompletionKind.startNew:
         _navigateToAction(
-            result.action!, result.difficulty!, result.autoLevelUp!); // 🆕
+          result.action!,
+          result.difficulty!,
+          result.autoLevelUp!,
+        ); // 🆕
         break;
     }
   }
@@ -885,20 +900,23 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
       );
     } on Object {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('讀取或儲存復健計畫失敗')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('讀取或儲存復健計畫失敗')));
       }
     }
   }
 
-  Future<void> _navigateToAction(TrainingAction action,
-      DifficultyOption difficulty, bool autoLevelUp) async {
+  Future<void> _navigateToAction(
+    TrainingAction action,
+    DifficultyOption difficulty,
+    bool autoLevelUp,
+  ) async {
     // 🆕 多一個參數
     if (AppPlatform.current.isTv && !isTvSupportedTrainingAction(action.type)) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('此動作無法在電視上執行')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('此動作無法在電視上執行')));
       return;
     }
 
@@ -909,8 +927,9 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
     if (!mounted || templateSelection == null) return;
 
     _aiTrajectoryCollector.reset();
-    _engine.poseNotifier
-        .removeListener(_onPoseUpdate); // 🆕 先停止監聽,避免dispose過程中還觸發更新
+    _engine.poseNotifier.removeListener(
+      _onPoseUpdate,
+    ); // 🆕 先停止監聽,避免dispose過程中還觸發更新
     _piCamera?.dispose();
     _piHand?.dispose(); // 🚀 樹莓派新增:離開畫面前記得釋放
     await _engine.dispose();
@@ -1015,8 +1034,9 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
           )
         : screen;
 
-    Navigator.of(context)
-        .pushReplacement(MaterialPageRoute(builder: (_) => destination));
+    Navigator.of(
+      context,
+    ).pushReplacement(MaterialPageRoute(builder: (_) => destination));
     //Navigator.of(context).pushReplacement(MaterialPageRoute(builder: (_) => screen));
   }
 
@@ -1054,11 +1074,13 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
     _piHand?.dispose(); // 🚀 樹莓派手部新增
     _handService.dispose(); // 🚀 樹莓派手部新增
     if (_tvInitialization != null && !_tvModelReady) {
-      _tvInitialization!.then((_) => _engine.dispose(),
-          onError: (Object error, StackTrace stack) {
-        debugPrint('TV model initialization interrupted: $error');
-        return _engine.dispose();
-      });
+      _tvInitialization!.then(
+        (_) => _engine.dispose(),
+        onError: (Object error, StackTrace stack) {
+          debugPrint('TV model initialization interrupted: $error');
+          return _engine.dispose();
+        },
+      );
     } else {
       _engine.dispose();
     }
@@ -1145,69 +1167,89 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
         onPopInvokedWithResult: (didPop, result) {
           if (!didPop) _handleStopButtonTap();
         },
-        child: Stack(children: [
-          TvPage(
+        child: Stack(
+          children: [
+            TvPage(
               title: widget.action.title,
               child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Expanded(
-                        flex: 3, child: RepaintBoundary(child: _buildTvFeed())),
-                    const SizedBox(width: 24),
-                    Expanded(
-                        child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.stretch,
-                            children: [
-                          Expanded(
-                              child: SingleChildScrollView(
-                                  child: ValueListenableBuilder<int>(
-                            valueListenable: _tvStatsRevision,
-                            builder: (_, revision, child) => Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Expanded(
+                      flex: 3, child: RepaintBoundary(child: _buildTvFeed())),
+                  const SizedBox(width: 24),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Expanded(
+                          child: SingleChildScrollView(
+                            child: ValueListenableBuilder<int>(
+                              valueListenable: _tvStatsRevision,
+                              builder: (_, revision, child) => Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   Text(
-                                      '$_repCount / $_currentLevelTargetReps 下',
-                                      style: const TextStyle(
-                                          fontSize: 32,
-                                          fontWeight: FontWeight.bold)),
+                                    '$_repCount / $_currentLevelTargetReps 下',
+                                    style: const TextStyle(
+                                      fontSize: 32,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
                                   Text(widget.action.difficultyLabel),
                                   const SizedBox(height: 20),
-                                  Text(_feedback,
-                                      style: const TextStyle(fontSize: 22)),
+                                  Text(
+                                    _feedback,
+                                    style: const TextStyle(fontSize: 22),
+                                  ),
                                   Text(_instruction),
                                   if (_usesTemplateAnalysis)
                                     _buildAiQualityCard(),
-                                ]),
-                          ))),
-                          if (_tvError != null)
-                            Text(_tvError!,
-                                style: const TextStyle(color: Colors.red)),
-                          if (_piCamera != null)
-                            ValueListenableBuilder<PiConnectionStatus>(
-                              valueListenable: _piCamera!.status,
-                              builder: (_, status, child) => Text(status.label),
-                            )
-                          else
-                            const Text('未連線'),
-                          FilledButton(
-                              autofocus: true,
-                              onPressed:
-                                  _tvConnecting ? null : _enableExternalCamera,
-                              child: Text(_tvConnecting
-                                  ? '連線中…'
-                                  : _piCamera == null
-                                      ? '連接攝影機'
-                                      : '重新連線')),
-                          const SizedBox(height: 12),
-                          OutlinedButton(
-                              onPressed: _handleStopButtonTap,
-                              child: const Text('暫停 / 結束')),
-                        ])),
-                  ])),
-          if (_levelUpDialogShowing)
-            Positioned.fill(
-                child: SingleChildScrollView(child: _buildLevelUpOverlay())),
-        ]),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                        if (_tvError != null)
+                          Text(
+                            _tvError!,
+                            style: const TextStyle(color: Colors.red),
+                          ),
+                        if (_piCamera != null)
+                          ValueListenableBuilder<PiConnectionStatus>(
+                            valueListenable: _piCamera!.status,
+                            builder: (_, status, child) => Text(status.label),
+                          )
+                        else
+                          const Text('未連線'),
+                        FilledButton(
+                          autofocus: true,
+                          onPressed:
+                              _tvConnecting ? null : _enableExternalCamera,
+                          child: Text(
+                            _tvConnecting
+                                ? '連線中…'
+                                : _piCamera == null
+                                    ? '連接攝影機'
+                                    : '重新連線',
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        OutlinedButton(
+                          onPressed: _handleStopButtonTap,
+                          child: const Text('暫停 / 結束'),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            if (_levelUpDialogShowing)
+              Positioned.fill(
+                child: SingleChildScrollView(child: _buildLevelUpOverlay()),
+              ),
+          ],
+        ),
       );
 
   Widget _buildTvFeed() {
@@ -1215,63 +1257,90 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
     Widget feed = const TvWaitingView();
     if (source != null) {
       feed = ValueListenableBuilder<PiConnectionStatus>(
-          valueListenable: source.status,
-          builder: (_, status, child) {
-            if (status != PiConnectionStatus.connected) {
-              return TvWaitingView(message: status.label);
-            }
-            return ValueListenableBuilder<Uint8List?>(
-                valueListenable: source.latestJpeg,
-                builder: (_, jpeg, child) {
-                  if (jpeg == null) {
-                    return const TvWaitingView(message: '已連線，等待外部影像');
-                  }
-                  // Publish/display only after existing inference completed for this JPEG.
-                  return Stack(fit: StackFit.expand, children: [
-                    Image.memory(jpeg,
-                        fit: BoxFit.cover, gaplessPlayback: true),
-                    CustomPaint(
-                        painter: _SkeletonPainter(
-                            _engine.poseNotifier.value, _scoreThreshold,
-                            sourceSize: source.frameSize.value)),
-                  ]);
-                });
-          });
+        valueListenable: source.status,
+        builder: (_, status, child) {
+          if (status != PiConnectionStatus.connected) {
+            return TvWaitingView(message: status.label);
+          }
+          return ValueListenableBuilder<Uint8List?>(
+            valueListenable: source.latestJpeg,
+            builder: (_, jpeg, child) {
+              if (jpeg == null) {
+                return const TvWaitingView(message: '已連線，等待外部影像');
+              }
+              // Publish/display only after existing inference completed for this JPEG.
+              return Stack(
+                fit: StackFit.expand,
+                children: [
+                  Image.memory(jpeg, fit: BoxFit.cover, gaplessPlayback: true),
+                  CustomPaint(
+                    painter: _SkeletonPainter(
+                      _engine.poseNotifier.value,
+                      _scoreThreshold,
+                      sourceSize: source.frameSize.value,
+                    ),
+                  ),
+                ],
+              );
+            },
+          );
+        },
+      );
     }
     return ClipRect(
-        child: Stack(fit: StackFit.expand, children: [
-      feed,
-      if (_waitingHandSelect)
-        ColoredBox(
-            color: Colors.black87,
-            child: Center(
-                child: Column(mainAxisSize: MainAxisSize.min, children: [
-              const Text('請選擇要訓練的手',
-                  style: TextStyle(color: Colors.white, fontSize: 24)),
-              const SizedBox(height: 20),
-              Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-                _handButton(
-                    '左手',
-                    () => setState(() {
-                          (widget.action as ReachAction).selectLeftHand();
-                        })),
-                const SizedBox(width: 28),
-                _handButton(
-                    '右手',
-                    () => setState(() {
-                          (widget.action as ReachAction).selectRightHand();
-                        })),
-              ]),
-            ]))),
-      if (_waitingLegSelect)
-        ColoredBox(
-            color: Colors.black87,
-            child: Center(
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          feed,
+          if (_waitingHandSelect)
+            ColoredBox(
+              color: Colors.black87,
+              child: Center(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Text(
+                      '請選擇要訓練的手',
+                      style: TextStyle(color: Colors.white, fontSize: 24),
+                    ),
+                    const SizedBox(height: 20),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        _handButton(
+                          '左手',
+                          () => setState(() {
+                            (widget.action as ReachAction).selectLeftHand();
+                          }),
+                        ),
+                        const SizedBox(width: 28),
+                        _handButton(
+                          '右手',
+                          () => setState(() {
+                            (widget.action as ReachAction).selectRightHand();
+                          }),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          if (_waitingLegSelect)
+            ColoredBox(
+              color: Colors.black87,
+              child: Center(
                 child: SingleChildScrollView(
-                    child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: _buildLegSelectContent())))),
-    ]));
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: _buildLegSelectContent(),
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
   }
 
   Widget _buildTopBar() {
@@ -1289,8 +1358,11 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
                 borderRadius: BorderRadius.circular(12),
                 border: Border.all(color: const Color(0xFFDDE0F0)),
               ),
-              child: const Icon(Icons.arrow_back_ios_new,
-                  color: Color(0xFF374151), size: 16),
+              child: const Icon(
+                Icons.arrow_back_ios_new,
+                color: Color(0xFF374151),
+                size: 16,
+              ),
             ),
           ),
           const SizedBox(width: 12),
@@ -1343,12 +1415,18 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
               child: _isSwitchingCameraUI
                   ? const SizedBox(
                       // 🆕 切換中顯示小圈圈,取代圖示
-                      width: 16, height: 16,
+                      width: 16,
+                      height: 16,
                       child: CircularProgressIndicator(
-                          strokeWidth: 2, color: Color(0xFF4A65FF)),
+                        strokeWidth: 2,
+                        color: Color(0xFF4A65FF),
+                      ),
                     )
-                  : const Icon(Icons.flip_camera_ios,
-                      color: Color(0xFF374151), size: 20),
+                  : const Icon(
+                      Icons.flip_camera_ios,
+                      color: Color(0xFF374151),
+                      size: 20,
+                    ),
             ),
           ),
         ],
@@ -1373,12 +1451,16 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
                   builder: (_, jpeg, __) {
                     if (jpeg == null) {
                       return const Center(
-                        child:
-                            CircularProgressIndicator(color: Color(0xFF4A65FF)),
+                        child: CircularProgressIndicator(
+                          color: Color(0xFF4A65FF),
+                        ),
                       );
                     }
-                    return Image.memory(jpeg,
-                        gaplessPlayback: true, fit: BoxFit.cover);
+                    return Image.memory(
+                      jpeg,
+                      gaplessPlayback: true,
+                      fit: BoxFit.cover,
+                    );
                   },
                 ),
                 ValueListenableBuilder<PoseData>(
@@ -1416,11 +1498,16 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
                   if (jpeg == null) {
                     return const Center(
                       child: CircularProgressIndicator(
-                          color: Color(0xFF00BCD4), strokeWidth: 3),
+                        color: Color(0xFF00BCD4),
+                        strokeWidth: 3,
+                      ),
                     );
                   }
-                  return Image.memory(jpeg,
-                      fit: BoxFit.cover, gaplessPlayback: true);
+                  return Image.memory(
+                    jpeg,
+                    fit: BoxFit.cover,
+                    gaplessPlayback: true,
+                  );
                 },
               ),
               // 🚀 修正:身體骨架 painter 加上 sourceSize(來自 _piCamera.frameSize),
@@ -1506,8 +1593,10 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
     final cam = _engine.cameraController;
     if (!_engine.cameraReady.value || cam == null) {
       return const Center(
-        child:
-            CircularProgressIndicator(color: Color(0xFF00BCD4), strokeWidth: 3),
+        child: CircularProgressIndicator(
+          color: Color(0xFF00BCD4),
+          strokeWidth: 3,
+        ),
       );
     }
 
@@ -1840,8 +1929,10 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
                 if (_instruction.isNotEmpty)
                   Text(
                     _instruction,
-                    style:
-                        const TextStyle(color: Color(0xFF4A65FF), fontSize: 12),
+                    style: const TextStyle(
+                      color: Color(0xFF4A65FF),
+                      fontSize: 12,
+                    ),
                   ),
               ],
             ),
@@ -1916,10 +2007,7 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
             ...deviations.map(
               (message) => Text(
                 '• $message',
-                style: const TextStyle(
-                  color: Color(0xFF8A8D9F),
-                  fontSize: 10,
-                ),
+                style: const TextStyle(color: Color(0xFF8A8D9F), fontSize: 10),
               ),
             ),
           ],
@@ -1972,8 +2060,10 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
                 if (state.instruction.isNotEmpty)
                   Text(
                     state.instruction,
-                    style:
-                        const TextStyle(color: Color(0xFF4A65FF), fontSize: 12),
+                    style: const TextStyle(
+                      color: Color(0xFF4A65FF),
+                      fontSize: 12,
+                    ),
                   ),
               ],
             ),
@@ -1998,7 +2088,7 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
     );
   }
 
-// 🖥️ 電視投放:顯示端次數列,讀遠端傳來的 repCount
+  // 🖥️ 電視投放:顯示端次數列,讀遠端傳來的 repCount
   Widget _buildRemoteStatsBar(RehabSessionState state) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
@@ -2031,8 +2121,10 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(label,
-              style: const TextStyle(color: Color(0xFF8A8D9F), fontSize: 11)),
+          Text(
+            label,
+            style: const TextStyle(color: Color(0xFF8A8D9F), fontSize: 11),
+          ),
           const SizedBox(height: 4),
           Text(
             value,
@@ -2100,8 +2192,10 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
                 const SizedBox(height: 6),
                 Text(
                   _hasNextLevel ? '要挑戰下一階「$_nextLevelLabel」嗎？' : '再接再厲，繼續保持！',
-                  style:
-                      const TextStyle(color: Color(0xFF6B7280), fontSize: 13),
+                  style: const TextStyle(
+                    color: Color(0xFF6B7280),
+                    fontSize: 13,
+                  ),
                   textAlign: TextAlign.center,
                 ),
                 if (_hasNextLevel) ...[
@@ -2112,43 +2206,53 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
                       const Text(
                         '下一階要做幾下',
                         style: TextStyle(
-                            color: Color(0xFF374151),
-                            fontSize: 13,
-                            fontWeight: FontWeight.w600),
+                          color: Color(0xFF374151),
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
                       const SizedBox(width: 10),
                       SizedBox(
                         width: 56,
                         child: TvTextNavigation(
-                            child: TextField(
-                          controller: _levelUpRepsController,
-                          keyboardType: TextInputType.number,
-                          textAlign: TextAlign.center,
-                          style: const TextStyle(
+                          child: TextField(
+                            controller: _levelUpRepsController,
+                            keyboardType: TextInputType.number,
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(
                               fontSize: 16,
                               fontWeight: FontWeight.w800,
-                              color: Color(0xFF1A1D2E)),
-                          decoration: InputDecoration(
-                            isDense: true,
-                            contentPadding:
-                                const EdgeInsets.symmetric(vertical: 8),
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(8),
-                              borderSide:
-                                  const BorderSide(color: Color(0xFFDDE0F0)),
+                              color: Color(0xFF1A1D2E),
                             ),
-                            focusedBorder: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(8),
-                              borderSide:
-                                  const BorderSide(color: Color(0xFF4A65FF)),
+                            decoration: InputDecoration(
+                              isDense: true,
+                              contentPadding: const EdgeInsets.symmetric(
+                                vertical: 8,
+                              ),
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(8),
+                                borderSide: const BorderSide(
+                                  color: Color(0xFFDDE0F0),
+                                ),
+                              ),
+                              focusedBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(8),
+                                borderSide: const BorderSide(
+                                  color: Color(0xFF4A65FF),
+                                ),
+                              ),
                             ),
                           ),
-                        )),
+                        ),
                       ),
                       const SizedBox(width: 4),
-                      const Text('下',
-                          style: TextStyle(
-                              color: Color(0xFF6B7280), fontSize: 13)),
+                      const Text(
+                        '下',
+                        style: TextStyle(
+                          color: Color(0xFF6B7280),
+                          fontSize: 13,
+                        ),
+                      ),
                     ],
                   ),
                 ],
@@ -2163,14 +2267,16 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
                     style: ElevatedButton.styleFrom(
                       backgroundColor: const Color(0xFF4A65FF),
                       shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(14)),
+                        borderRadius: BorderRadius.circular(14),
+                      ),
                     ),
                     child: Text(
                       _hasNextLevel ? '💪 挑戰下一階' : '🎉 完成訓練',
                       style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 16,
-                          fontWeight: FontWeight.w700),
+                        color: Colors.white,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w700,
+                      ),
                     ),
                   ),
                 ),
@@ -2183,14 +2289,16 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
                     style: OutlinedButton.styleFrom(
                       side: const BorderSide(color: Color(0xFFDDE0F0)),
                       shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(14)),
+                        borderRadius: BorderRadius.circular(14),
+                      ),
                     ),
                     child: const Text(
                       '結束訓練',
                       style: TextStyle(
-                          color: Color(0xFF374151),
-                          fontSize: 15,
-                          fontWeight: FontWeight.w600),
+                        color: Color(0xFF374151),
+                        fontSize: 15,
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
                   ),
                 ),
@@ -2207,10 +2315,7 @@ class _PauseMenuDialog extends StatelessWidget {
   final VoidCallback onResume;
   final VoidCallback onEnd;
 
-  const _PauseMenuDialog({
-    required this.onResume,
-    required this.onEnd,
-  });
+  const _PauseMenuDialog({required this.onResume, required this.onEnd});
 
   @override
   Widget build(BuildContext context) {
@@ -2248,14 +2353,16 @@ class _PauseMenuDialog extends StatelessWidget {
                 style: ElevatedButton.styleFrom(
                   backgroundColor: const Color(0xFF4A65FF),
                   shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(14)),
+                    borderRadius: BorderRadius.circular(14),
+                  ),
                 ),
                 child: const Text(
                   '▶️ 繼續訓練',
                   style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 16,
-                      fontWeight: FontWeight.w700),
+                    color: Colors.white,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w700,
+                  ),
                 ),
               ),
             ),
@@ -2268,14 +2375,16 @@ class _PauseMenuDialog extends StatelessWidget {
                 style: OutlinedButton.styleFrom(
                   side: const BorderSide(color: Color(0xFFDDE0F0)),
                   shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(14)),
+                    borderRadius: BorderRadius.circular(14),
+                  ),
                 ),
                 child: const Text(
                   '結束訓練',
                   style: TextStyle(
-                      color: Color(0xFFFF4B4B),
-                      fontSize: 15,
-                      fontWeight: FontWeight.w600),
+                    color: Color(0xFFFF4B4B),
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
               ),
             ),
@@ -2319,10 +2428,7 @@ class _SkeletonPainter extends CustomPainter {
     final t = _coverTransform(canvasSize);
     final srcW = sourceSize?.width ?? canvasSize.width;
     final srcH = sourceSize?.height ?? canvasSize.height;
-    return Offset(
-      p.dx * srcW * t.scale + t.dx,
-      p.dy * srcH * t.scale + t.dy,
-    );
+    return Offset(p.dx * srcW * t.scale + t.dx, p.dy * srcH * t.scale + t.dy);
   }
 
   @override
@@ -2416,10 +2522,8 @@ class _PiHandSkeletonPainter extends CustomPainter {
     final srcW = sourceSize?.width ?? size.width;
     final srcH = sourceSize?.height ?? size.height;
 
-    Offset map(Landmark lm) => Offset(
-          lm.x * srcW * t.scale + t.dx,
-          lm.y * srcH * t.scale + t.dy,
-        );
+    Offset map(Landmark lm) =>
+        Offset(lm.x * srcW * t.scale + t.dx, lm.y * srcH * t.scale + t.dy);
 
     final linePaint = Paint()
       ..color = Colors.amberAccent.withValues(alpha: 0.85)
@@ -2434,7 +2538,10 @@ class _PiHandSkeletonPainter extends CustomPainter {
     for (final conn in _connections) {
       if (conn[0] >= landmarks.length || conn[1] >= landmarks.length) continue;
       canvas.drawLine(
-          map(landmarks[conn[0]]), map(landmarks[conn[1]]), linePaint);
+        map(landmarks[conn[0]]),
+        map(landmarks[conn[1]]),
+        linePaint,
+      );
     }
 
     for (final lm in landmarks) {
@@ -2474,12 +2581,19 @@ class _CompletionResult {
   final DifficultyOption? difficulty;
   final bool? autoLevelUp; // 🆕
   const _CompletionResult._(
-      this.kind, this.action, this.difficulty, this.autoLevelUp);
+    this.kind,
+    this.action,
+    this.difficulty,
+    this.autoLevelUp,
+  );
   factory _CompletionResult.retry() =>
       const _CompletionResult._(_CompletionKind.retry, null, null, null);
   factory _CompletionResult.home() =>
       const _CompletionResult._(_CompletionKind.home, null, null, null);
   factory _CompletionResult.startNew(
-          TrainingAction a, DifficultyOption d, bool autoLevelUp) => // 🆕
+    TrainingAction a,
+    DifficultyOption d,
+    bool autoLevelUp,
+  ) => // 🆕
       _CompletionResult._(_CompletionKind.startNew, a, d, autoLevelUp);
 }

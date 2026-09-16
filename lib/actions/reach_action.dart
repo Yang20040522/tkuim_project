@@ -49,10 +49,8 @@ class ReachAction implements BodyRehabAction, LevelUpControllable {
   DateTime _lastRepTime = DateTime.fromMillisecondsSinceEpoch(0);
   bool _pendingLevelUp = false;
 
-  ReachAction({
-    this.difficulty = RehabDifficulty.easy,
-    int targetCount = 5,
-  }) : _targetCount = targetCount;
+  ReachAction({this.difficulty = RehabDifficulty.easy, int targetCount = 5})
+    : _targetCount = targetCount;
 
   // ── 按鈕呼叫:選擇左手或右手 ────────────────────────────
   bool get handSelected => _activeWrist != null;
@@ -78,23 +76,23 @@ class ReachAction implements BodyRehabAction, LevelUpControllable {
 
   @override
   String get difficultyLabel => switch (difficulty) {
-        RehabDifficulty.easy => '初級',
-        RehabDifficulty.medium => '中級',
-        RehabDifficulty.hard => '高級',
-      };
+    RehabDifficulty.easy => '初級',
+    RehabDifficulty.medium => '中級',
+    RehabDifficulty.hard => '高級',
+  };
 
   // 🩺 依難度分級的防代償容錯值
   double get _spineAngleThreshold => switch (difficulty) {
-        RehabDifficulty.easy => 26.0,
-        RehabDifficulty.medium => 20.0,
-        RehabDifficulty.hard => 14.0,
-      };
+    RehabDifficulty.easy => 26.0,
+    RehabDifficulty.medium => 20.0,
+    RehabDifficulty.hard => 14.0,
+  };
 
   double get _topDropTolerance => switch (difficulty) {
-        RehabDifficulty.easy => 22.0,
-        RehabDifficulty.medium => 17.0,
-        RehabDifficulty.hard => 12.0,
-      };
+    RehabDifficulty.easy => 22.0,
+    RehabDifficulty.medium => 17.0,
+    RehabDifficulty.hard => 12.0,
+  };
 
   // ── 每幀判定 ──────────────────────────────────────────
   @override
@@ -112,9 +110,7 @@ class ReachAction implements BodyRehabAction, LevelUpControllable {
     // 如果髖部/手腕沒有被 RTMPose 穩定看到，就直接提醒使用者調整鏡頭，
     // 不要讓畫面一直停在上一句錯誤提示。
     if (shoulder == null || wrist == null || hip == null) {
-      return RehabFeedback(
-        prompt: _throttled('請讓訓練側的肩膀、手腕和髖部都進入鏡頭範圍'),
-      );
+      return RehabFeedback(prompt: _throttled('請讓訓練側的肩膀、手腕和髖部都進入鏡頭範圍'));
     }
 
     // 1. 防身體側傾/借力
@@ -134,9 +130,7 @@ class ReachAction implements BodyRehabAction, LevelUpControllable {
         math.atan2(spineDx.abs(), spineDy.abs()) * (180 / math.pi);
 
     if (spineAngle > _spineAngleThreshold) {
-      return RehabFeedback(
-        prompt: _throttled('身體請保持挺直,不要側傾或借力'),
-      );
+      return RehabFeedback(prompt: _throttled('身體請保持挺直,不要側傾或借力'));
     }
 
     // 2. 算當前手臂角度
@@ -176,9 +170,7 @@ class ReachAction implements BodyRehabAction, LevelUpControllable {
       case _ReachState.holding:
         if (armAngle < targetAngle - _topDropTolerance) {
           _currentState = _ReachState.reachingUp;
-          return RehabFeedback(
-            prompt: _throttled('手掉下來了,請再次舉高並撐住'),
-          );
+          return RehabFeedback(prompt: _throttled('手掉下來了,請再次舉高並撐住'));
         }
 
         if (now.difference(_holdStartTime).inSeconds >= 3) {
@@ -205,16 +197,11 @@ class ReachAction implements BodyRehabAction, LevelUpControllable {
               );
             }
 
-            return const RehabFeedback(
-              prompt: '完成一次,請繼續',
-              scored: true,
-            );
+            return const RehabFeedback(prompt: '完成一次,請繼續', scored: true);
           } else {
             _lastRepTime = now;
             _currentState = _ReachState.waitStart;
-            return RehabFeedback(
-              prompt: _throttled('放下太快了,請用肌肉控制慢慢放下'),
-            );
+            return RehabFeedback(prompt: _throttled('放下太快了,請用肌肉控制慢慢放下'));
           }
         }
         break;
@@ -254,11 +241,8 @@ class ReachAction implements BodyRehabAction, LevelUpControllable {
   bool _upgrade() {
     successCount = 0;
     _currentState = _ReachState.waitStart;
-
-    // 升級後重新選手，保留原本既有流程。
-    _activeWrist = null;
-    _activeShoulder = null;
-    _activeHip = null;
+    _holdStartTime = DateTime.now();
+    // 同一場訓練沿用已選的手；新 Action 才需要重新選手。
 
     if (difficulty == RehabDifficulty.easy) {
       difficulty = RehabDifficulty.medium;

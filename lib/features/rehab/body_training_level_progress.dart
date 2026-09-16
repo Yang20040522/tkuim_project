@@ -14,10 +14,7 @@ class CompletedBodyTrainingLevel {
 
 /// Keeps one difficulty's counters and its transition boundary atomic.
 class BodyTrainingLevelProgress {
-  BodyTrainingLevelProgress({
-    required this.level,
-    required this.targetReps,
-  });
+  BodyTrainingLevelProgress({required this.level, required this.targetReps});
 
   RehabDifficulty level;
   int targetReps;
@@ -50,6 +47,16 @@ class BodyTrainingLevelProgress {
     completedReps = 0;
     _transitioning = false;
     _blockNextPoseFrame = true;
+  }
+
+  /// Auto-upgrade keeps the current session's target in both the action and UI.
+  void completeAutomaticTransition({
+    required LevelUpControllable action,
+    required RehabDifficulty nextLevel,
+  }) {
+    final sessionTarget = targetReps;
+    action.confirmLevelUp(customTargetReps: sessionTarget);
+    completeTransition(nextLevel: nextLevel, nextTargetReps: sessionTarget);
   }
 
   /// Blocks re-entrant transition work and one already-buffered pose frame.

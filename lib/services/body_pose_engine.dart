@@ -71,8 +71,10 @@ Float32List convertYUV(InferenceInput input) {
 
   int idx = 0;
   for (int y = 0; y < inputH; y++) {
-    final int srcX =
-        ((inputH - 1 - y) * ratioX).toInt().clamp(0, input.imgW - 1);
+    final int srcX = ((inputH - 1 - y) * ratioX).toInt().clamp(
+          0,
+          input.imgW - 1,
+        );
     final int halfSrcX = srcX >> 1;
 
     for (int x = 0; x < inputW; x++) {
@@ -167,6 +169,22 @@ Float32List convertRGB(
 
   return out;
 }
+
+class _ExternalRgbInput {
+  final Uint8List bytes;
+  final int width;
+  final int height;
+  final bool mirror;
+  _ExternalRgbInput(this.bytes, this.width, this.height, this.mirror);
+}
+
+Float32List _convertPiRgb(_ExternalRgbInput input) => convertRGB(
+      input.bytes,
+      input.width,
+      input.height,
+      isFrontCamera: input.mirror,
+      needsRotation: false,
+    );
 
 // ══════════════════════════════════════════════════════════════════
 //  BodyPoseEngine — 相機 + ONNX + 133 點,全包
@@ -267,7 +285,9 @@ class BodyPoseEngine {
       debugPrint('XNNPACK 啟動失敗,退回預設 CPU 模式');
     }
 
-    final bytes = (await rootBundle.load('assets/rtmpose_wholebody.onnx'))
+    final bytes = (await rootBundle.load(
+      'assets/rtmpose_wholebody.onnx',
+    ))
         .buffer
         .asUint8List();
     _poseSession = OrtSession.fromBuffer(bytes, opts);
@@ -400,8 +420,10 @@ class BodyPoseEngine {
           final int vVal = vPlane[uvIdx] - 128;
 
           int r = (yVal + 1.402 * vVal).toInt().clamp(0, 255);
-          int g =
-              (yVal - 0.344136 * uVal - 0.714136 * vVal).toInt().clamp(0, 255);
+          int g = (yVal - 0.344136 * uVal - 0.714136 * vVal).toInt().clamp(
+                0,
+                255,
+              );
           int b = (yVal + 1.772 * uVal).toInt().clamp(0, 255);
 
           // 順時針轉 90 度:(x, y) -> (y, width - 1 - x)
@@ -438,8 +460,11 @@ class BodyPoseEngine {
     int height, {
     bool isMirror = false,
     bool needsRotation = true,
+    bool Function()? shouldPublish,
   }) async {
-    if (_disposed || _poseSession == null) return;
+    if (_disposed || _poseSession == null || shouldPublish?.call() == false) {
+      return;
+    }
 
     // 等目前正在跑的推論結束(避免衝突)
     if (_processing) {
@@ -449,6 +474,9 @@ class BodyPoseEngine {
         } catch (_) {}
       }
     }
+    if (_disposed || _poseSession == null || shouldPublish?.call() == false) {
+      return;
+    }
 
     _processing = true;
 
@@ -457,26 +485,44 @@ class BodyPoseEngine {
     _isExternalFrame = true;
     _externalMirror = isMirror;
 
-    final converted = convertRGB(
-      rgbBytes,
-      width,
-      height,
-      isFrontCamera: isMirror,
-      needsRotation: needsRotation,
-    );
-    _pendingInference = _runInference(converted);
+    // Pi's large RGB-to-tensor conversion must not block Flutter's UI isolate.
+    // The mobile/video rotation path retains its existing conversion behavior.
+    final converted = needsRotation
+        ? convertRGB(
+            rgbBytes,
+            width,
+            height,
+            isFrontCamera: isMirror,
+            needsRotation: true,
+          )
+        : await compute(
+            _convertPiRgb,
+            _ExternalRgbInput(rgbBytes, width, height, isMirror),
+          );
+    if (_disposed || _poseSession == null || shouldPublish?.call() == false) {
+      _processing = false;
+      return;
+    }
+    _pendingInference = _runInference(converted, shouldPublish: shouldPublish);
     await _pendingInference;
   }
 
   // ── ONNX 推論 + 解碼 + EMA (搬自 body_test_screen,邏輯相同) ──────
-  Future<void> _runInference(Float32List converted) async {
+  Future<void> _runInference(
+    Float32List converted, {
+    bool Function()? shouldPublish,
+  }) async {
     OrtValueTensor? tensor;
     List<OrtValue?>? outputs;
 
     try {
       const inputH = 256, inputW = 192;
-      tensor = OrtValueTensor.createTensorWithDataList(
-          converted, [1, 3, inputH, inputW]);
+      tensor = OrtValueTensor.createTensorWithDataList(converted, [
+        1,
+        3,
+        inputH,
+        inputW,
+      ]);
 
       outputs = await _poseSession!.runAsync(_runOpts!, {'input': tensor});
       if (outputs == null || outputs.length < 2) return;
@@ -550,7 +596,9 @@ class BodyPoseEngine {
         }
       }
 
-      poseNotifier.value = PoseData(List.from(_smoothedKeypoints), scores);
+      if (!_disposed && shouldPublish?.call() != false) {
+        poseNotifier.value = PoseData(List.from(_smoothedKeypoints), scores);
+      }
     } catch (e) {
       debugPrint('BodyPoseEngine 推論錯誤: $e');
     } finally {
