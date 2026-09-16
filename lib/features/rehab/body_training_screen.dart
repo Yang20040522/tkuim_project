@@ -147,6 +147,8 @@ class BodyTrainingScreen extends StatefulWidget {
 
   final bool isDisplay; // 🖥️ 電視投放新增:true = 這台當電視顯示端
   final bool autoLevelUp; // 🆕 true=自動升級(舊行為), false=跳出詢問讓使用者決定
+  final TrainingVoiceGate?
+      voiceGate; // Injected only by tests; production uses VoiceService.
 
   const BodyTrainingScreen({
     super.key,
@@ -156,6 +158,7 @@ class BodyTrainingScreen extends StatefulWidget {
     this.selectedTemplate,
     this.isDisplay = false, // 🖥️ 電視投放新增
     this.autoLevelUp = true, // 🆕 預設 true,不影響現在其他呼叫這個畫面的地方
+    this.voiceGate,
   });
 
   @override
@@ -166,6 +169,7 @@ enum _PauseChoice { resume, end }
 
 class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
   final BodyPoseEngine _engine = BodyPoseEngine();
+  late final TrainingVoiceGate _voice;
   static const double _scoreThreshold = BodyPoseEngine.scoreThreshold;
 
   // 🚀 樹莓派新增:外接鏡頭來源(null = 尚未連線)
@@ -295,6 +299,11 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
   @override
   void initState() {
     super.initState();
+    _voice = widget.voiceGate ??
+        TrainingVoiceGate(
+          speak: VoiceService.speak,
+          stop: VoiceService.stop,
+        );
     _automaticHistorySessionId =
         'auto:${DateTime.now().microsecondsSinceEpoch}';
     _templateAnalysisEnabled = _resolveTemplateAnalysisCapability();
@@ -305,7 +314,6 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
       targetReps: widget.difficultyMeta?.targetReps ?? 10,
     );
     _instruction = widget.action.initialHint;
-    VoiceService.init();
     if (_usesTemplateAnalysis) {
       _aiSessionClock.start();
     }
@@ -339,6 +347,15 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
   }
 
   Future<void> _start() async {
+    if (widget.voiceGate == null) {
+      try {
+        await VoiceService.init().timeout(const Duration(milliseconds: 500));
+      } catch (error) {
+        debugPrint('[BodyTrainingScreen] TTS init unavailable: $error');
+      }
+    }
+    if (!mounted) return;
+    _voice.event(_instruction, important: true);
     // 🖥️ 電視投放新增:顯示端不開相機、不載模型,只吃遠端資料
     if (AppPlatform.current.isTv) {
       // Defer ONNX until a connection is requested. No camera or permissions.
@@ -474,6 +491,9 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
               _currentLevelStart = DateTime.now();
               _instruction = '難度提升,請繼續保持';
             });
+            _voice.event(
+                TrainingVoiceGate.autoLevel(widget.action.difficultyLabel),
+                important: true);
           } else {
             // 已經是最高難度 → 自動結束整場訓練
             // (最後這階的紀錄會由 _handleRealEnd 內的 _saveCurrentLevelRecord 存)
@@ -507,8 +527,12 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
         }
       }
 
-      if (fb.prompt != null) {
-        VoiceService.speak(fb.prompt!);
+      if (!justReachedLevelUp) {
+        if (fb.scored) {
+          _voice.event(fb.prompt ?? '完成一次');
+        } else if (fb.prompt != null) {
+          _voice.prompt(fb.prompt!);
+        }
       }
     }
   }
@@ -595,7 +619,7 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
       _nextLevelLabel = nextDifficulty?.label ?? '';
       _levelUpRepsController.text = '${nextDifficulty?.targetReps ?? 10}';
     });
-    VoiceService.stop();
+    _voice.pause();
   }
 
   void _confirmLevelUp() {
@@ -631,6 +655,8 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
       _instruction = '難度提升,請繼續保持';
       _isPaused = false;
     });
+    _voice.resume();
+    _voice.event('已升級至${widget.action.difficultyLabel}，請繼續訓練', important: true);
   }
 
   void _declineLevelUp() {
@@ -771,7 +797,7 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
 
     _aiTrajectoryCollector.reset();
     setState(() => _isPaused = true);
-    VoiceService.stop();
+    _voice.pause();
 
     final choice = await showDialog<_PauseChoice>(
       context: context,
@@ -786,6 +812,7 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
 
     if (choice != _PauseChoice.end) {
       setState(() => _isPaused = false);
+      _voice.resume();
       return;
     }
 
@@ -800,6 +827,7 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
     _piCamera = null;
     _piHand?.dispose();
     _piHand = null;
+    unawaited(_voice.finish());
     _aiTrajectoryCollector.reset();
 
     final videoPath = AppPlatform.current.supportsScreenRecording
@@ -926,6 +954,7 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
     );
     if (!mounted || templateSelection == null) return;
 
+    unawaited(_voice.pause());
     _aiTrajectoryCollector.reset();
     _engine.poseNotifier.removeListener(
       _onPoseUpdate,
@@ -1062,7 +1091,7 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
         }
       });
     }
-    VoiceService.stop();
+    _voice.dispose();
     // 🖥️ 電視投放新增
     _socketSub?.cancel();
     _engine.imageNotifier.removeListener(_onImageUpdate);
@@ -1309,16 +1338,26 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
                       children: [
                         _handButton(
                           '左手',
-                          () => setState(() {
-                            (widget.action as ReachAction).selectLeftHand();
-                          }),
+                          () {
+                            setState(() {
+                              (widget.action as ReachAction).selectLeftHand();
+                            });
+                            _voice.event(
+                                TrainingVoiceGate.selectedHand(isLeft: true),
+                                important: true);
+                          },
                         ),
                         const SizedBox(width: 28),
                         _handButton(
                           '右手',
-                          () => setState(() {
-                            (widget.action as ReachAction).selectRightHand();
-                          }),
+                          () {
+                            setState(() {
+                              (widget.action as ReachAction).selectRightHand();
+                            });
+                            _voice.event(
+                                TrainingVoiceGate.selectedHand(isLeft: false),
+                                important: true);
+                          },
                         ),
                       ],
                     ),
@@ -1662,6 +1701,9 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
                               _feedback = '已選擇左手,請將手自然放下';
                               _instruction = '';
                             });
+                            _voice.event(
+                                TrainingVoiceGate.selectedHand(isLeft: true),
+                                important: true);
                           }),
                           const SizedBox(width: 28),
                           _handButton('右手', () {
@@ -1670,6 +1712,9 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
                               _feedback = '已選擇右手,請將手自然放下';
                               _instruction = '';
                             });
+                            _voice.event(
+                                TrainingVoiceGate.selectedHand(isLeft: false),
+                                important: true);
                           }),
                         ],
                       ),
@@ -1775,6 +1820,8 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
                   _aiTrajectoryCollector.reset();
                 }
               });
+              _voice.event(TrainingVoiceGate.selectedLeg(isLeft: true),
+                  important: true);
             }),
             const SizedBox(width: 28),
             _legButton('右腳', () {
@@ -1785,6 +1832,8 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
                   _aiTrajectoryCollector.reset();
                 }
               });
+              _voice.event(TrainingVoiceGate.selectedLeg(isLeft: false),
+                  important: true);
             }),
           ],
         ),
@@ -1813,6 +1862,10 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
               _feedback = '已選擇簡單版';
               _instruction = widget.action.initialHint;
             });
+            _voice.event(
+                TrainingVoiceGate.selectedMode(
+                    '簡單版', widget.action.initialHint),
+                important: true);
           }),
           const SizedBox(width: 20),
           _modeButton('困難版\n患側撐．好腳動', () {
@@ -1822,6 +1875,10 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
               _feedback = '已選擇困難版';
               _instruction = widget.action.initialHint;
             });
+            _voice.event(
+                TrainingVoiceGate.selectedMode(
+                    '困難版', widget.action.initialHint),
+                important: true);
           }),
         ],
       ),

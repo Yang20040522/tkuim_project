@@ -1,243 +1,351 @@
 import 'package:flutter/foundation.dart';
-// lib/services/voice_service.dart
-//
-// ══════════════════════════════════════════════════════════════════
-//  語音主控 — 全 App 唯一的語音出口
-//
-//  全身、手部兩邊都呼叫這裡。要換語音 / 改語速 / 改規則,只改這個檔。
-//
-//  功能:
-//    1. TTS 設定集中(語速、語言)
-//    2. 智慧挑聲音 — 掃描系統所有中文聲音,自動挑最高品質(去機械感)
-//    3. 智慧過濾 — 只念「重要」的話,狀態提示不念(解決吵)
-//    4. 防打斷 — 重要的話念完前,不被普通的話插隊(解決念一半)
-//    5. 防重複 — 同一句剛念過就跳過
-// ══════════════════════════════════════════════════════════════════
-
 import 'package:flutter_tts/flutter_tts.dart';
 
-class VoiceService {
-  // ── flutter_tts 實例 ────────────────────────────────────────────
-  // static:整個 App 共用同一個 TTS,不同畫面切換不會重新初始化
-  static final FlutterTts _tts = FlutterTts();
+/// A per-training-session gate. Pose prompts play only when their text changes.
+class TrainingVoiceGate {
+  static String selectedHand({required bool isLeft}) =>
+      '已選擇${isLeft ? '左' : '右'}手，請將手自然放下';
 
-  // ── 是否已初始化過(避免重複跑 init)──
-  static bool _ready = false;
+  static String selectedLeg({required bool isLeft}) =>
+      '已選擇${isLeft ? '左' : '右'}腳為訓練腳';
 
-  // ── 記錄上一句念過的話 + 時間點,用來擋「同句快速重複」──
-  static String _lastSpoken = '';
-  static DateTime _lastSpeakTime = DateTime.now();
+  static String selectedMode(String mode, String initialHint) =>
+      '已選擇$mode。$initialHint';
 
-  // ── 「正在念重要句子」的鎖 ──
-  // 重要句念完前(_speakingImportant = true),普通句都會被跳過,
-  // 避免使用者聽到一半被截斷。念完由 CompletionHandler 解鎖。
-  static bool _speakingImportant = false;
+  static String autoLevel(String level) => '已自動升級至$level，請繼續訓練';
 
-  // ── 黑名單 — 含這些關鍵字就跳過 ──
-  // 這些是「狀態播報」,一直觸發會很吵,所以直接不念。
-  static const List<String> _skipKeywords = [
-    '已向外轉',
-    '已向內轉',
-    '已張開',
-    '捏緊完成',
-  ];
+  TrainingVoiceGate({
+    required Future<void> Function(String, {bool important}) speak,
+    required Future<void> Function() stop,
+    DateTime Function()? now,
+  })  : _speak = speak,
+        _stop = stop,
+        _now = now ?? DateTime.now;
 
-  // ══════════════════════════════════════════════════════════════
-  //  對外 API
-  // ══════════════════════════════════════════════════════════════
+  final Future<void> Function(String, {bool important}) _speak;
+  final Future<void> Function() _stop;
+  final DateTime Function() _now;
+  final Map<String, DateTime> _recent = {};
+  String? _currentPrompt;
+  bool _active = true;
+  bool _disposed = false;
+  bool _finished = false;
+  int _generation = 0;
 
-  /// 初始化 — App 啟動時呼叫一次
-  /// 重複呼叫也安全(有 _ready 旗標擋著)
-  static Future<void> init() async {
-    try {
-    if (_ready) return;
-
-    // ── 基本 TTS 參數 ──
-    await _tts.setLanguage('zh-TW');   // 台灣繁體中文
-    await _tts.setSpeechRate(0.5);      // 語速:0.5 = 適合復健的慢速
-    await _tts.setVolume(1.0);          // 音量:1.0 = 最大
-    await _tts.setPitch(1.0);           // 音調:1.0 = 正常
-
-    // ── 智慧挑聲音 ──
-    // 掃描系統所有可用的 TTS 聲音,挑最好聽的中文那個
-    // 這是「去機械感」的核心,不用改別的地方就有差
-    await _pickBestChineseVoice();
-
-    // ── 重要句念完時的回呼 ──
-    // 讓 _speakingImportant 解鎖,後續普通句才能繼續念
-    _tts.setCompletionHandler(() {
-      _speakingImportant = false;
-    });
-
-    _ready = true;
-
-    } catch (error, stack) { debugPrint('TTS init unavailable: $error\n$stack'); }
+  void prompt(String text) {
+    final value = text.trim();
+    if (!_active || _disposed || value.isEmpty || value == _currentPrompt) {
+      return;
+    }
+    _currentPrompt = value;
+    event(value);
   }
 
-  /// 念一句話 — 畫面層直接把 feedback 丟進來
-  /// VoiceService 自己決定要不要念(黑名單、去重、防打斷都在這判斷)
-  static Future<void> speak(String text) async {
-    // 沒 init 就補跑一次,防呆
-    if (!_ready) await init();
-    if (text.isEmpty) return;
+  void event(String text, {bool important = false}) {
+    final value = text.trim();
+    if (!_active || _disposed || value.isEmpty) return;
+    final now = _now();
+    final previous = _recent[value];
+    if (previous != null &&
+        now.difference(previous) < const Duration(seconds: 2)) {
+      return;
+    }
+    _recent[value] = now;
+    final generation = _generation;
+    // Never wait on the platform channel in the pose callback.
+    Future<void>(() async {
+      if (_disposed || !_active || generation != _generation) return;
+      await _speak(value, important: important);
+    }).catchError((Object error, StackTrace stack) {
+      debugPrint('[TrainingVoiceGate] speak failed: $error\n$stack');
+    });
+  }
 
-    // 過濾 1:含「狀態提示」關鍵字 → 直接跳過
-    for (final kw in _skipKeywords) {
-      if (text.contains(kw)) return;
+  Future<void> pause() async {
+    _active = false;
+    _generation++;
+    try {
+      await _stop();
+    } catch (error) {
+      debugPrint('[TrainingVoiceGate] stop on pause failed: $error');
+    }
+  }
+
+  void resume() {
+    if (_disposed) return;
+    _active = true;
+    _currentPrompt = null;
+  }
+
+  Future<void> finish() async {
+    if (_disposed || _finished) return;
+    _finished = true;
+    _active = false;
+    _generation++;
+    final generation = _generation;
+    try {
+      await _stop();
+    } catch (error) {
+      debugPrint('[TrainingVoiceGate] stop on finish failed: $error');
+    }
+    if (!_disposed && generation == _generation) {
+      try {
+        await _speak('訓練完成', important: true);
+      } catch (error) {
+        debugPrint('[TrainingVoiceGate] completion speech failed: $error');
+      }
+    }
+  }
+
+  Future<void> dispose() async {
+    if (_disposed) return;
+    _disposed = true;
+    _active = false;
+    _generation++;
+    try {
+      await _stop();
+    } catch (error) {
+      debugPrint('[TrainingVoiceGate] stop on dispose failed: $error');
+    }
+  }
+}
+
+/// Shared app TTS output; no second native TTS instance is created.
+class VoiceService {
+  static final FlutterTts _tts = FlutterTts();
+  static Future<void>? _initializing;
+  static bool _ready = false;
+  static bool _speaking = false;
+  static String? _pendingNormal;
+  static int _suppressPendingDrain = 0;
+  static Future<void>? _stopping;
+  static String _lastSpoken = '';
+  static DateTime _lastSpeakTime = DateTime.fromMillisecondsSinceEpoch(0);
+  static int _stopGeneration = 0;
+
+  static const _skipKeywords = ['已向外轉', '已向內轉', '已張開', '捏緊完成'];
+
+  static Future<void> init() {
+    if (_ready) return Future<void>.value();
+    return _initializing ??= _initialize().whenComplete(() {
+      _initializing = null;
+    });
+  }
+
+  static Future<void> _initialize() async {
+    try {
+      try {
+        _tts.setCompletionHandler(_onSpeechEnded);
+        _tts.setCancelHandler(_onSpeechEnded);
+        _tts.setErrorHandler((message) {
+          debugPrint('[VoiceService] TTS engine error: $message');
+          _onSpeechEnded();
+        });
+      } catch (error, stack) {
+        debugPrint('[VoiceService] TTS handlers unavailable: $error\n$stack');
+      }
+      await _configureLanguage();
+      try {
+        await _tts.setSpeechRate(0.5);
+        await _tts.setVolume(1.0);
+        await _tts.setPitch(1.0);
+      } catch (error, stack) {
+        debugPrint('[VoiceService] TTS settings unavailable: $error\n$stack');
+      }
+      // A device with no Chinese voice can still use its system default.
+      _ready = true;
+    } catch (error, stack) {
+      debugPrint('[VoiceService] TTS initialization failed: $error\n$stack');
+      _ready = true; // Native TTS may still speak with system defaults.
+    }
+  }
+
+  static Future<void> _configureLanguage() async {
+    final candidates = <String>['zh-TW'];
+    List<dynamic> voices = const [];
+    try {
+      final available = await _tts.getLanguages;
+      if (available is List) {
+        for (final language in available) {
+          final locale = language.toString();
+          if (_isChinese(locale) && !candidates.contains(locale)) {
+            candidates.add(locale);
+          }
+        }
+      } else {
+        debugPrint('[VoiceService] getLanguages returned no language list');
+      }
+    } catch (error, stack) {
+      debugPrint('[VoiceService] getLanguages failed: $error\n$stack');
+    }
+    try {
+      final available = await _tts.getVoices;
+      if (available is List) {
+        voices = available;
+      } else {
+        debugPrint('[VoiceService] getVoices returned no voice list');
+      }
+    } catch (error, stack) {
+      debugPrint('[VoiceService] getVoices failed: $error\n$stack');
+    }
+    for (final voice in voices.whereType<Map>()) {
+      final locale = voice['locale']?.toString();
+      if (locale != null &&
+          _isChinese(locale) &&
+          !candidates.contains(locale)) {
+        candidates.add(locale);
+      }
     }
 
-    // 清掉 emoji / 符號,只留 TTS 能念的文字
+    String? selected;
+    for (final locale in candidates) {
+      try {
+        final result = await _tts.setLanguage(locale);
+        if (result == false || result == 0) {
+          debugPrint('[VoiceService] TTS language unavailable: $locale');
+          continue;
+        }
+        selected = locale;
+        break;
+      } catch (error, stack) {
+        debugPrint(
+            '[VoiceService] setLanguage($locale) failed: $error\n$stack');
+      }
+    }
+    if (selected == null) {
+      debugPrint(
+          '[VoiceService] No Chinese TTS language; using system default');
+      return;
+    }
+    final matches = voices
+        .whereType<Map>()
+        .where(
+          (voice) =>
+              voice['locale']?.toString().toLowerCase() ==
+              selected!.toLowerCase(),
+        )
+        .toList();
+    if (matches.isNotEmpty) {
+      matches.sort((a, b) => _voiceScore(b).compareTo(_voiceScore(a)));
+      final best = matches.first;
+      try {
+        final result = await _tts.setVoice({
+          'name': best['name'].toString(),
+          'locale': best['locale'].toString(),
+        });
+        if (result == false || result == 0) {
+          debugPrint(
+              '[VoiceService] setVoice rejected; using $selected default');
+        }
+      } catch (error, stack) {
+        debugPrint(
+            '[VoiceService] setVoice failed; using $selected default: $error\n$stack');
+      }
+    }
+    debugPrint('[VoiceService] TTS language: $selected');
+  }
+
+  static bool _isChinese(String locale) {
+    final lower = locale.toLowerCase();
+    return lower.startsWith('zh') || lower.startsWith('cmn');
+  }
+
+  static int _voiceScore(Map voice) {
+    final quality = voice['quality']?.toString().toLowerCase() ?? '';
+    final name = voice['name']?.toString().toLowerCase() ?? '';
+    var score = 0;
+    if (quality.contains('very high')) score += 100;
+    if (quality == 'high') score += 60;
+    if (name.contains('neural') ||
+        name.contains('wavenet') ||
+        name.contains('network')) {
+      score += 80;
+    }
+    if (name.contains('female') || name.contains('女')) score += 20;
+    return score;
+  }
+
+  static void _onSpeechEnded() {
+    _speaking = false;
+    if (_suppressPendingDrain > 0) return;
+    final pending = _pendingNormal;
+    _pendingNormal = null;
+    if (pending != null) {
+      Future<void>(() => speak(pending));
+    }
+  }
+
+  static Future<void> speak(String text, {bool important = false}) async {
+    final generation = _stopGeneration;
+    await init();
+    await _stopping;
+    if (generation != _stopGeneration || text.trim().isEmpty) return;
+    if (_skipKeywords.any(text.contains)) return;
     final clean = _stripEmoji(text);
     if (clean.isEmpty) return;
-
     final now = DateTime.now();
-
-    // 過濾 2:同一句 2 秒內不重複念
     if (clean == _lastSpoken &&
-        now.difference(_lastSpeakTime).inSeconds < 2) {
+        now.difference(_lastSpeakTime) < const Duration(seconds: 2)) {
       return;
     }
-
-    // 判斷這句重不重要(重要句可以打斷別人,自己也不被打斷)
-    final important = _isImportant(clean);
-
-    // 過濾 3:正在念重要句 → 普通句不插隊(解決「念一半」問題)
-    if (_speakingImportant && !important) {
+    final priority = important || _isImportant(clean);
+    if (_speaking && !priority) {
+      _pendingNormal =
+          clean; // Replace old hints; never queue stale pose frames.
       return;
     }
-
-    // 更新「上一句」記憶
+    if (priority && _speaking) {
+      _pendingNormal = null;
+      _suppressPendingDrain++;
+      try {
+        await _tts.stop();
+      } catch (error) {
+        debugPrint('[VoiceService] interrupt failed: $error');
+      } finally {
+        _suppressPendingDrain--;
+      }
+      if (generation != _stopGeneration) return;
+    }
     _lastSpoken = clean;
     _lastSpeakTime = now;
-
-    if (important) {
-      _speakingImportant = true;   // 上鎖,念完由 CompletionHandler 解開
-      try { await _tts.stop(); } catch (error) { debugPrint('TTS stop unavailable: $error'); } // 重要句可以打斷別人正在念的普通句
+    _speaking = true;
+    try {
+      await _tts.speak(clean);
+    } catch (error, stack) {
+      debugPrint('[VoiceService] speak failed: $error\n$stack');
+      _onSpeechEnded();
     }
-
-    // 真正念出來
-    try { await _tts.speak(clean); } catch (error) { debugPrint('TTS speak unavailable: $error'); }
   }
 
-  /// 立刻停止並清狀態 — 畫面 dispose 時呼叫
-  /// 避免離開畫面後還在念上一句
   static Future<void> stop() async {
-    try {
-    _speakingImportant = false;
-    await _tts.stop();
-
-    } catch (error, stack) { debugPrint('TTS stop unavailable: $error\n$stack'); }
+    _stopGeneration++;
+    _pendingNormal = null;
+    _suppressPendingDrain++;
+    _onSpeechEnded();
+    final previous = _stopping;
+    final stopping = () async {
+      await previous;
+      await _stopNative();
+    }();
+    _stopping = stopping;
+    await stopping;
+    if (identical(_stopping, stopping)) _stopping = null;
+    _suppressPendingDrain--;
   }
 
-  // ══════════════════════════════════════════════════════════════
-  //  私有 helpers
-  // ══════════════════════════════════════════════════════════════
-
-  /// 掃描系統所有可用聲音,挑最高品質的中文那個
-  ///
-  /// 每台手機支援的聲音不一樣:
-  ///   - 好手機:可能有 Neural / Wavenet 高品質中文
-  ///   - 普通手機:可能只有預設機械聲
-  ///
-  /// 這個方法用「評分制」自動挑最好的:
-  ///   1. 品質標記 "very high" / "high"    → 大加分
-  ///   2. 名字含 neural / wavenet / network → 大加分(神經網路合成)
-  ///   3. 台灣腔(zh-TW / cmn-tw)          → 中加分
-  ///   4. 女聲                              → 小加分(復健 app 較合適)
-  ///
-  /// 失敗就直接用預設聲音,不影響功能
-  static Future<void> _pickBestChineseVoice() async {
+  static Future<void> _stopNative() async {
     try {
-      final voices = await _tts.getVoices;
-      if (voices == null || voices is! List) return;
-
-      // 過濾:只留中文聲音
-      // locale 開頭 zh 或 cmn(cmn = Mandarin Chinese,某些手機用這個)
-      final chinese = voices
-          .whereType<Map>()
-          .where((v) {
-            final locale = v['locale']?.toString().toLowerCase() ?? '';
-            return locale.startsWith('zh') || locale.startsWith('cmn');
-          })
-          .toList();
-
-      // 完全沒中文聲音 → 用預設
-      if (chinese.isEmpty) return;
-
-      // 評分函數
-      int score(Map v) {
-        var s = 0;
-        final q = v['quality']?.toString().toLowerCase() ?? '';
-        final n = v['name']?.toString().toLowerCase() ?? '';
-        final locale = v['locale']?.toString().toLowerCase() ?? '';
-
-        // 品質(Android 有標 quality 欄位,能挑的話一定要挑)
-        if (q.contains('very high')) s += 100;
-        if (q == 'high') s += 60;
-
-        // 神經網路聲(名字裡有這些字眼,通常品質最高)
-        if (n.contains('neural') ||
-            n.contains('wavenet') ||
-            n.contains('network')) {
-          s += 80;
-        }
-
-        // 台灣腔優先(zh-TW / cmn-TW)
-        if (locale.startsWith('zh-tw') || locale.contains('cmn-tw')) s += 40;
-
-        // 女聲加分
-        if (n.contains('female') || n.contains('女')) s += 20;
-
-        return s;
-      }
-
-      // 按分數由高到低排序,挑第一名
-      chinese.sort((a, b) => score(b).compareTo(score(a)));
-      final best = chinese.first;
-
-      // 套用選好的聲音
-      await _tts.setVoice({
-        'name': best['name'].toString(),
-        'locale': best['locale'].toString(),
-      });
-
-      // Debug 印出:讓開發時能看到選了什麼
-      // (Release 版本可以註解掉這行,但留著也不影響效能)
-      print('[VoiceService] Picked voice: '
-            '${best['name']} (${best['locale']}, quality=${best['quality']})');
-    } catch (e) {
-      // 挑聲失敗(某些手機不支援 getVoices / setVoice)
-      // 靜默處理,用預設聲音,不影響 app 運作
-      print('[VoiceService] pickBestChineseVoice failed: $e');
+      await _tts.stop();
+    } catch (error, stack) {
+      debugPrint('[VoiceService] stop failed: $error\n$stack');
     }
   }
 
-  /// 判斷這句話是不是「重要句」
-  ///
-  /// 重要句 = 使用者需要聽清楚的內容(完成、動作提示、結束訊息)
-  /// 重要句會:
-  ///   - 打斷正在念的普通句
-  ///   - 上鎖,擋住後續普通句
-  ///
-  /// 想加新的重要關鍵字,改這個列表就好
   static bool _isImportant(String text) {
-    const importantKeywords = [
-      '完成', '捏緊了', '訓練結束', '太快',
-      '歪', '通過', '開始翻掌', '解鎖', '難度',
-    ];
-    for (final kw in importantKeywords) {
-      if (text.contains(kw)) return true;
-    }
-    return false;
+    const keywords = ['完成', '捏緊了', '訓練結束', '太快', '歪', '通過', '開始翻掌', '解鎖', '難度'];
+    return keywords.any(text.contains);
   }
 
-  /// 濾掉 emoji 跟符號,只留 TTS 能念的文字
-  ///
-  /// TTS 唸 emoji 會噴奇怪的東西(例如「拳頭表情符號」),
-  /// 用 regex 只保留中文字、英數、基本標點
-  static String _stripEmoji(String text) {
-    return text
-        .replaceAll(RegExp(r'[^\u4e00-\u9fa5a-zA-Z0-9,。!?、\s]'), '')
-        .trim();
-  }
+  static String _stripEmoji(String text) =>
+      text.replaceAll(RegExp(r'[^\u4e00-\u9fa5a-zA-Z0-9,。!?、\s]'), '').trim();
 }
