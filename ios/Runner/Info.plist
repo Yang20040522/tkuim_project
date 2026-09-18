@@ -26,6 +26,10 @@
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<key>NSCameraUsageDescription</key>
+	<string>RehabAssist 需要使用相機進行復健姿態辨識、動作評估與影像掃描。</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>RehabAssist 需要使用麥克風支援視訊通話與影音互動。</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

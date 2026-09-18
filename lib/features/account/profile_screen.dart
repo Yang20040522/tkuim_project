@@ -7,9 +7,11 @@ import '../../core/ui/app_colors.dart';
 
 import '../../services/history_service.dart';
 import '../notification/notification_settings_screen.dart';
+import 'about_us_screen.dart';
 import 'app_session.dart';
 import 'role_select_screen.dart';
 import 'account_info_screen.dart';
+import 'privacy_permissions_screen.dart';
 import 'remote_user_avatar_repository.dart';
 import 'user_avatar_repository.dart';
 
@@ -121,17 +123,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
       _totalDays = days.length;
       _avgAccuracy = avgText;
     });
-  }
-
-  void _comingSoon(String label) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('$label 即將開放'),
-        duration: const Duration(seconds: 2),
-        behavior: SnackBarBehavior.floating,
-        backgroundColor: const Color(0xFF1A1D2E),
-      ),
-    );
   }
 
   void _editProfile() {
@@ -486,13 +477,23 @@ class _ProfileScreenState extends State<ProfileScreen> {
           _buildSettingsItem(
             icon: Icons.lock_outline,
             label: '隱私權限',
-            onTap: () => _comingSoon('隱私權限'),
+            onTap: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => const PrivacyPermissionsScreen(),
+                ),
+              );
+            },
           ),
           _buildDivider(),
           _buildSettingsItem(
             icon: Icons.info_outline,
             label: '關於我們',
-            onTap: () => _comingSoon('關於我們'),
+            onTap: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const AboutUsScreen()),
+              );
+            },
           ),
           _buildDivider(),
           _buildSettingsItem(
