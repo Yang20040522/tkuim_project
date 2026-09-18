@@ -676,8 +676,8 @@ class _TherapistHistoryCard
                 children: [
                   Text(
                     hasMistakes
-                        ? '❌ $mistakeCount 次失誤'
-                        : '✅ 完美',
+                        ? '📝 $mistakeCount 項訓練修正紀錄'
+                        : '✅ 無訓練修正紀錄',
 
                     style: TextStyle(
                       color: hasMistakes
@@ -1070,8 +1070,8 @@ class _TherapistAutoUpgradeCard
 
                   Text(
                     totalMistakes == 0
-                        ? '0 次失誤'
-                        : '$totalMistakes 次失誤',
+                        ? '0 項訓練修正紀錄'
+                        : '$totalMistakes 項訓練修正紀錄',
                     style: const TextStyle(
                       color:
                           AppColors.secondaryText,
@@ -1331,10 +1331,10 @@ class _TherapistLevelResultRow
                 !isComplete
                     ? '尚未完成'
                     : mistakes.isEmpty
-                        ? '✅ 完美'
-                        : '❌ '
+                        ? '✅ 無訓練修正紀錄'
+                        : '📝 '
                             '${mistakes.length} '
-                            '次失誤',
+                            '項訓練修正紀錄',
                 style: TextStyle(
                   color: isComplete &&
                           mistakes.isEmpty

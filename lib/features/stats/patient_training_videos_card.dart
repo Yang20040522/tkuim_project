@@ -124,7 +124,7 @@ class _VideoRow extends StatelessWidget {
                     'Lv.${record.difficulty} · '
                     '${record.completedReps}/${record.targetReps} · '
                     '${record.durationSeconds}秒 · '
-                    '${record.mistakeLogs.length}次失誤',
+                    '${record.mistakeLogs.length}項訓練修正紀錄',
                     style: const TextStyle(
                       color: Color(0xFF4B5563),
                       fontSize: 12,

@@ -268,8 +268,8 @@ class HistorySessionExpansionCard extends StatelessWidget {
                   const SizedBox(height: 3),
                   Text(
                     group.totalMistakes == 0
-                        ? '0 次失誤'
-                        : '${group.totalMistakes} 次失誤',
+                        ? '0 項訓練修正紀錄'
+                        : '${group.totalMistakes} 項訓練修正紀錄',
                     style: const TextStyle(
                       color: AppColors.secondaryText,
                       fontSize: 11,
@@ -403,8 +403,8 @@ class HistorySessionExpansionCard extends StatelessWidget {
               ),
               Text(
                 mistakes.isEmpty
-                    ? (complete ? '✅ 完美' : '尚未完成')
-                    : '❌ ${mistakes.length} 次失誤',
+                    ? (complete ? '✅ 無訓練修正紀錄' : '尚未完成')
+                    : '📝 ${mistakes.length} 項訓練修正紀錄',
                 style: TextStyle(
                   color: mistakes.isEmpty && complete
                       ? const Color(0xFF4CAF50)

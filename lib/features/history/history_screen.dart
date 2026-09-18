@@ -1335,10 +1335,10 @@ class _HistoryScreenState extends State<HistoryScreen> {
                 children: [
                   Text(
                     isPerfect
-                        ? '✅ 完美'
+                        ? '✅ 無訓練修正紀錄'
                         : !isComplete
                             ? '尚未完成'
-                            : '❌ ${record.mistakeLogs.length} 次失誤',
+                            : '📝 ${record.mistakeLogs.length} 項訓練修正紀錄',
                     style: TextStyle(
                       color: isPerfect
                           ? const Color(0xFF4CAF50)
