@@ -50,8 +50,7 @@ class UserContextBuilder {
     String role = AppSession.role?.name ?? '未知';
 
     final userIdText = AppSession.userId?.trim();
-    final numericUserId =
-        userIdText == null ? null : int.tryParse(userIdText);
+    final numericUserId = userIdText == null ? null : int.tryParse(userIdText);
 
     List<TrainingRecord> localRecords = [];
     List<TrainingRecord> cloudRecords = [];
@@ -82,8 +81,7 @@ class UserContextBuilder {
           );
 
     try {
-      localRecords =
-          await historyFuture.timeout(_sourceTimeout);
+      localRecords = await historyFuture.timeout(_sourceTimeout);
 
       loadedSources.add('本機訓練紀錄');
     } catch (_) {
@@ -92,18 +90,32 @@ class UserContextBuilder {
 
     if (accountFuture != null) {
       try {
-        final account =
-            await accountFuture.timeout(_sourceTimeout);
+        final account = await accountFuture.timeout(_sourceTimeout);
 
-        if (account.name.trim().isNotEmpty) {
-          name = account.name.trim();
+        final sessionUserId = AppSession.userId?.trim();
+        final accountUserId = account.userId.trim();
+
+        // 安全檢查：
+        // /api/account/me 回傳的 userId 必須跟目前登入 Session 相同，
+        // 才允許拿它覆蓋姓名與角色。
+        if (sessionUserId != null &&
+            sessionUserId.isNotEmpty &&
+            accountUserId == sessionUserId) {
+          if (account.name.trim().isNotEmpty) {
+            name = account.name.trim();
+          }
+
+          if (account.role.trim().isNotEmpty) {
+            role = account.role.trim();
+          }
+
+          loadedSources.add('帳號資料庫');
+        } else {
+          // API 回傳到別人的資料時，不要污染 AI context。
+          unavailableSources.add(
+            '帳號資料庫（帳號識別不一致）',
+          );
         }
-
-        if (account.role.trim().isNotEmpty) {
-          role = account.role.trim();
-        }
-
-        loadedSources.add('帳號資料庫');
       } catch (_) {
         unavailableSources.add('帳號資料庫');
       }
@@ -113,8 +125,7 @@ class UserContextBuilder {
 
     if (cloudHistoryFuture != null) {
       try {
-        final rows =
-            await cloudHistoryFuture.timeout(_sourceTimeout);
+        final rows = await cloudHistoryFuture.timeout(_sourceTimeout);
 
         cloudRecords = rows
             .map(
@@ -137,42 +148,31 @@ class UserContextBuilder {
       cloudRecords,
     );
 
-    final sortedRecords =
-        List<TrainingRecord>.from(mergedRecords)
-          ..sort(
-            (a, b) => _recordDate(b)
-                .compareTo(_recordDate(a)),
-          );
+    final sortedRecords = List<TrainingRecord>.from(mergedRecords)
+      ..sort(
+        (a, b) => _recordDate(b).compareTo(_recordDate(a)),
+      );
 
     final streak = _calcStreak(mergedRecords);
     final weekly = _calcWeeklyCompleted(mergedRecords);
 
     final currentLevel =
-        sortedRecords.isNotEmpty
-            ? sortedRecords.first.difficulty
-            : 1;
+        sortedRecords.isNotEmpty ? sortedRecords.first.difficulty : 1;
 
-    final recentTraining =
-        _buildRecentTraining(sortedRecords);
+    final recentTraining = _buildRecentTraining(sortedRecords);
 
-    final recentMistakes =
-        _buildRecentMistakes(sortedRecords);
+    final recentMistakes = _buildRecentMistakes(sortedRecords);
 
     final assignedExercises = <String>[];
 
     if (assignedFuture != null) {
       try {
-        final assigned =
-            await assignedFuture.timeout(_sourceTimeout);
+        final assigned = await assignedFuture.timeout(_sourceTimeout);
 
         for (final exercise in assigned) {
-          final type =
-              exercise.type.apiValue == 'CUSTOM'
-                  ? '自訂動作'
-                  : '系統動作';
+          final type = exercise.type.apiValue == 'CUSTOM' ? '自訂動作' : '系統動作';
 
-          final description =
-              exercise.description.trim();
+          final description = exercise.description.trim();
 
           assignedExercises.add(
             description.isEmpty
@@ -194,22 +194,17 @@ class UserContextBuilder {
 
     if (sessionResultFuture != null) {
       try {
-        final results =
-            await sessionResultFuture.timeout(_sourceTimeout);
+        final results = await sessionResultFuture.timeout(_sourceTimeout);
 
-        final sortedResults = [...results]
-          ..sort(
-            (a, b) =>
-                b.completedAt.compareTo(a.completedAt),
+        final sortedResults = [...results]..sort(
+            (a, b) => b.completedAt.compareTo(a.completedAt),
           );
 
         if (sortedResults.isNotEmpty) {
-          latestSessionScore =
-              sortedResults.first.score;
+          latestSessionScore = sortedResults.first.score;
         }
 
-        for (final result
-            in sortedResults.take(_recentSessionLimit)) {
+        for (final result in sortedResults.take(_recentSessionLimit)) {
           recentSessionResults.add(
             '${_formatDateTime(result.completedAt)}｜'
             '${result.exerciseName}｜'
@@ -232,19 +227,16 @@ class UserContextBuilder {
 
     if (planFuture != null) {
       try {
-        final plan =
-            await planFuture.timeout(_sourceTimeout);
+        final plan = await planFuture.timeout(_sourceTimeout);
 
         if (plan != null) {
           final sortedItems = [...plan.items]
             ..sort((a, b) => a.order.compareTo(b.order));
 
           for (final item in sortedItems) {
-            final exercise =
-                _findPlanExercise(item.exerciseId);
+            final exercise = _findPlanExercise(item.exerciseId);
 
-            final exerciseName =
-                exercise?.name ?? item.exerciseId;
+            final exerciseName = exercise?.name ?? item.exerciseId;
 
             todayPlan.add(
               '$exerciseName｜'
@@ -266,16 +258,13 @@ class UserContextBuilder {
       unavailableSources.add('今日復健計畫（缺少登入使用者）');
     }
 
-    final exerciseCatalog =
-        _buildExerciseCatalog();
+    final exerciseCatalog = _buildExerciseCatalog();
 
     loadedSources.add('RehabAssist 內建動作資料');
 
-    final historyScore =
-        _calcLastScore(sortedRecords);
+    final historyScore = _calcLastScore(sortedRecords);
 
-    final lastScore =
-        latestSessionScore ?? historyScore;
+    final lastScore = latestSessionScore ?? historyScore;
 
     return UserContext(
       name: name,
@@ -300,8 +289,7 @@ class UserContextBuilder {
     List<TrainingRecord> local,
     List<TrainingRecord> cloud,
   ) {
-    final byTimestamp =
-        <String, TrainingRecord>{};
+    final byTimestamp = <String, TrainingRecord>{};
 
     for (final record in local) {
       byTimestamp[record.timestamp] = record;
@@ -317,9 +305,7 @@ class UserContextBuilder {
   List<String> _buildRecentTraining(
     List<TrainingRecord> records,
   ) {
-    return records
-        .take(_recentTrainingLimit)
-        .map((record) {
+    return records.take(_recentTrainingLimit).map((record) {
       final mistakes = record.mistakeLogs.length;
 
       return '${_formatRecordTimestamp(record.timestamp)}｜'
@@ -337,8 +323,7 @@ class UserContextBuilder {
   ) {
     final counts = <String, int>{};
 
-    for (final record
-        in records.take(_recentTrainingLimit)) {
+    for (final record in records.take(_recentTrainingLimit)) {
       for (final rawLog in record.mistakeLogs) {
         final log = rawLog.trim();
 
@@ -352,8 +337,7 @@ class UserContextBuilder {
 
     final sorted = counts.entries.toList()
       ..sort((a, b) {
-        final countCompare =
-            b.value.compareTo(a.value);
+        final countCompare = b.value.compareTo(a.value);
 
         if (countCompare != 0) {
           return countCompare;
@@ -365,8 +349,7 @@ class UserContextBuilder {
     return sorted
         .take(_mistakeLimit)
         .map(
-          (entry) =>
-              '${entry.key}｜最近出現 ${entry.value} 次',
+          (entry) => '${entry.key}｜最近出現 ${entry.value} 次',
         )
         .toList();
   }
@@ -374,12 +357,10 @@ class UserContextBuilder {
   List<String> _buildExerciseCatalog() {
     return kTrainingActions
         .where(
-          (action) =>
-              action.type != ActionType.bodyTest,
-        )
+      (action) => action.type != ActionType.bodyTest,
+    )
         .map((action) {
-      final difficulties =
-          action.difficulties.map((difficulty) {
+      final difficulties = action.difficulties.map((difficulty) {
         return '${difficulty.label}：'
             '${difficulty.description}，'
             '預設 ${difficulty.targetReps} 次';
@@ -434,8 +415,7 @@ class UserContextBuilder {
 
     final now = DateTime.now();
 
-    final todayStr =
-        _formatDate(now);
+    final todayStr = _formatDate(now);
 
     final yesterdayStr = _formatDate(
       now.subtract(const Duration(days: 1)),
@@ -476,17 +456,12 @@ class UserContextBuilder {
 
     final last = records.first;
 
-    final accuracy =
-        ((10 - last.mistakeLogs.length) /
-                10 *
-                100)
-            .clamp(0, 100);
+    final accuracy = ((10 - last.mistakeLogs.length) / 10 * 100).clamp(0, 100);
 
     return accuracy.toDouble();
   }
 
-  ({int completed, int target})
-      _calcWeeklyCompleted(
+  ({int completed, int target}) _calcWeeklyCompleted(
     List<TrainingRecord> records,
   ) {
     final now = DateTime.now();
@@ -502,8 +477,7 @@ class UserContextBuilder {
 
     final trainedDays = records
         .map((record) {
-          final date =
-              DateTime.tryParse(record.timestamp);
+          final date = DateTime.tryParse(record.timestamp);
 
           if (date != null) {
             return _formatDate(date);
@@ -516,9 +490,7 @@ class UserContextBuilder {
           return '';
         })
         .where(
-          (date) =>
-              date.isNotEmpty &&
-              last7Days.contains(date),
+          (date) => date.isNotEmpty && last7Days.contains(date),
         )
         .toSet()
         .length;
@@ -544,8 +516,7 @@ class UserContextBuilder {
   String _formatRecordTimestamp(
     String timestamp,
   ) {
-    final parsed =
-        DateTime.tryParse(timestamp);
+    final parsed = DateTime.tryParse(timestamp);
 
     if (parsed == null) {
       return timestamp;
