@@ -43,6 +43,8 @@ flutter {
 
 dependencies {
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")  // ← 新增
+    // The generated registrant references this dev plugin in release builds.
+    add("releaseImplementation", project(":flutter_native_splash"))
     implementation("androidx.camera:camera-core:1.3.1")
     implementation("androidx.camera:camera-camera2:1.3.1")
     implementation("androidx.camera:camera-lifecycle:1.3.1")
