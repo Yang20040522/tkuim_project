@@ -13,6 +13,7 @@ import '../custom_exercise/repositories/custom_exercise_assignment_repository_se
 import '../custom_exercise/repositories/custom_exercise_repository.dart';
 import '../custom_exercise/repositories/custom_exercise_repository_selection.dart';
 import '../plan/therapist_plan_management_page.dart';
+import '../rehab_ml/therapist_research_samples_page.dart';
 import '../../models/custom_rehab_exercise.dart';
 import 'app_session.dart';
 import 'patient_management_page.dart';
@@ -124,6 +125,12 @@ class _TherapistHomeScreenState extends State<TherapistHomeScreen> {
         builder: (_) => const TherapistPlanManagementPage(),
       ),
     );
+  }
+
+  void _openResearchSamples(BuildContext context) {
+    Navigator.of(context).push(MaterialPageRoute<void>(
+      builder: (_) => const TherapistResearchSamplesPage(),
+    ));
   }
 
   Widget _buildCustomExerciseEditor(
@@ -267,6 +274,14 @@ class _TherapistHomeScreenState extends State<TherapistHomeScreen> {
               title: '制定復健計畫',
               subtitle: '選擇患者並安排每日復健動作、組數與次數',
               onTap: () => _openRehabPlanManagement(context),
+            ),
+            const SizedBox(height: 12),
+            _TherapistFeatureCard(
+              key: const Key('open-research-samples'),
+              icon: Icons.science_outlined,
+              title: '研究資料標註',
+              subtitle: '查看已授權的匿名骨架樣本並標註',
+              onTap: () => _openResearchSamples(context),
             ),
             const SizedBox(height: 28),
             const Text(

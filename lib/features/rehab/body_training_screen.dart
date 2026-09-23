@@ -90,6 +90,8 @@ import '../../features/account/app_session.dart';
 import '../../features/plan/plan_repository.dart';
 import '../../features/analysis/body/body_motion_template.dart';
 import '../../features/analysis/body/body_rep_trajectory_collector.dart';
+import '../../features/rehab_ml/ml_research_api.dart';
+import '../../features/rehab_ml/ml_research_sync.dart';
 import '../../features/analysis/body/body_template_analyzer.dart';
 import '../../features/analysis/body/body_template_deviation_formatter.dart';
 import '../../features/analysis/models/environment_metadata.dart';
@@ -246,6 +248,10 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
   final BodyRepTrajectoryCollector _mlTrajectoryCollector =
       BodyRepTrajectoryCollector();
   final MlSampleRepository _mlSampleRepository = MlSampleRepository();
+  late final MlResearchSync _mlCloudSync = MlResearchSync(
+    remote: MlResearchApi(),
+    local: _mlSampleRepository,
+  );
   final Stopwatch _mlClock = Stopwatch();
   bool _mlCollectionConsent = false;
   bool _mlSheetOpen = false;
@@ -587,12 +593,21 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
           samples: _mlTrajectoryCollector.takeCompletedRep(),
         );
         if (sample != null) {
-          unawaited(_mlSampleRepository.save(sample).then((_) {
+          unawaited(_mlSampleRepository.save(sample).then((_) async {
+            await _mlCloudSync.enqueue(sample.id);
             if (mounted) {
               ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('已保存一筆匿名骨架研究樣本。')),
+                const SnackBar(content: Text('研究樣本已存於本機，正在嘗試同步。')),
               );
             }
+            // Network is deliberately outside the frame/inference callback.
+            unawaited(_mlCloudSync.sync().catchError((Object _) {
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('雲端同步失敗，樣本仍保留於本機，可稍後重試。')),
+                );
+              }
+            }));
           }).catchError((Object _) {
             if (mounted) {
               ScaffoldMessenger.of(context).showSnackBar(
@@ -2255,6 +2270,7 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
         isScrollControlled: true,
         builder: (_) => MlSampleSheet(
           repository: _mlSampleRepository,
+          cloudSync: _mlCloudSync,
           initialConsent: _mlCollectionConsent,
           initialSubjectId: _mlAnonymousSubjectId,
           onConsentChanged: (consent, subjectId) {
