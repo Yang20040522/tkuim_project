@@ -1,5 +1,11 @@
 # ML Cloud Progress
 
+## Third-round Stage E retention checkpoint (2026-09-23)
+
+- Backend retention policy, per-sample expiry, daily/manual expiry processing and deletion audit are implemented locally; `sqlserver_migration_ml_research_retention.sql` is NOT executed. Formal collection remains OFF with no approved policy or with default `RESEARCH_COLLECTION_ENABLED=false`.
+- Flutter manager page has a compact retention policy/history section; manager must explicitly enter approval reference, version, duration and UTC effective date. No duration default is invented. `flutter test test/features/rehab_ml/ml_research_cloud_test.dart`: 8/8 PASS; scoped `flutter analyze lib/features/rehab_ml test/features/rehab_ml`: 0 issues.
+- Next: commit Stage E Flutter, then shared patient/therapist login and final regression/build validation. Do not repeat Stages B–D.
+
 ## Third-round Stage D Flutter checkpoint (2026-09-23)
 
 - Compatible backend `4882f4e` adds manager-gated stats and bounded in-memory approved-data ZIP export, with `sqlserver_migration_ml_research_export.sql` still NOT EXECUTED.

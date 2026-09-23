@@ -21,8 +21,13 @@ class ResearchManagementPage extends StatefulWidget {
 class _ResearchManagementPageState extends State<ResearchManagementPage> {
   late final MlResearchRemote _remote = widget.remote ?? MlResearchApi();
   final _userId = TextEditingController();
+  final _policyVersion = TextEditingController();
+  final _retentionDays = TextEditingController();
+  final _effectiveDate = TextEditingController();
+  final _approvalReference = TextEditingController();
   Map<String, dynamic>? _stats;
   List<Map<String, dynamic>> _requests = [];
+  List<Map<String, dynamic>> _policies = [];
   bool _authorized = false;
   bool _busy = false;
   bool _canAnnotate = false;
@@ -46,11 +51,13 @@ class _ResearchManagementPageState extends State<ResearchManagementPage> {
       }
       final stats = await _remote.managementStats();
       final requests = await _remote.pendingReviewRequests();
+      final policies = await _remote.retentionPolicies();
       if (mounted) {
         setState(() {
           _authorized = true;
           _stats = stats;
           _requests = requests;
+          _policies = policies;
           _error = null;
         });
       }
@@ -144,9 +151,82 @@ class _ResearchManagementPageState extends State<ResearchManagementPage> {
     return path != null;
   }
 
+  Future<void> _createPolicy() async {
+    final version = _policyVersion.text.trim();
+    final days = int.tryParse(_retentionDays.text.trim());
+    final reference = _approvalReference.text.trim();
+    final effective =
+        DateTime.tryParse('${_effectiveDate.text.trim()}T00:00:00Z');
+    if (_busy ||
+        !RegExp(r'^[A-Za-z0-9_.-]{1,64}$').hasMatch(version) ||
+        days == null ||
+        days < 1 ||
+        days > 36500 ||
+        effective == null ||
+        !RegExp(r'^[A-Za-z0-9_.-]{1,128}$').hasMatch(reference)) {
+      setState(() => _error = '請依核准文件填寫版本、保存天數、生效日期與核准編號。');
+      return;
+    }
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('確認研究資料保存政策'),
+        content: Text(
+            '確認核准文件與保存期限一致：$days 天，自 ${_effectiveDate.text.trim()} 生效。未經核准請勿設定。'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('取消')),
+          FilledButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('確認建立')),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    setState(() => _busy = true);
+    try {
+      await _remote.createRetentionPolicy(
+          version: version,
+          retentionDays: days,
+          effectiveAt: effective,
+          approvalReference: reference);
+      await _load();
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(const SnackBar(content: Text('保存政策版本已建立。')));
+      }
+    } catch (_) {
+      if (mounted) setState(() => _error = '保存政策建立失敗，請確認版本與授權。');
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _processExpired() async {
+    if (_busy) return;
+    setState(() => _busy = true);
+    try {
+      final count = await _remote.processExpiredSamples();
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('本次處理 $count 筆已到期樣本。')));
+      }
+      await _load();
+    } catch (_) {
+      if (mounted) setState(() => _error = '到期處理失敗，請稍後重試。');
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
   @override
   void dispose() {
     _userId.dispose();
+    _policyVersion.dispose();
+    _retentionDays.dispose();
+    _effectiveDate.dispose();
+    _approvalReference.dispose();
     super.dispose();
   }
 
@@ -208,6 +288,48 @@ class _ResearchManagementPageState extends State<ResearchManagementPage> {
                                   child: const Text('核准')),
                             ]),
                           ),
+                        const SizedBox(height: 12),
+                        Card(
+                            child: ExpansionTile(
+                          title: const Text('研究資料保存政策'),
+                          subtitle: Text(_policies.isEmpty
+                              ? '尚未設定正式保存期限；研究收集維持關閉'
+                              : '目前有 ${_policies.length} 個政策版本'),
+                          childrenPadding: const EdgeInsets.all(16),
+                          children: [
+                            const Text(
+                                '僅在研究計畫與保存期限正式核准後，依核准文件建立版本。建立政策不會自動開啟研究收集。'),
+                            for (final policy in _policies)
+                              ListTile(
+                                  title: Text(
+                                      '版本 ${policy['policyVersion']} · ${policy['retentionDays']} 天'),
+                                  subtitle: Text(
+                                      '生效 ${policy['effectiveAt']} · 到期處理：刪除')),
+                            TextField(
+                                controller: _policyVersion,
+                                decoration:
+                                    const InputDecoration(labelText: '核准政策版本')),
+                            TextField(
+                                controller: _retentionDays,
+                                keyboardType: TextInputType.number,
+                                decoration:
+                                    const InputDecoration(labelText: '核准保存天數')),
+                            TextField(
+                                controller: _effectiveDate,
+                                decoration: const InputDecoration(
+                                    labelText: '生效日期（YYYY-MM-DD，UTC）')),
+                            TextField(
+                                controller: _approvalReference,
+                                decoration:
+                                    const InputDecoration(labelText: '核准文件編號')),
+                            FilledButton(
+                                onPressed: _busy ? null : _createPolicy,
+                                child: const Text('建立政策版本')),
+                            OutlinedButton(
+                                onPressed: _busy ? null : _processExpired,
+                                child: const Text('處理已到期樣本')),
+                          ],
+                        )),
                       ]),
                 )),
                 const SizedBox(height: 12),

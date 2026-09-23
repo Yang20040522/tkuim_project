@@ -29,6 +29,7 @@ class _Remote implements MlResearchRemote {
   bool? approved;
   bool exported = false;
   int? grantedUserId;
+  String? retentionVersion;
   @override
   Future<MlResearchConsent> getConsent() async => consent;
   @override
@@ -140,6 +141,20 @@ class _Remote implements MlResearchRemote {
     exported = true;
     return Uint8List.fromList([1, 2, 3]);
   }
+
+  @override
+  Future<List<Map<String, dynamic>>> retentionPolicies() async => [];
+  @override
+  Future<void> createRetentionPolicy(
+      {required String version,
+      required int retentionDays,
+      required DateTime effectiveAt,
+      required String approvalReference}) async {
+    retentionVersion = version;
+  }
+
+  @override
+  Future<int> processExpiredSamples() async => 0;
 
   @override
   Future<void> deleteMyData() async => deleted = true;
@@ -376,5 +391,30 @@ void main() {
     await tester.pumpAndSettle();
     expect(allowed.exported, isTrue);
     expect(saved, isTrue);
+    await tester.ensureVisible(find.text('研究資料保存政策'));
+    await tester.tap(find.text('研究資料保存政策'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('尚未設定正式保存期限'), findsOneWidget);
+  });
+
+  test('retention API sends explicit policy without a default duration',
+      () async {
+    final requests = <http.Request>[];
+    final api = MlResearchApi(
+      baseUrl: 'https://example.invalid',
+      client: MockClient((request) async {
+        requests.add(request);
+        return http.Response(jsonEncode({'policyVersion': 'reviewed-v1'}), 200);
+      }),
+    );
+    await api.createRetentionPolicy(
+      version: 'reviewed-v1',
+      retentionDays: 120,
+      effectiveAt: DateTime.utc(2027, 1, 1),
+      approvalReference: 'approval-ref',
+    );
+    expect(requests.single.headers['X-Custom-Exercise-Token'], 'test-token');
+    expect(jsonDecode(requests.single.body)['retentionDays'], 120);
+    expect(jsonDecode(requests.single.body)['policyVersion'], 'reviewed-v1');
   });
 }

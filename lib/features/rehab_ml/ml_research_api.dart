@@ -56,6 +56,13 @@ abstract class MlResearchRemote {
       required bool canReview,
       required bool canManage});
   Future<Uint8List> exportApproved();
+  Future<List<Map<String, dynamic>>> retentionPolicies();
+  Future<void> createRetentionPolicy(
+      {required String version,
+      required int retentionDays,
+      required DateTime effectiveAt,
+      required String approvalReference});
+  Future<int> processExpiredSamples();
   Future<void> deleteMyData();
 }
 
@@ -238,6 +245,38 @@ class MlResearchApi implements MlResearchRemote {
           statusCode: response.statusCode);
     }
     return response.bodyBytes;
+  }
+
+  @override
+  Future<List<Map<String, dynamic>>> retentionPolicies() async {
+    final data = await _decode(
+            _client.get(_uri('/management/retention'), headers: _headers()))
+        as List<dynamic>;
+    return data.map((item) => Map<String, dynamic>.from(item as Map)).toList();
+  }
+
+  @override
+  Future<void> createRetentionPolicy(
+      {required String version,
+      required int retentionDays,
+      required DateTime effectiveAt,
+      required String approvalReference}) async {
+    await _decode(_client.post(_uri('/management/retention'),
+        headers: _headers(),
+        body: jsonEncode({
+          'policyVersion': version,
+          'retentionDays': retentionDays,
+          'effectiveAt': effectiveAt.toUtc().toIso8601String(),
+          'approvalReference': approvalReference,
+        })));
+  }
+
+  @override
+  Future<int> processExpiredSamples() async {
+    final data = await _decode(_client.post(
+        _uri('/management/retention/process-expired'),
+        headers: _headers())) as Map<String, dynamic>;
+    return (data['processedCount'] as num?)?.toInt() ?? 0;
   }
 
   @override

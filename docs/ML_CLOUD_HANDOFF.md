@@ -1,5 +1,11 @@
 # ML Cloud Handoff
 
+## Third-round Stage E retention handoff (2026-09-23)
+
+- Backend added `ResearchRetentionService`, policy/event entities, sample expiry columns and `sqlserver_migration_ml_research_retention.sql`; no policy or SQL migration executed. No policy -> research consent/upload unavailable, but existing local-only collection remains independent. Export excludes expired/policy-less samples. Batch deletes are auditable and retry-safe for already-deleted rows.
+- Flutter `ResearchManagementPage` adds an explicit policy form/history and manual expired-batch action. No duration default and no automatic real-person collection. Backend requires manager authority, but true governance/backup/export file handling must still be approved and manually verified.
+- Stage E backend checkpoint commit `59e1efd`; Flutter 8/8 focused tests and scoped analyze 0 issues. Next: Flutter commit, shared login, final regression/build. No SQL Server, Render or Android E2E yet.
+
 ## Third-round Stage D handoff (2026-09-23)
 
 - Backend compatible commit `4882f4e` (preceded by `904163d`, `c234af2`) provides per-study manager stats and approved ZIP export. SQL Server migrations remain unexecuted and backend undeployed. ZIP contains sanitized `samples/*.json` + `labels.csv` for `ml/train.py`, no server file; audit records actor/study/schema/count.
