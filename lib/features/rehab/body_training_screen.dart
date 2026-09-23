@@ -59,6 +59,7 @@
 // ══════════════════════════════════════════════════════════════════
 
 import 'dart:io';
+import 'dart:math' as math;
 import 'dart:typed_data'; // 用到 Uint8List
 import 'dart:ui' show Size; // 🚀 新增:骨架對齊用
 import 'package:flutter/material.dart';
@@ -94,6 +95,9 @@ import '../../features/analysis/body/body_template_deviation_formatter.dart';
 import '../../features/analysis/models/environment_metadata.dart';
 import '../../features/analysis/models/motion_action_registry.dart';
 import '../../features/analysis/widgets/template_training_mode_dialog.dart';
+import '../rehab_ml/ml_sample_repository.dart';
+import '../rehab_ml/ml_sample_sheet.dart';
+import '../rehab_ml/standing_knee_raise_sample.dart';
 
 // 🖥️ 電視投放新增
 import 'dart:async';
@@ -239,6 +243,13 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
   // Passive template analysis. Existing action remains authoritative for reps.
   final BodyRepTrajectoryCollector _aiTrajectoryCollector =
       BodyRepTrajectoryCollector();
+  final BodyRepTrajectoryCollector _mlTrajectoryCollector =
+      BodyRepTrajectoryCollector();
+  final MlSampleRepository _mlSampleRepository = MlSampleRepository();
+  final Stopwatch _mlClock = Stopwatch();
+  bool _mlCollectionConsent = false;
+  bool _mlSheetOpen = false;
+  String? _mlAnonymousSubjectId;
   final BodyTemplateAnalyzer _bodyTemplateAnalyzer =
       const BodyTemplateAnalyzer();
   final Stopwatch _aiSessionClock = Stopwatch();
@@ -323,6 +334,7 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
     if (_usesTemplateAnalysis) {
       _aiSessionClock.start();
     }
+    if (widget.action is StandingKneeRaiseAction) _mlClock.start();
     _start();
 
     // 🖥️ 電視投放:只有真的連了電視才初始化,沒連就完全跳過(省效能)
@@ -402,6 +414,7 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
     const int bodyLandmarkCount = 17;
     if (data.keypoints.length < bodyLandmarkCount ||
         data.scores.length < bodyLandmarkCount) {
+      _mlTrajectoryCollector.reset();
       // 偶爾少一幀時，不要立刻把畫面蓋黑。
       // 只有連續多幀資料都不足，才判定人真的離開鏡頭。
       _bodyMissingFrames++;
@@ -544,6 +557,53 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
           reason: '本次 AI 動作品質暫時無法分析。',
         );
       }
+    }
+
+    // Explicitly consented research samples observe the existing rep boundary.
+    // This path never changes the authoritative rule-based training result.
+    final kneeRaise = widget.action;
+    if (_mlCollectionConsent &&
+        !_mlSheetOpen &&
+        kneeRaise is StandingKneeRaiseAction &&
+        kneeRaise.movingLegIsLeft != null &&
+        !_isExternalCamera &&
+        !_isSwitchingCameraUI &&
+        !_waitingLegSelect) {
+      final timestampMs = _mlClock.elapsedMilliseconds;
+      _mlTrajectoryCollector.addFrame(
+        timestampMs: timestampMs,
+        landmarks: data.keypoints,
+        scores: data.scores,
+        force: fb.scored,
+      );
+      if (fb.scored) {
+        final sample = StandingKneeRaiseSample.fromCompletedRep(
+          consentGranted: _mlCollectionConsent,
+          id: 'rep_${DateTime.now().microsecondsSinceEpoch}_${math.Random.secure().nextInt(1 << 30)}',
+          subjectId: _mlAnonymousSubjectId!,
+          movementSide: kneeRaise.movingLegIsLeft! ? 'left' : 'right',
+          cameraView: _engine.isFrontCamera ? 'front' : 'rear',
+          capturedAt: DateTime.now(),
+          samples: _mlTrajectoryCollector.takeCompletedRep(),
+        );
+        if (sample != null) {
+          unawaited(_mlSampleRepository.save(sample).then((_) {
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('已保存一筆匿名骨架研究樣本。')),
+              );
+            }
+          }).catchError((Object _) {
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('研究骨架資料儲存失敗；本次樣本未保存。')),
+              );
+            }
+          }));
+        }
+      }
+    } else {
+      _mlTrajectoryCollector.reset();
     }
 
     // 評分器只觀察 Action 已經產生的結果；scored 仍是唯一計次邊界。
@@ -1465,6 +1525,18 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
               ),
             ),
           ),
+          if (!widget.isDisplay && widget.action is StandingKneeRaiseAction)
+            IconButton(
+              key: const Key('ml-research-samples'),
+              tooltip: '研究骨架資料',
+              onPressed: _showMlCollectionSheet,
+              icon: Icon(
+                Icons.science_outlined,
+                color: _mlCollectionConsent
+                    ? const Color(0xFF4A65FF)
+                    : const Color(0xFF374151),
+              ),
+            ),
           // 🚀 樹莓派新增:外接鏡頭開關按鈕
           GestureDetector(
             onTap: _isExternalCamera
@@ -2171,6 +2243,35 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
 
   void _resetAiForSourceChange() {
     _aiTrajectoryCollector.reset();
+    _mlTrajectoryCollector.reset();
+  }
+
+  Future<void> _showMlCollectionSheet() async {
+    _mlSheetOpen = true;
+    _mlTrajectoryCollector.reset();
+    try {
+      await showModalBottomSheet<void>(
+        context: context,
+        isScrollControlled: true,
+        builder: (_) => MlSampleSheet(
+          repository: _mlSampleRepository,
+          initialConsent: _mlCollectionConsent,
+          initialSubjectId: _mlAnonymousSubjectId,
+          onConsentChanged: (consent, subjectId) {
+            _mlTrajectoryCollector.reset();
+            if (mounted) {
+              setState(() {
+                _mlCollectionConsent = consent;
+                _mlAnonymousSubjectId = subjectId;
+              });
+            }
+          },
+        ),
+      );
+    } finally {
+      _mlSheetOpen = false;
+      _mlTrajectoryCollector.reset();
+    }
   }
 
   void _resetScoresForNewLevel() {
@@ -2179,9 +2280,11 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
     _templateDifferenceSummary.clear();
     _lastAiAnalysis = null;
     _aiTrajectoryCollector.reset();
+    _mlTrajectoryCollector.reset();
   }
 
   void _updateAiMovementSide(LegRoleSelectable action) {
+    _mlTrajectoryCollector.reset();
     if (!_usesTemplateAnalysis || _selectedAiTrainedSide == null) return;
     final trainedSide = _selectedAiTrainedSide!;
     _selectedAiMovementSide = action.role == TrainingLegRole.moveTrainedLeg
