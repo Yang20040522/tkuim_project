@@ -9,6 +9,7 @@ import android.media.projection.MediaProjectionManager
 import android.os.Build
 import android.os.VibrationEffect
 import android.os.Vibrator
+import android.util.Log
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.EventChannel
@@ -19,6 +20,8 @@ import io.flutter.plugin.platform.PlatformView
 import com.example.flutter_body.pose.PoseCameraPreviewFactory
 
 class MainActivity : FlutterActivity() {
+
+    private val mediaPipeLogTag = "RehabHandMediaPipe"
 
     private val METHOD_CHANNEL = "com.rehabassist/mediapipe"
     private val LANDMARK_CHANNEL = "com.rehabassist/landmarks"
@@ -64,10 +67,12 @@ class MainActivity : FlutterActivity() {
                 override fun onListen(args: Any?, events: EventChannel.EventSink?) {
                     landmarkEventSink = events
                     mediaPipeBridge?.landmarkEventSink = events
+                    Log.i(mediaPipeLogTag, "landmark EventChannel attached")
                 }
                 override fun onCancel(args: Any?) {
                     landmarkEventSink = null
                     mediaPipeBridge?.landmarkEventSink = null
+                    Log.i(mediaPipeLogTag, "landmark EventChannel detached")
                 }
             })
 
@@ -77,6 +82,10 @@ class MainActivity : FlutterActivity() {
                     "startDetection" -> {
                         val useFront = call.argument<Boolean>("useFrontCamera") ?: false
                         val enableImageStream = call.argument<Boolean>("enableImageStream") ?: false
+                        Log.i(
+                            mediaPipeLogTag,
+                            "startDetection requested; front=$useFront imageStream=$enableImageStream"
+                        )
                         mediaPipeBridge = MediaPipeBridge(
                             context = this,
                             useFrontCamera = useFront,

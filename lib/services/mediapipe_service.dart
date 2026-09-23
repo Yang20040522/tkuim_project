@@ -75,6 +75,9 @@ class MediaPipeService {
   final StreamController<TrainingUpdate> _trainingController =
       StreamController.broadcast();
 
+  bool _didLogFirstLandmarkEvent = false;
+  bool _didLogFirstDetectedHand = false;
+
   Stream<DetectionResult> get landmarkStream => _landmarkController.stream;
   Stream<TrainingUpdate> get trainingStream => _trainingController.stream;
 
@@ -141,10 +144,29 @@ class MediaPipeService {
   void _subscribeLandmarks() {
     _landmarkSub = _landmarkChannel.receiveBroadcastStream().listen(
       (data) {
+        final diagnosticMap = data as Map?;
+        final diagnosticCount =
+            (diagnosticMap?['landmarks'] as List?)?.length ?? 0;
+        final diagnosticHandDetected = diagnosticMap?['handDetected'] == true;
+        if (!_didLogFirstLandmarkEvent) {
+          _didLogFirstLandmarkEvent = true;
+          debugPrint(
+            'RehabHandMediaPipe: first landmark event; '
+            'count=$diagnosticCount handDetected=$diagnosticHandDetected',
+          );
+        }
+        if (diagnosticCount == 21 &&
+            diagnosticHandDetected &&
+            !_didLogFirstDetectedHand) {
+          _didLogFirstDetectedHand = true;
+          debugPrint(
+            'RehabHandMediaPipe: received 21 hand landmarks from Android',
+          );
+        }
         if (kDebugMode) {
-          final map = data as Map?;
-          final count = (map?['landmarks'] as List?)?.length ?? 0;
-          if (count == 0) debugPrint('=== No landmarks detected');
+          if (diagnosticCount == 0) {
+            debugPrint('=== No landmarks detected');
+          }
         }
 
         if (data == null) return;

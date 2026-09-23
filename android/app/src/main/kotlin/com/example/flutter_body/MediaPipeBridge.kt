@@ -2,6 +2,7 @@ package com.example.flutter_body
 
 import android.content.Context
 import android.os.SystemClock
+import android.util.Log
 import androidx.camera.core.*
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
@@ -22,6 +23,10 @@ class MediaPipeBridge(
     private val previewView: PreviewView?,
     private val enableImageStream: Boolean = false
 ) {
+    companion object {
+        private const val TAG = "RehabHandMediaPipe"
+    }
+
     var landmarkEventSink: EventChannel.EventSink? = null
 
     private var handLandmarker: HandLandmarker? = null
@@ -37,6 +42,9 @@ class MediaPipeBridge(
 
     private var latestImageBase64: String? = null
     private var lastImageCaptureTime = 0L
+    private var didLogFirstCameraFrame = false
+    private var didLogFirstResult = false
+    private var didLogFirstHand = false
 
     // 收尾旗標:設為 true 後相機幀不再送入 MediaPipe,避免 race condition
     @Volatile
@@ -81,13 +89,15 @@ class MediaPipeBridge(
                     processResult(result)
                     isProcessing = false
                 }
-                .setErrorListener { _ ->
+                .setErrorListener { error ->
+                    Log.e(TAG, "Hand Landmarker async error", error)
                     isProcessing = false
                 }
                 .build()
             handLandmarker = HandLandmarker.createFromOptions(context, options)
-        } catch (e: Exception) {
-            e.printStackTrace()
+            Log.i(TAG, "Hand Landmarker initialized; model=hand_landmarker.task mode=LIVE_STREAM")
+        } catch (error: Exception) {
+            Log.e(TAG, "Hand Landmarker initialization failed", error)
         }
     }
 
@@ -120,6 +130,10 @@ class MediaPipeBridge(
                         }
                         isProcessing = true
                         try {
+                            if (!didLogFirstCameraFrame) {
+                                didLogFirstCameraFrame = true
+                                Log.i(TAG, "Camera analyzer received its first frame")
+                            }
                             val rotation = imageProxy.imageInfo.rotationDegrees
                             val bitmap = imageProxy.toBitmap()
                             val rotated = rotateBitmap(bitmap, rotation)
@@ -170,8 +184,8 @@ class MediaPipeBridge(
                             if (!isClosing) {
                                 handLandmarker?.detectAsync(mpImage, SystemClock.uptimeMillis())
                             }
-                        } catch (e: Exception) {
-                            // 收尾期間殘留幀引發的例外,忽略即可
+                        } catch (error: Exception) {
+                            Log.e(TAG, "Camera frame analysis failed", error)
                             isProcessing = false
                         } finally {
                             imageProxy.close()
@@ -211,6 +225,11 @@ class MediaPipeBridge(
 
         val isFront = useFrontCamera
         val landmarks = if (result.landmarks().isNotEmpty()) result.landmarks()[0] else null
+
+        if (!didLogFirstResult) {
+            didLogFirstResult = true
+            Log.i(TAG, "First Hand Landmarker result received; handDetected=${landmarks != null}")
+        }
 
         if (landmarks == null) {
             isFirstFrame = true
@@ -254,6 +273,11 @@ class MediaPipeBridge(
             ))
         }
         isFirstFrame = false
+
+        if (!didLogFirstHand) {
+            didLogFirstHand = true
+            Log.i(TAG, "Hand detected; landmarks=${landmarkList.size}")
+        }
 
         val now = SystemClock.uptimeMillis()
         if (now - lastEventSendTime > 40) {

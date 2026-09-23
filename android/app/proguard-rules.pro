@@ -8,3 +8,14 @@
 -dontwarn javax.lang.model.type.TypeMirror
 -dontwarn javax.lang.model.type.TypeVisitor
 -dontwarn javax.lang.model.util.SimpleTypeVisitor8
+
+# ONNX Runtime resolves parts of its Android API dynamically. R8 must retain
+# these classes in release builds so native inference can initialize correctly.
+-keep class ai.onnxruntime.** { *; }
+
+# MediaPipe Tasks uses protobuf-lite message metadata to resolve generated
+# fields by their original names at runtime. R8 otherwise renames/removes those
+# fields and HandLandmarker initialization fails (for example `platform_`).
+-keepclassmembers class com.google.mediapipe.** extends com.google.protobuf.GeneratedMessageLite {
+    <fields>;
+}
