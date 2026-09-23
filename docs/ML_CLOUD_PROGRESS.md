@@ -1,5 +1,12 @@
 # ML Cloud Progress
 
+## Third-round Stage D Flutter checkpoint (2026-09-23)
+
+- Compatible backend `4882f4e` adds manager-gated stats and bounded in-memory approved-data ZIP export, with `sqlserver_migration_ml_research_export.sql` still NOT EXECUTED.
+- Added `ResearchManagementPage` in the existing app. Backend `authority/me` gates the therapist-home entry and page content. A manager can decide pending reviewer requests, set/revoke scoped grants for an explicit existing account ID, see simple counts, and save approved ZIP through the system file picker. No separate admin app or public registration.
+- Focused `flutter test test/features/rehab_ml/ml_research_cloud_test.dart`: 7/7 PASS. Scoped `flutter analyze lib/features/rehab_ml lib/features/account/therapist_home_screen.dart test/features/rehab_ml`: 0 issues. Full suite/APK/SQL Server/Android E2E NOT RUN.
+- Next: retention policy and expiry processing, shared login, integrated validation. Manager UI requires careful manual identity confirmation before granting another manager; backend enforces authorization and last-manager guard.
+
 ## Third-round Stage C Flutter checkpoint (2026-09-23)
 
 - Backend compatible commits: `904163d` (per-study authority/controlled bootstrap) and `c234af2` (annotation draft, submit, independent review); no SQL script run and no deployment.

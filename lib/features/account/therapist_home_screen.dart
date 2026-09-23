@@ -14,6 +14,8 @@ import '../custom_exercise/repositories/custom_exercise_repository.dart';
 import '../custom_exercise/repositories/custom_exercise_repository_selection.dart';
 import '../plan/therapist_plan_management_page.dart';
 import '../rehab_ml/therapist_research_samples_page.dart';
+import '../rehab_ml/ml_research_api.dart';
+import '../rehab_ml/research_management_page.dart';
 import '../../models/custom_rehab_exercise.dart';
 import 'app_session.dart';
 import 'patient_management_page.dart';
@@ -23,9 +25,11 @@ class TherapistHomeScreen extends StatefulWidget {
   const TherapistHomeScreen({
     super.key,
     this.chatBackend,
+    this.researchRemote,
   });
 
   final ChatBackend? chatBackend;
+  final MlResearchRemote? researchRemote;
 
   @override
   State<TherapistHomeScreen> createState() => _TherapistHomeScreenState();
@@ -35,6 +39,7 @@ class _TherapistHomeScreenState extends State<TherapistHomeScreen> {
   late final PageController _pageController;
   late final List<Widget> _pages;
   int _selectedIndex = 0;
+  bool _canManageResearch = false;
 
   @override
   void initState() {
@@ -48,6 +53,23 @@ class _TherapistHomeScreenState extends State<TherapistHomeScreen> {
         child: ChatHomeScreen(backend: widget.chatBackend),
       ),
     ];
+    _loadResearchAuthority();
+  }
+
+  Future<void> _loadResearchAuthority() async {
+    if (AppSession.userId?.isEmpty != false ||
+        AppSession.customExerciseToken?.isEmpty != false) {
+      return;
+    }
+    try {
+      final access =
+          await (widget.researchRemote ?? MlResearchApi()).authority();
+      if (mounted) {
+        setState(() => _canManageResearch = access['canManage'] == true);
+      }
+    } catch (_) {
+      if (mounted) setState(() => _canManageResearch = false);
+    }
   }
 
   @override
@@ -130,6 +152,12 @@ class _TherapistHomeScreenState extends State<TherapistHomeScreen> {
   void _openResearchSamples(BuildContext context) {
     Navigator.of(context).push(MaterialPageRoute<void>(
       builder: (_) => const TherapistResearchSamplesPage(),
+    ));
+  }
+
+  void _openResearchManagement(BuildContext context) {
+    Navigator.of(context).push(MaterialPageRoute<void>(
+      builder: (_) => ResearchManagementPage(remote: widget.researchRemote),
     ));
   }
 
@@ -283,6 +311,16 @@ class _TherapistHomeScreenState extends State<TherapistHomeScreen> {
               subtitle: '查看已授權的匿名骨架樣本並標註',
               onTap: () => _openResearchSamples(context),
             ),
+            if (_canManageResearch) ...[
+              const SizedBox(height: 12),
+              _TherapistFeatureCard(
+                key: const Key('open-research-management'),
+                icon: Icons.admin_panel_settings_outlined,
+                title: '研究管理',
+                subtitle: '審核授權、資料狀態與已審核資料匯出',
+                onTap: () => _openResearchManagement(context),
+              ),
+            ],
             const SizedBox(height: 28),
             const Text(
               '患者綁定後即可在指派頁選擇復健動作',

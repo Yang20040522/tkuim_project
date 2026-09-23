@@ -1,5 +1,11 @@
 # ML Cloud Handoff
 
+## Third-round Stage D handoff (2026-09-23)
+
+- Backend compatible commit `4882f4e` (preceded by `904163d`, `c234af2`) provides per-study manager stats and approved ZIP export. SQL Server migrations remain unexecuted and backend undeployed. ZIP contains sanitized `samples/*.json` + `labels.csv` for `ml/train.py`, no server file; audit records actor/study/schema/count.
+- Flutter `ResearchManagementPage` is a small in-app page. `TherapistHomeScreen` fetches backend authority to show its entry only when `canManage`; page rechecks authority. It manages reviewer requests, scoped grants, counts and export via `file_picker`. Existing patient/therapist business pages remain unchanged.
+- 7/7 focused Flutter tests and scoped analyzer 0 issues. No full suite, APK, actual SQL Server, Android device or Render validation yet. Next Stage E retention policy, then Stage F shared login and final validation. Do not redo completed authorization/review/export stages.
+
 ## Third-round Stage C handoff (2026-09-23)
 
 - Backend at `c234af2` (prior `904163d`) adds research grants/reviewer requests and DRAFT → SUBMITTED → APPROVED/RETURNED workflow. The existing annotation row plus revision snapshots preserve history; approved data cannot be overwritten. Required new SQL scripts are `sqlserver_migration_ml_research_authority.sql` and `sqlserver_migration_ml_research_review.sql`, after second-round `sqlserver_migration_ml_research.sql`. None executed. Manual first-manager bootstrap template is `sqlserver_bootstrap_first_research_manager.sql`.

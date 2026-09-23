@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -9,6 +10,7 @@ import 'package:flutter_body/features/rehab_ml/ml_research_sync.dart';
 import 'package:flutter_body/features/rehab_ml/ml_sample_repository.dart';
 import 'package:flutter_body/features/rehab_ml/ml_sample_sheet.dart';
 import 'package:flutter_body/features/rehab_ml/therapist_research_samples_page.dart';
+import 'package:flutter_body/features/rehab_ml/research_management_page.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -21,9 +23,12 @@ class _Remote implements MlResearchRemote {
   bool deleted = false;
   String? label;
   bool canReview = false;
+  bool canManage = false;
   String annotationStatus = 'UNLABELED';
   bool reviewRequested = false;
   bool? approved;
+  bool exported = false;
+  int? grantedUserId;
   @override
   Future<MlResearchConsent> getConsent() async => consent;
   @override
@@ -87,7 +92,7 @@ class _Remote implements MlResearchRemote {
   Future<Map<String, dynamic>> authority() async => {
         'canAnnotate': true,
         'canReview': canReview,
-        'canManage': false,
+        'canManage': canManage,
         'reviewRequestStatus': reviewRequested ? 'PENDING' : 'NONE',
       };
   @override
@@ -110,6 +115,30 @@ class _Remote implements MlResearchRemote {
     approved = approve;
     annotationStatus = approve ? 'APPROVED' : 'RETURNED';
     return {'status': annotationStatus};
+  }
+
+  @override
+  Future<Map<String, dynamic>> managementStats() async => {
+        'sampleCount': 1,
+        'pendingReviewCount': 0,
+        'approvedCount': 1,
+      };
+  @override
+  Future<List<Map<String, dynamic>>> pendingReviewRequests() async => [];
+  @override
+  Future<void> decideReviewRequest(int requestId, bool approve) async {}
+  @override
+  Future<void> setResearchGrant(int userId,
+      {required bool canAnnotate,
+      required bool canReview,
+      required bool canManage}) async {
+    grantedUserId = userId;
+  }
+
+  @override
+  Future<Uint8List> exportApproved() async {
+    exported = true;
+    return Uint8List.fromList([1, 2, 3]);
   }
 
   @override
@@ -311,5 +340,41 @@ void main() {
             .every((r) => r.headers['X-Custom-Exercise-Token'] == 'test-token'),
         isTrue);
     expect(jsonDecode(requests.last.body)['note'], '需重新確認');
+  });
+
+  testWidgets(
+      'management UI is backend-gated and exports through picker boundary',
+      (tester) async {
+    tester.view.physicalSize = const Size(900, 2400);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+    final denied = _Remote();
+    await tester
+        .pumpWidget(MaterialApp(home: ResearchManagementPage(remote: denied)));
+    await tester.pumpAndSettle();
+    expect(find.text('目前沒有研究管理權限。'), findsOneWidget);
+    expect(find.byKey(const Key('research-export-approved')), findsNothing);
+
+    final allowed = _Remote()..canManage = true;
+    bool saved = false;
+    await tester.pumpWidget(MaterialApp(
+        home: ResearchManagementPage(
+      key: const ValueKey('allowed-manager'),
+      remote: allowed,
+      saveExport: (bytes) async {
+        saved = bytes.length == 3;
+        return true;
+      },
+    )));
+    await tester.pumpAndSettle();
+    await tester
+        .ensureVisible(find.byKey(const Key('research-export-approved')));
+    await tester.tap(find.byKey(const Key('research-export-approved')));
+    await tester.pumpAndSettle();
+    expect(allowed.exported, isTrue);
+    expect(saved, isTrue);
   });
 }

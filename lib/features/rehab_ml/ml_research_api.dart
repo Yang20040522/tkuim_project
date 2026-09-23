@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:http/http.dart' as http;
 
@@ -47,6 +48,14 @@ abstract class MlResearchRemote {
   Future<Map<String, dynamic>> submitLabel(String id);
   Future<Map<String, dynamic>> reviewLabel(
       String id, bool approve, String note);
+  Future<Map<String, dynamic>> managementStats();
+  Future<List<Map<String, dynamic>>> pendingReviewRequests();
+  Future<void> decideReviewRequest(int requestId, bool approve);
+  Future<void> setResearchGrant(int userId,
+      {required bool canAnnotate,
+      required bool canReview,
+      required bool canManage});
+  Future<Uint8List> exportApproved();
   Future<void> deleteMyData();
 }
 
@@ -96,7 +105,7 @@ class MlResearchApi implements MlResearchRemote {
     }
     if (response.bodyBytes.isEmpty) return null;
     final value = jsonDecode(utf8.decode(response.bodyBytes));
-    if (value is Map<String, dynamic>) return value;
+    if (value is Map<String, dynamic> || value is List<dynamic>) return value;
     throw const MlResearchException('研究資料格式錯誤。');
   }
 
@@ -185,6 +194,51 @@ class MlResearchApi implements MlResearchRemote {
         headers: _headers(),
         body: jsonEncode({'approve': approve, 'note': note}),
       )) as Map<String, dynamic>;
+
+  @override
+  Future<Map<String, dynamic>> managementStats() async =>
+      await _decode(_client.get(_uri('/management/stats'), headers: _headers()))
+          as Map<String, dynamic>;
+
+  @override
+  Future<List<Map<String, dynamic>>> pendingReviewRequests() async {
+    final data = await _decode(_client.get(_uri('/authority/review-requests'),
+        headers: _headers())) as List<dynamic>;
+    return data.map((item) => Map<String, dynamic>.from(item as Map)).toList();
+  }
+
+  @override
+  Future<void> decideReviewRequest(int requestId, bool approve) async {
+    await _decode(_client.put(_uri('/authority/review-requests/$requestId'),
+        headers: _headers(), body: jsonEncode({'approve': approve})));
+  }
+
+  @override
+  Future<void> setResearchGrant(int userId,
+      {required bool canAnnotate,
+      required bool canReview,
+      required bool canManage}) async {
+    await _decode(_client.put(_uri('/authority/grants/$userId'),
+        headers: _headers(),
+        body: jsonEncode({
+          'canAnnotate': canAnnotate,
+          'canReview': canReview,
+          'canManage': canManage,
+        })));
+  }
+
+  @override
+  Future<Uint8List> exportApproved() async {
+    final response = await _client
+        .get(_uri('/management/export'), headers: _headers())
+        .timeout(const Duration(seconds: 30));
+    if (response.statusCode != 200 ||
+        response.headers['content-type']?.contains('application/zip') != true) {
+      throw MlResearchException('已審核資料匯出失敗，請確認授權與資料狀態。',
+          statusCode: response.statusCode);
+    }
+    return response.bodyBytes;
+  }
 
   @override
   Future<void> deleteMyData() async {
