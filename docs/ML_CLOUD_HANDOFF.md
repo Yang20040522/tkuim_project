@@ -1,5 +1,13 @@
 # ML Cloud Handoff
 
+## Third-round final handoff / next session (2026-09-23)
+
+- Flutter HEAD before this docs-only checkpoint: `13e954a`; backend HEAD `e905fe6`. Both branches correct and clean. Read `docs/ML_CLOUD_PROGRESS.md` and backend `ML_CLOUD_HANDOFF.md` before continuing; do not redo Stages B–F.
+- Implemented and committed: scoped grants/controlled manager bootstrap; draft-submit-independent review with revision snapshots; approved anonymous Python-compatible ZIP export and audit; explicit versioned retention/expiry processing; in-app research management; one shared login routed by backend PATIENT/THERAPIST role. No production SQL, push, merge, PR or deploy.
+- Tests: focused green, Android Debug build green. Full Flutter 436 pass/7 fail; full Maven 227 pass/2 auth-security fail; backend package PASS. Do not mark full regression PASS. Two Flutter account-info failures involve pending ZEGO timers; identify the remaining five with failure-only capture before deciding whether caused by this round.
+- SQL execution order after backup/review in isolated SQL Server first: base `sqlserver_migration_ml_research.sql` → `sqlserver_migration_ml_research_authority.sql` → `sqlserver_migration_ml_research_review.sql` → `sqlserver_migration_ml_research_export.sql` → `sqlserver_migration_ml_research_retention.sql`. The controlled bootstrap SQL is separate and must have an explicitly verified existing user ID; do not save a filled copy. Production migration/deploy requires user approval. `RESEARCH_COLLECTION_ENABLED` defaults false; do not set true until ethics/consent/retention approvals and device/backend E2E.
+- Real Android/SQL Server/Render E2E and any human-subject research are BLOCKED/NOT RUN. Next session: classify Flutter failures and verify Spring context with a safe test database, review SQL Server migration in isolated test DB, then plan manual Android/device and Render acceptance. If owner/teacher has no eligible existing account, do not fake PATIENT/THERAPIST; controlled internal-account provisioning remains a gap.
+
 ## Third-round Stage F shared-login handoff (2026-09-23)
 
 - `RoleSelectScreen` remains the splash/logout route for compatibility but now directly displays the single `LoginScreen`. Backend-authenticated PATIENT/THERAPIST role routes to the old respective home. No user-selected manager role, no research permissions saved in Session; Google remains limited to the existing patient-only backend flow. The registration sheet opens the existing patient/therapist forms.

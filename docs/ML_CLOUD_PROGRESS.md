@@ -1,5 +1,14 @@
 # ML Cloud Progress
 
+## Third-round validation / interruption checkpoint (2026-09-23)
+
+- Flutter branch `feat/rehab-ml-poc`; implementation commits `9379aec` (review), `7adfebc` (manager/export UI), `9cf36dc` (retention UI), `13e954a` (single login). Backend branch `feat/rehab-ml-cloud-label`; commits `904163d`, `c234af2`, `4882f4e`, `59e1efd`, `e905fe6`. Both working trees clean before this documentation update. No push/merge/PR/deploy/production SQL.
+- Focused Flutter: research cloud 8/8 PASS; common login 4/4 PASS; combined Google/common 10/10 PASS; affected account deletion navigation PASS; scoped analyzers 0 issues. `flutter build apk --debug` PASS at `build/app/outputs/flutter-apk/app-debug.apk`.
+- Full `flutter test` ran ONCE: 436 passed, 7 failed. Two identifiable account-info failures are pending existing ZEGO timers; full output was truncated, so other failing test identities/root causes are NOT VERIFIED. Do not call all seven proven pre-existing; do not delete/skip tests. Next session should capture concise failure-only output and compare baseline safely.
+- Full backend `mvn test` ran ONCE: 229 tests, 227 passed, 2 failed (`LegacyBindingControllerSecurityTest` expected 403/got 404; `UserJsonSecurityTest` exposes protected field). Neither auth/security source nor these tests changed in this round. `mvn package -DskipTests` PASS. These failures remain unrelated in diff, but must be addressed separately before claiming clean full backend suite.
+- SQL Server scripts are local-only and UNEXECUTED: base `sqlserver_migration_ml_research.sql`, then authority, review, export, retention. Controlled `sqlserver_bootstrap_first_research_manager.sql` also UNEXECUTED. `ddl-auto=update` exists, but explicit scripts/SSMS review remain necessary. No SQL Server test DB, Android real device or Render access was used. Research collection stays OFF by default and no formal retention duration is configured.
+- User quota check showed ~93% of 5-hour window used; stop adding features. Remaining: concise failure classification, SQL Server test migration/E2E, real Android/Render verification, governance sign-off, managed backups/export deletion policy. Do not activate real-person collection.
+
 ## Third-round Stage F shared-login checkpoint (2026-09-23)
 
 - Existing splash/logout `RoleSelectScreen` now renders one `LoginScreen` instead of forcing PATIENT/THERAPIST preselection. Password login uses the same backend `/api/auth/login`; backend `role` selects the existing patient or therapist home. Patient path still uses `PatientLoginSession`; therapist path validates nonempty HMAC and stores the existing `AppSession` fields. Google remains patient-only via the existing coordinator/session guard. Registration still presents the existing patient and therapist flows.
