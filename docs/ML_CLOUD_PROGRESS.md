@@ -10,7 +10,7 @@ Stage 2 minimal end-to-end Flutter slice implemented; not deployed or Android-ac
 - Backend: `feat/rehab-ml-cloud-label`, created from clean `main` at `94132993d7d32ffc4b090ec429975fa3543275f5`.
 - Backend checkout: `C:\Users\kuoja\Documents\GitHub\trianing-system`.
 - Backend compatible commit: `f6caf96781884f5809222396cdc834128da63bc2`.
-- Flutter first cloud slice commit: `99bb607ce5fd4a12c9b248d79e3093414ec2c37d`; local-only preservation fix commit pending.
+- Flutter first cloud slice commit: `99bb607ce5fd4a12c9b248d79e3093414ec2c37d`; local-only preservation fix: `d7b8015127e78ecf5b9b16e87ccd199b72a3b912`.
 - No push, merge or PR.
 
 ## Completed
@@ -27,13 +27,14 @@ Stage 2 minimal end-to-end Flutter slice implemented; not deployed or Android-ac
 
 - Flutter: 9 focused research tests passed; 6 body score regression tests passed.
 - `flutter analyze lib/features/rehab_ml lib/features/account/therapist_home_screen.dart`: 0 issues.
-- `git diff --check`: passed before documentation update; rerun before commit.
+- `flutter build apk --debug`: passed before local-only preservation follow-up; not rerun after it.
+- `git diff --check`: passed for both Flutter stage commits.
 - Full Flutter suite, APK build, Android/Render/SQL Server E2E not run in this stage.
 
 ## Remaining
 
-1. Commit Flutter stage, record SHA and paired backend SHA in both handoffs.
-2. Verify on Android + deployed backend after SQL migration and explicit governance approval; research env defaults OFF.
+1. After governance review, manually execute SQL migration and deploy compatible backend `f6caf96` plus Flutter `d7b8015`; research env defaults OFF.
+2. Verify on Android/Render/SQL Server; no real-subject research collection before ethics/consent/retention approval.
 3. Add authorized reviewer/manager role, approval state, training export compatible with `ml/train.py`, stats and retention policy; then tests and separate commits.
 4. Add connectivity-triggered retry and app-start retry if needed; current retry occurs on sample save, sheet reopen or explicit button.
 

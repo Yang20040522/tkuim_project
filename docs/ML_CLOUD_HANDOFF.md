@@ -5,7 +5,7 @@
 - Flutter branch/commit: `feat/rehab-ml-poc` / `ad1f0bf13b3ebb6828aa69cb9f62b8bd7cfee546`.
 - Backend branch/base: `feat/rehab-ml-cloud-label` / `94132993d7d32ffc4b090ec429975fa3543275f5`.
 - Backend compatible stage commit: `f6caf96781884f5809222396cdc834128da63bc2`.
-- Flutter first cloud stage commit: `99bb607ce5fd4a12c9b248d79e3093414ec2c37d`; local-only preservation follow-up commit pending.
+- Flutter compatible feature commits: `99bb607ce5fd4a12c9b248d79e3093414ec2c37d` and `d7b8015127e78ecf5b9b16e87ccd199b72a3b912` (current functionality).
 - Both working trees were clean before this round.
 - First-round collection schema is in `lib/features/rehab_ml/standing_knee_raise_sample.dart`; training contract is in `ml/feature_schema.py` and `ml/train.py`.
 
@@ -24,12 +24,12 @@
 
 - First-round full Flutter run: 423 passed, 7 failed in account/video/TV tests, without baseline verification. Do not call these proven pre-existing.
 - Backend: focused 12 research + 14 account tests and package passed; full backend suite not run.
-- Flutter: 9 focused research tests + 6 body-score regression tests passed; new feature analyze 0 issues. Full Flutter suite/APK/Android E2E not run. `body_training_screen.dart` has two existing analyze info items (unnecessary import and BuildContext async gap); this task did not change those lines.
+- Flutter: 9 focused research tests + 6 body-score regression tests passed; new feature analyze 0 issues. Debug APK built before the local-only preservation follow-up, not rebuilt after. Full Flutter suite/Android E2E not run. `body_training_screen.dart` has two existing analyze info items (unnecessary import and BuildContext async gap); this task did not change those lines.
 - Known gaps: no reviewer/manager authority, approval workflow, approved export or management statistics. No real data/model. Native/Render/SQL Server E2E not verified. App-start/connectivity-triggered retry absent; queue retries on new sample, sheet open or manual action. Backup deletion and retention policy unresolved.
 
 ## Next exact actions
 
-1. Run `git diff --check`, commit only task Flutter files and docs, record SHA in follow-up handoff or final report.
+1. Run focused research tests and Android debug build on current `d7b8015` after any continuation; do not reimplement the finished local/remote consent split.
 2. Before real collection, review ethics/consent/retention/label definitions; review and manually execute backend SQL migration, deploy backend `f6caf96`, set `RESEARCH_COLLECTION_ENABLED` and `RESEARCH_CONSENT_VERSION` only when approved.
 3. Android test: patient consent → standing knee raise valid rep → local and cloud status → bound therapist sample detail/player/label; verify withdrawal and network retry.
 4. Implement separate authorized research manager/reviewer scope (not the therapist role by assumption), review and approved export to existing Python schema, stats, deletion policy, tests.
