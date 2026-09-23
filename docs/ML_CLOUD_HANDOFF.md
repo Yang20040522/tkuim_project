@@ -1,5 +1,11 @@
 # ML Cloud Handoff
 
+## Third-round Stage F shared-login handoff (2026-09-23)
+
+- `RoleSelectScreen` remains the splash/logout route for compatibility but now directly displays the single `LoginScreen`. Backend-authenticated PATIENT/THERAPIST role routes to the old respective home. No user-selected manager role, no research permissions saved in Session; Google remains limited to the existing patient-only backend flow. The registration sheet opens the existing patient/therapist forms.
+- Focused common-login 4/4 and combined Google/common UI 10/10 PASS; account-deletion return-to-login test PASS. Scoped analyzer 0 issues. Whole `account_info_screen_test.dart` has two ZEGO pending-timer failures on other unchanged test paths; investigate baseline separately, do not claim pre-existing without proof.
+- Backend compatible HEAD after retention: `59e1efd`; later small security/validator changes may be uncommitted. Next: commit shared-login Flutter, run full regression/build, update exact SHAs and remaining blockers. No deploy/SQL/real-subject research.
+
 ## Third-round Stage E retention handoff (2026-09-23)
 
 - Backend added `ResearchRetentionService`, policy/event entities, sample expiry columns and `sqlserver_migration_ml_research_retention.sql`; no policy or SQL migration executed. No policy -> research consent/upload unavailable, but existing local-only collection remains independent. Export excludes expired/policy-less samples. Batch deletes are auditable and retry-safe for already-deleted rows.

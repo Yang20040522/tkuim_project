@@ -1,5 +1,12 @@
 # ML Cloud Progress
 
+## Third-round Stage F shared-login checkpoint (2026-09-23)
+
+- Existing splash/logout `RoleSelectScreen` now renders one `LoginScreen` instead of forcing PATIENT/THERAPIST preselection. Password login uses the same backend `/api/auth/login`; backend `role` selects the existing patient or therapist home. Patient path still uses `PatientLoginSession`; therapist path validates nonempty HMAC and stores the existing `AppSession` fields. Google remains patient-only via the existing coordinator/session guard. Registration still presents the existing patient and therapist flows.
+- No backend auth schema/endpoint change and no research grant flags cached in AppSession. Therapist research-management visibility is fetched from backend authority.
+- `flutter test test/features/account/common_login_test.dart`: 4/4 PASS; combined Google/common UI 10/10 PASS; affected account-deletion navigation test PASS. Scoped account analyze 0 issues. Two unrelated account-info widget tests still have existing pending ZEGO timers when the whole file runs; not treated as a verified baseline until full-suite comparison.
+- Next: commit Stage F, then full backend/Flutter suites, scoped analyze, Android debug build, migration static review and honest deployment-prep report.
+
 ## Third-round Stage E retention checkpoint (2026-09-23)
 
 - Backend retention policy, per-sample expiry, daily/manual expiry processing and deletion audit are implemented locally; `sqlserver_migration_ml_research_retention.sql` is NOT executed. Formal collection remains OFF with no approved policy or with default `RESEARCH_COLLECTION_ENABLED=false`.

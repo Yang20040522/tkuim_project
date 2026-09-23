@@ -95,7 +95,7 @@ class _TherapistResearchSamplesPageState
                 )
               else if (_reviewRequestStatus == 'PENDING')
                 const ListTile(title: Text('研究審核權限申請待核准'))
-              else
+              else if (_canAnnotate)
                 TextButton(
                   key: const Key('research-review-request'),
                   onPressed: () async {
@@ -109,7 +109,9 @@ class _TherapistResearchSamplesPageState
                     }
                   },
                   child: const Text('申請研究審核權限'),
-                ),
+                )
+              else
+                const ListTile(title: Text('尚未取得此研究的標註授權')),
               if (!_reviewMode && _canAnnotate)
                 Wrap(spacing: 8, children: [
                   ChoiceChip(

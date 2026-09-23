@@ -9,18 +9,24 @@ import 'google_auth_service.dart';
 import 'home_router.dart';
 import 'patient_google_auth_button.dart';
 import 'patient_login_session.dart';
+import 'app_session.dart';
+import 'therapist_register_screen.dart';
 import 'user_role.dart';
 
 import 'register_screen.dart';
 
 class LoginScreen extends StatefulWidget {
-  final UserRole role;
+  final UserRole? role;
   final PatientGoogleAuthCoordinator? googleAuthCoordinator;
+  final Future<LoginResult> Function(String identifier, String password)? login;
+  final Widget Function(UserRole role)? homeBuilder;
 
   const LoginScreen({
     super.key,
-    required this.role,
+    this.role,
     this.googleAuthCoordinator,
+    this.login,
+    this.homeBuilder,
   });
 
   @override
@@ -65,19 +71,26 @@ class _LoginScreenState extends State<LoginScreen> {
     setState(() => _isLoading = true);
 
     try {
-      final result = await AuthService.login(
-        identifier: _emailController.text.trim(),
-        password: _passwordController.text,
-      );
+      final result = await (widget.login
+              ?.call(_emailController.text.trim(), _passwordController.text) ??
+          AuthService.login(
+            identifier: _emailController.text.trim(),
+            password: _passwordController.text,
+          ));
 
       if (!mounted) return;
       setState(() => _isLoading = false);
 
       if (result.success) {
-        await _completePatientLogin(
-          result,
-          fallbackEmail: _emailController.text.trim(),
-        );
+        final backendRole = result.backendRole?.toUpperCase();
+        if (backendRole == 'PATIENT') {
+          await _completePatientLogin(result,
+              fallbackEmail: _emailController.text.trim());
+        } else if (backendRole == 'THERAPIST') {
+          await _completeTherapistLogin(result);
+        } else {
+          _showError('伺服器回傳的帳號身分無法使用，請聯絡管理員。');
+        }
       } else {
         _showError(result.message ?? '登入失敗,請再試一次');
       }
@@ -107,8 +120,87 @@ class _LoginScreenState extends State<LoginScreen> {
     if (!mounted) return;
     Navigator.pushAndRemoveUntil(
       context,
-      MaterialPageRoute(builder: (_) => homeForRole(UserRole.patient)),
+      MaterialPageRoute(builder: (_) => _home(UserRole.patient)),
       (route) => false,
+    );
+  }
+
+  Future<void> _completeTherapistLogin(LoginResult result) async {
+    final token = result.customExerciseToken?.trim();
+    if ((result.userId ?? '').trim().isEmpty ||
+        token == null ||
+        token.isEmpty) {
+      _showError('伺服器登入資料不完整，請稍後再試');
+      return;
+    }
+    await AppSession.save(
+      role: UserRole.therapist,
+      userId: result.userId,
+      name: result.name,
+      email: result.email,
+      accountId: result.accountId,
+      bindingCode: result.bindingCode,
+      friendCode: result.friendCode,
+      customExerciseToken: token,
+    );
+    if (!mounted) return;
+    Navigator.pushAndRemoveUntil(
+        context,
+        MaterialPageRoute(builder: (_) => _home(UserRole.therapist)),
+        (route) => false);
+  }
+
+  Widget _home(UserRole role) =>
+      widget.homeBuilder?.call(role) ?? homeForRole(role);
+
+  Future<void> _openRegistration() async {
+    if (widget.role != null) {
+      Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => RegisterScreen(
+              role: widget.role!,
+              googleAuthCoordinator: widget.googleAuthCoordinator,
+            ),
+          ));
+      return;
+    }
+    await showModalBottomSheet<void>(
+      context: context,
+      builder: (sheetContext) => SafeArea(
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          const ListTile(title: Text('註冊帳號')),
+          ListTile(
+            key: const Key('register-patient'),
+            leading: const Icon(Icons.self_improvement),
+            title: const Text('患者註冊'),
+            onTap: () {
+              Navigator.pop(sheetContext);
+              Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => RegisterScreen(
+                      role: UserRole.patient,
+                      googleAuthCoordinator: widget.googleAuthCoordinator,
+                    ),
+                  ));
+            },
+          ),
+          ListTile(
+            key: const Key('register-therapist'),
+            leading: const Icon(Icons.medical_services_outlined),
+            title: const Text('治療師註冊'),
+            onTap: () {
+              Navigator.pop(sheetContext);
+              Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => const TherapistRegisterScreen(),
+                  ));
+            },
+          ),
+        ]),
+      ),
     );
   }
 
@@ -135,16 +227,17 @@ class _LoginScreenState extends State<LoginScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                IconButton(
-                  onPressed: () => Navigator.pop(context),
-                  icon: const Icon(Icons.arrow_back_ios_new, size: 18),
-                  color: const Color(0xFF1A1D2E),
-                  padding: EdgeInsets.zero,
-                  alignment: Alignment.centerLeft,
-                ),
+                if (widget.role != null)
+                  IconButton(
+                    onPressed: () => Navigator.pop(context),
+                    icon: const Icon(Icons.arrow_back_ios_new, size: 18),
+                    color: const Color(0xFF1A1D2E),
+                    padding: EdgeInsets.zero,
+                    alignment: Alignment.centerLeft,
+                  ),
                 const SizedBox(height: 12),
                 const Text(
-                  '登入帳號',
+                  'RehabAssist 登入',
                   style: TextStyle(
                     color: Color(0xFF1A1D2E),
                     fontSize: 26,
@@ -153,7 +246,9 @@ class _LoginScreenState extends State<LoginScreen> {
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  '以${widget.role.label}身分登入',
+                  widget.role == null
+                      ? '使用既有帳號登入，系統會依後端身分開啟對應功能'
+                      : '以${widget.role!.label}身分登入',
                   style: const TextStyle(
                     color: AppColors.secondaryText,
                     fontSize: 13,
@@ -201,7 +296,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 ),
                 const SizedBox(height: 24),
                 _buildLoginButton(),
-                if (widget.role == UserRole.patient) ...[
+                if (widget.role != UserRole.therapist) ...[
                   const SizedBox(height: 16),
                   const Row(
                     children: [
@@ -226,19 +321,9 @@ class _LoginScreenState extends State<LoginScreen> {
                 const SizedBox(height: 16),
                 Center(
                   child: TextButton(
-                    onPressed: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => RegisterScreen(
-                            role: widget.role,
-                            googleAuthCoordinator: widget.googleAuthCoordinator,
-                          ),
-                        ),
-                      );
-                    },
+                    onPressed: _openRegistration,
                     child: const Text(
-                      '還沒有帳號？前往註冊',
+                      '還沒有帳號？註冊帳號',
                       style: TextStyle(
                         color: Color(0xFF4A65FF),
                         fontSize: 13,

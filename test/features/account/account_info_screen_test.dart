@@ -209,7 +209,7 @@ void main() {
     expect(AppSession.userId, '16');
   });
 
-  testWidgets('正確重新驗證與最終確認後清除 session 並返回身分選擇', (tester) async {
+  testWidgets('正確重新驗證與最終確認後清除 session 並返回共用登入', (tester) async {
     var deleted = false;
     await pumpAccountScreen(
       tester,
@@ -241,7 +241,7 @@ void main() {
     expect(deleted, isTrue);
     expect(AppSession.userId, isNull);
     expect(AppSession.customExerciseToken, isNull);
-    expect(find.text('請先選擇你的身分'), findsOneWidget);
+    expect(find.text('RehabAssist 登入'), findsOneWidget);
   });
 
   testWidgets('重新驗證失敗不會清除 session 或離開帳號頁', (tester) async {
