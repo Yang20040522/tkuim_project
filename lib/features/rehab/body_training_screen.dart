@@ -254,6 +254,7 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
   );
   final Stopwatch _mlClock = Stopwatch();
   bool _mlCollectionConsent = false;
+  bool _mlCloudConsent = false;
   bool _mlSheetOpen = false;
   String? _mlAnonymousSubjectId;
   final BodyTemplateAnalyzer _bodyTemplateAnalyzer =
@@ -593,7 +594,16 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
           samples: _mlTrajectoryCollector.takeCompletedRep(),
         );
         if (sample != null) {
+          final cloudConsentAtCapture = _mlCloudConsent;
           unawaited(_mlSampleRepository.save(sample).then((_) async {
+            if (!cloudConsentAtCapture || !_mlCloudConsent) {
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('已保存一筆本機匿名骨架研究樣本。')),
+                );
+              }
+              return;
+            }
             await _mlCloudSync.enqueue(sample.id);
             if (mounted) {
               ScaffoldMessenger.of(context).showSnackBar(
@@ -2271,6 +2281,8 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
         builder: (_) => MlSampleSheet(
           repository: _mlSampleRepository,
           cloudSync: _mlCloudSync,
+          initialCloudConsent: _mlCloudConsent,
+          onCloudConsentChanged: (enabled) => _mlCloudConsent = enabled,
           initialConsent: _mlCollectionConsent,
           initialSubjectId: _mlAnonymousSubjectId,
           onConsentChanged: (consent, subjectId) {

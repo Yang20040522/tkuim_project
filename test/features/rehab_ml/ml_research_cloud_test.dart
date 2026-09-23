@@ -146,6 +146,7 @@ void main() {
             Directory.systemTemp.createTemp('ml-cloud-empty-'));
     final queue = MlResearchSync(remote: remote, local: local);
     bool collecting = false;
+    bool cloudCollecting = false;
     await tester.pumpWidget(MaterialApp(
         home: Scaffold(
             body: MlSampleSheet(
@@ -154,17 +155,24 @@ void main() {
       initialConsent: false,
       initialSubjectId: null,
       onConsentChanged: (value, _) => collecting = value,
+      onCloudConsentChanged: (value) => cloudCollecting = value,
     ))));
     await tester.pumpAndSettle();
     expect(remote.consent.active, isFalse);
     await tester.enterText(find.byType(TextField).first, 'subject_01');
-    await tester.tap(find.byType(SwitchListTile));
+    await tester.tap(find.byKey(const Key('ml-local-consent')));
     await tester.pumpAndSettle();
     expect(collecting, isTrue);
+    expect(remote.consent.active, isFalse);
+    expect(cloudCollecting, isFalse);
+    await tester.tap(find.byKey(const Key('ml-cloud-consent')));
+    await tester.pumpAndSettle();
     expect(remote.consent.active, isTrue);
-    await tester.tap(find.byType(SwitchListTile));
+    expect(cloudCollecting, isTrue);
+    await tester.tap(find.byKey(const Key('ml-local-consent')));
     await tester.pumpAndSettle();
     expect(collecting, isFalse);
+    expect(cloudCollecting, isFalse);
     expect(remote.consent.active, isFalse);
   });
 

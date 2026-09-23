@@ -16,6 +16,8 @@ class MlSampleSheet extends StatefulWidget {
     required this.initialSubjectId,
     required this.onConsentChanged,
     this.cloudSync,
+    this.initialCloudConsent = false,
+    this.onCloudConsentChanged,
   });
 
   final MlSampleRepository repository;
@@ -23,6 +25,8 @@ class MlSampleSheet extends StatefulWidget {
   final String? initialSubjectId;
   final void Function(bool consent, String? subjectId) onConsentChanged;
   final MlResearchSync? cloudSync;
+  final bool initialCloudConsent;
+  final ValueChanged<bool>? onCloudConsentChanged;
 
   @override
   State<MlSampleSheet> createState() => _MlSampleSheetState();
@@ -37,11 +41,13 @@ class _MlSampleSheetState extends State<MlSampleSheet> {
   int _pendingCount = 0;
   int _syncedCount = 0;
   bool _busy = false;
+  bool _cloudEnabledForCapture = false;
 
   @override
   void initState() {
     super.initState();
     _consent = widget.initialConsent;
+    _cloudEnabledForCapture = widget.initialCloudConsent;
     _subjectController = TextEditingController(text: widget.initialSubjectId);
     _reload();
   }
@@ -61,6 +67,10 @@ class _MlSampleSheetState extends State<MlSampleSheet> {
       var synced = 0;
       if (widget.cloudSync != null) {
         cloud = await widget.cloudSync!.remote.getConsent();
+        if (!cloud.active && _cloudEnabledForCapture) {
+          _cloudEnabledForCapture = false;
+          widget.onCloudConsentChanged?.call(false);
+        }
         pending = (await widget.cloudSync!.pendingIds()).length;
         if (cloud.active && cloud.available && pending > 0) {
           await widget.cloudSync!.sync();
@@ -89,39 +99,51 @@ class _MlSampleSheetState extends State<MlSampleSheet> {
       setState(() => _error = '請輸入研究用匿名代碼（3–40 位英數、_ 或 -），不要填姓名或帳號。');
       return;
     }
-    if (widget.cloudSync != null) {
-      if (!enabled) {
-        // Stop collection immediately, even while the withdrawal request runs.
-        setState(() => _consent = false);
-        widget.onConsentChanged(false, null);
-      }
-      setState(() => _busy = true);
-      try {
-        if (enabled) {
-          final state =
-              _cloudConsent ?? await widget.cloudSync!.remote.getConsent();
-          if (!state.available) {
-            throw const MlResearchException('雲端研究資料收集尚未開放。');
-          }
-          _cloudConsent = await widget.cloudSync!.remote
-              .setConsent(true, state.currentVersion);
-        } else {
-          await widget.cloudSync!.withdraw();
-          _cloudConsent = await widget.cloudSync!.remote.getConsent();
-        }
-      } catch (_) {
-        if (mounted) setState(() => _error = '研究同意狀態更新失敗，請檢查網路後重試。');
-        if (mounted) setState(() => _busy = false);
-        return;
-      }
-      if (mounted) setState(() => _busy = false);
-    }
     if (!mounted) return;
     setState(() {
       _error = null;
       _consent = enabled;
     });
     widget.onConsentChanged(enabled, enabled ? id : null);
+    if (!enabled && _cloudEnabledForCapture) await _setCloudConsent(false);
+  }
+
+  Future<void> _setCloudConsent(bool enabled) async {
+    if (_busy || widget.cloudSync == null) return;
+    if (enabled && !_consent) {
+      setState(() => _error = '請先同意本機研究樣本收集。');
+      return;
+    }
+    if (!enabled) {
+      _cloudEnabledForCapture = false;
+      widget.onCloudConsentChanged?.call(false);
+    }
+    setState(() => _busy = true);
+    try {
+      if (enabled) {
+        final state =
+            _cloudConsent ?? await widget.cloudSync!.remote.getConsent();
+        if (!state.available) {
+          throw const MlResearchException('雲端研究服務尚未開放。');
+        }
+        _cloudConsent = await widget.cloudSync!.remote
+            .setConsent(true, state.currentVersion);
+      } else {
+        await widget.cloudSync!.withdraw();
+        _cloudConsent = await widget.cloudSync!.remote.getConsent();
+      }
+      if (mounted) {
+        setState(() {
+          _cloudEnabledForCapture = enabled;
+          _error = null;
+        });
+      }
+      if (mounted) widget.onCloudConsentChanged?.call(enabled);
+    } catch (_) {
+      if (mounted) setState(() => _error = '雲端研究同意更新失敗；本機樣本仍可保存。');
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
   }
 
   Future<void> _sync() async {
@@ -139,11 +161,15 @@ class _MlSampleSheetState extends State<MlSampleSheet> {
 
   Future<void> _deleteCloudData() async {
     if (_busy || widget.cloudSync == null) return;
-    setState(() => _busy = true);
+    setState(() {
+      _busy = true;
+      _consent = false;
+      _cloudEnabledForCapture = false;
+    });
     widget.onConsentChanged(false, null);
+    widget.onCloudConsentChanged?.call(false);
     try {
       await widget.cloudSync!.deleteCloudData();
-      if (mounted) setState(() => _consent = false);
       await _reload();
     } catch (_) {
       if (mounted) setState(() => _error = '雲端資料刪除失敗，請稍後重試。');
@@ -200,7 +226,7 @@ class _MlSampleSheetState extends State<MlSampleSheet> {
                   style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
               const SizedBox(height: 8),
               const Text(
-                '僅在明確同意後收集 RTMPose 骨架點、信心值與角度，並同步至研究後端；不另存相機影像。現有訓練錄影設定不受此開關控制。資料僅供研究標註，並非醫療診斷。',
+                '僅在明確同意後收集 RTMPose 骨架點、信心值與角度；雲端同步另需單獨同意。不另存相機影像。現有訓練錄影設定不受此開關控制。資料僅供研究標註，並非醫療診斷。',
               ),
               const SizedBox(height: 12),
               TextField(
@@ -213,18 +239,27 @@ class _MlSampleSheetState extends State<MlSampleSheet> {
                 ),
               ),
               SwitchListTile(
+                key: const Key('ml-local-consent'),
                 title: const Text('同意收集後續完整動作樣本'),
-                subtitle: const Text('啟用後同意將新產生的匿名骨架樣本上傳雲端；關閉後停止收集及上傳。'),
+                subtitle: const Text('僅在本機收集；關閉後停止產生新樣本。'),
                 value: _consent,
                 onChanged: _busy ? null : _setConsent,
               ),
               if (widget.cloudSync != null) ...[
+                SwitchListTile(
+                  key: const Key('ml-cloud-consent'),
+                  title: const Text('同意雲端同步匿名樣本'),
+                  subtitle: const Text('僅上傳啟用後新產生的有效樣本；關閉後停止上傳。'),
+                  value: _cloudEnabledForCapture,
+                  onChanged: _busy ? null : _setCloudConsent,
+                ),
                 Text('雲端研究：${_cloudConsent?.active == true ? '已同意' : '未參與'} · '
                     '待同步 $_pendingCount 筆 · 已同步 $_syncedCount 筆'),
                 if (_cloudConsent?.subjectId != null)
                   Text('雲端匿名代碼：${_cloudConsent!.subjectId}'),
                 TextButton.icon(
-                  onPressed: _busy || !_consent ? null : _sync,
+                  onPressed:
+                      _busy || _cloudConsent?.active != true ? null : _sync,
                   icon: const Icon(Icons.sync),
                   label: const Text('重新同步'),
                 ),

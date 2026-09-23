@@ -5,7 +5,7 @@
 - Flutter branch/commit: `feat/rehab-ml-poc` / `ad1f0bf13b3ebb6828aa69cb9f62b8bd7cfee546`.
 - Backend branch/base: `feat/rehab-ml-cloud-label` / `94132993d7d32ffc4b090ec429975fa3543275f5`.
 - Backend compatible stage commit: `f6caf96781884f5809222396cdc834128da63bc2`.
-- Flutter cloud stage commit: pending until this slice is committed.
+- Flutter first cloud stage commit: `99bb607ce5fd4a12c9b248d79e3093414ec2c37d`; local-only preservation follow-up commit pending.
 - Both working trees were clean before this round.
 - First-round collection schema is in `lib/features/rehab_ml/standing_knee_raise_sample.dart`; training contract is in `ml/feature_schema.py` and `ml/train.py`.
 
@@ -17,7 +17,7 @@
 - Cloud consent must be independently recorded server-side before upload. Sample UUID must be stable/idempotent across phone retries. No research-manager role is assumed until designed and authorized.
 - No genuine labels or trained classifier exist.
 - Flutter client uses HTTPS `ApiConfig.baseUrl` and existing HMAC headers. Endpoint contract and SQL migration details are in backend `ML_CLOUD_HANDOFF.md` at `f6caf96`.
-- Patient `MlSampleSheet` must obtain server consent before the research toggle can enable collection. The route still starts collection OFF; no automatic enrollment. Valid local sample save enqueues its ID under current account and schedules nonblocking upload; failed IDs remain for manual retry or retry when sheet opens. Do not upload old pre-cloud local samples silently.
+- Patient `MlSampleSheet` has two separate opt-ins: original local research collection and new server cloud consent. The route starts both OFF. Local samples can still be collected offline; only samples created while the cloud switch was explicitly ON enter the per-account upload queue. Failed IDs remain for manual retry or retry when sheet opens. Do not upload old pre-cloud or local-only samples silently.
 - Therapist entry `TherapistHomeScreen` → `TherapistResearchSamplesPage` → `ResearchSampleDetailPage` is backed by authenticated server list/detail. 17-point skeleton playback uses stored JSON only; label options are preliminary and need PT sign-off.
 
 ## Known issues/tests

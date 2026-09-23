@@ -10,6 +10,7 @@ Stage 2 minimal end-to-end Flutter slice implemented; not deployed or Android-ac
 - Backend: `feat/rehab-ml-cloud-label`, created from clean `main` at `94132993d7d32ffc4b090ec429975fa3543275f5`.
 - Backend checkout: `C:\Users\kuoja\Documents\GitHub\trianing-system`.
 - Backend compatible commit: `f6caf96781884f5809222396cdc834128da63bc2`.
+- Flutter first cloud slice commit: `99bb607ce5fd4a12c9b248d79e3093414ec2c37d`; local-only preservation fix commit pending.
 - No push, merge or PR.
 
 ## Completed
@@ -20,6 +21,7 @@ Stage 2 minimal end-to-end Flutter slice implemented; not deployed or Android-ac
 - Backend HMAC-authenticated consent/sample/therapist-label API, additive migration and 26 focused tests; committed as `f6caf96`.
 - Flutter HTTPS research client, per-user durable pending-ID retry queue, explicit server consent and withdrawal in existing sample sheet, upload after local save outside inference callback, bound-therapist list/detail/2D skeleton playback/seek/label UI.
 - Local rehabilitation scoring and RTMPose collection remain unchanged. Existing local sample files are retained after upload failure.
+- Follow-up safety fix: first-round local research capture remains available when cloud is unavailable; a separate explicit cloud switch is required before any new sample enters the upload queue.
 
 ## Tests
 
