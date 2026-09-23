@@ -41,6 +41,12 @@ abstract class MlResearchRemote {
   Future<List<Map<String, dynamic>>> listSamples({int page = 0});
   Future<Map<String, dynamic>> sampleDetail(String id);
   Future<void> labelSample(String id, String label, String note);
+  Future<Map<String, dynamic>> authority();
+  Future<Map<String, dynamic>> requestReviewAccess();
+  Future<List<Map<String, dynamic>>> reviewQueue();
+  Future<Map<String, dynamic>> submitLabel(String id);
+  Future<Map<String, dynamic>> reviewLabel(
+      String id, bool approve, String note);
   Future<void> deleteMyData();
 }
 
@@ -143,6 +149,42 @@ class MlResearchApi implements MlResearchRemote {
       }),
     ));
   }
+
+  @override
+  Future<Map<String, dynamic>> authority() async =>
+      await _decode(_client.get(_uri('/authority/me'), headers: _headers()))
+          as Map<String, dynamic>;
+
+  @override
+  Future<Map<String, dynamic>> requestReviewAccess() async => await _decode(
+          _client.post(_uri('/authority/review-request'), headers: _headers()))
+      as Map<String, dynamic>;
+
+  @override
+  Future<List<Map<String, dynamic>>> reviewQueue() async {
+    final data =
+        await _decode(_client.get(_uri('/review-queue'), headers: _headers()))
+            as Map<String, dynamic>;
+    return (data['content'] as List<dynamic>? ?? [])
+        .map((item) => Map<String, dynamic>.from(item as Map))
+        .toList();
+  }
+
+  @override
+  Future<Map<String, dynamic>> submitLabel(String id) async =>
+      await _decode(_client.post(
+        _uri('/samples/${Uri.encodeComponent(id)}/label/submit'),
+        headers: _headers(),
+      )) as Map<String, dynamic>;
+
+  @override
+  Future<Map<String, dynamic>> reviewLabel(
+          String id, bool approve, String note) async =>
+      await _decode(_client.post(
+        _uri('/samples/${Uri.encodeComponent(id)}/label/review'),
+        headers: _headers(),
+        body: jsonEncode({'approve': approve, 'note': note}),
+      )) as Map<String, dynamic>;
 
   @override
   Future<void> deleteMyData() async {

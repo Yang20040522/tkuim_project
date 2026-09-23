@@ -1,5 +1,21 @@
 # ML Cloud Progress
 
+## Third-round Stage C Flutter checkpoint (2026-09-23)
+
+- Backend compatible commits: `904163d` (per-study authority/controlled bootstrap) and `c234af2` (annotation draft, submit, independent review); no SQL script run and no deployment.
+- Flutter research API now calls authority, review request/queue, submit and review using existing HMAC headers. Therapist research page shows a backend-gated review-mode switch; sample details save draft, submit, or approve/return according to state without a second skeleton player. Toggle controls visibility only; backend authorizes every operation.
+- Focused `flutter test test/features/rehab_ml/ml_research_cloud_test.dart`: 6/6 PASS. `flutter analyze lib/features/rehab_ml test/features/rehab_ml`: 0 issues. Full Flutter suite/APK/SQL Server/Android E2E NOT RUN.
+- Next: commit this Flutter checkpoint, then approved export/minimal manager UI, retention, common login and final validation. Do not redo rounds 1–2 or backend Stage B/C.
+
+## Third-round checkpoint (2026-09-23)
+
+- Starting Flutter branch/HEAD: `feat/rehab-ml-poc` / `0b25cc52c29b6ed7da4c5fb092212a6b48e00fc5`; working tree clean.
+- Backend branch/HEAD: `feat/rehab-ml-cloud-label` / `8d743794e4d14d9ed914226e26ce090dfc9a7662`; working tree clean. The backend branch is local and must not be recreated from remote `main`.
+- Read all four Flutter progress/handoff documents and backend `ML_CLOUD_HANDOFF.md`.
+- Phase A in progress: confirmed backend `User.role` is a single PATIENT/THERAPIST string; `/api/auth/login` issues existing HMAC token. Flutter starts at role selection; patient and therapist have separate login screens and session guards. Extra research authority must be server-side and additive, not a role replacement.
+- Next: inspect backend research entities/API, auth response and existing account lifecycle; implement a narrow per-study research grant and controlled first-manager bootstrap, with focused tests before any UI change.
+- Historical Stage A note; later third-round implementation is recorded above. No migration, push, merge or deployment performed.
+
 ## Current stage
 
 Stage 2 minimal end-to-end Flutter slice implemented; not deployed or Android-accepted.

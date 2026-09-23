@@ -1,5 +1,18 @@
 # ML Cloud Handoff
 
+## Third-round Stage C handoff (2026-09-23)
+
+- Backend at `c234af2` (prior `904163d`) adds research grants/reviewer requests and DRAFT → SUBMITTED → APPROVED/RETURNED workflow. The existing annotation row plus revision snapshots preserve history; approved data cannot be overwritten. Required new SQL scripts are `sqlserver_migration_ml_research_authority.sql` and `sqlserver_migration_ml_research_review.sql`, after second-round `sqlserver_migration_ml_research.sql`. None executed. Manual first-manager bootstrap template is `sqlserver_bootstrap_first_research_manager.sql`.
+- Flutter API and `TherapistResearchSamplesPage`/detail now use authority, request, review queue, submit and review endpoints. Research review mode is a UI switch only and all operations require backend grants. Existing 17-point skeleton player reused. 6/6 focused tests pass; scoped analyze has 0 issues. This checkpoint is not deployed.
+- Next exact files: `lib/features/rehab_ml/ml_research_api.dart`, `therapist_research_samples_page.dart`, backend `ResearchDataService.java`, `ResearchAuthorityService.java`, `ML_CLOUD_HANDOFF.md`. Continue with approved export + minimal manager UI, then retention and unified login; do not redo the completed authorization/review work.
+
+## Third-round start
+
+- On 2026-09-23, Flutter `feat/rehab-ml-poc` HEAD `0b25cc52c29b6ed7da4c5fb092212a6b48e00fc5` and backend `feat/rehab-ml-cloud-label` HEAD `8d743794e4d14d9ed914226e26ce090dfc9a7662` were both clean.
+- Third-round requested order: additive research grant and controlled bootstrap; therapist review; approved export/minimal management; retention; shared login; focused tests/Android build. No public manager registration or separate manager app.
+- Current login remains role-selection first. Backend `User.role` is a single string and Google login is patient-only; do not treat UI mode as authority or replace PATIENT/THERAPIST roles.
+- Continue with precise backend auth/research inspection, then small tested commits. Do not redo rounds 1–2.
+
 ## Starting state
 
 - Flutter branch/commit: `feat/rehab-ml-poc` / `ad1f0bf13b3ebb6828aa69cb9f62b8bd7cfee546`.

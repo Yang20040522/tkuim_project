@@ -20,6 +20,10 @@ class _Remote implements MlResearchRemote {
   bool failUpload = false;
   bool deleted = false;
   String? label;
+  bool canReview = false;
+  String annotationStatus = 'UNLABELED';
+  bool reviewRequested = false;
+  bool? approved;
   @override
   Future<MlResearchConsent> getConsent() async => consent;
   @override
@@ -46,7 +50,7 @@ class _Remote implements MlResearchRemote {
           'subjectId': 'server-subject',
           'movementSide': 'left',
           'capturedAt': '2026-09-23T00:00:00Z',
-          'annotationStatus': 'UNLABELED'
+          'annotationStatus': annotationStatus
         }
       ];
   @override
@@ -64,10 +68,50 @@ class _Remote implements MlResearchRemote {
               }
           ]
         },
+        'annotation': annotationStatus == 'UNLABELED'
+            ? null
+            : {
+                'label': label ?? 'meets_requirement',
+                'note': '',
+                'status': annotationStatus,
+                'annotatorUserId': 8,
+              },
       };
   @override
-  Future<void> labelSample(String id, String value, String note) async =>
-      label = value;
+  Future<void> labelSample(String id, String value, String note) async {
+    label = value;
+    annotationStatus = 'DRAFT';
+  }
+
+  @override
+  Future<Map<String, dynamic>> authority() async => {
+        'canAnnotate': true,
+        'canReview': canReview,
+        'canManage': false,
+        'reviewRequestStatus': reviewRequested ? 'PENDING' : 'NONE',
+      };
+  @override
+  Future<Map<String, dynamic>> requestReviewAccess() async {
+    reviewRequested = true;
+    return {'status': 'PENDING'};
+  }
+
+  @override
+  Future<List<Map<String, dynamic>>> reviewQueue() async => listSamples();
+  @override
+  Future<Map<String, dynamic>> submitLabel(String id) async {
+    annotationStatus = 'SUBMITTED';
+    return {'status': annotationStatus};
+  }
+
+  @override
+  Future<Map<String, dynamic>> reviewLabel(
+      String id, bool approve, String note) async {
+    approved = approve;
+    annotationStatus = approve ? 'APPROVED' : 'RETURNED';
+    return {'status': annotationStatus};
+  }
+
   @override
   Future<void> deleteMyData() async => deleted = true;
 }
@@ -202,8 +246,70 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('無法評估').last);
     await tester.pumpAndSettle();
-    await tester.tap(find.text('儲存標註'));
+    await tester.tap(find.text('儲存草稿'));
     await tester.pumpAndSettle();
     expect(remote.label, 'unassessable');
+  });
+
+  testWidgets('draft submission and authorized independent review are distinct',
+      (tester) async {
+    tester.view.physicalSize = const Size(900, 2400);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+    final remote = _Remote()..canReview = true;
+    await tester.pumpWidget(
+        MaterialApp(home: TherapistResearchSamplesPage(remote: remote)));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('research-sample-server-1')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('research-label')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('活動幅度不足').last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('儲存草稿'));
+    await tester.pumpAndSettle();
+    expect(remote.annotationStatus, 'DRAFT');
+    await tester.tap(find.byKey(const Key('research-submit-label')));
+    await tester.pumpAndSettle();
+    expect(remote.annotationStatus, 'SUBMITTED');
+    await tester.pageBack();
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('research-review-mode')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('research-sample-server-1')));
+    await tester.pumpAndSettle();
+    expect(find.text('核准'), findsOneWidget);
+    await tester.tap(find.text('核准'));
+    await tester.pumpAndSettle();
+    expect(remote.approved, isTrue);
+    expect(remote.annotationStatus, 'APPROVED');
+    expect(find.text('儲存草稿'), findsNothing);
+  });
+
+  test('authority, review and submit API use HMAC headers', () async {
+    final requests = <http.Request>[];
+    final api = MlResearchApi(
+      baseUrl: 'https://example.invalid',
+      client: MockClient((request) async {
+        requests.add(request);
+        if (request.url.path.endsWith('/review-queue')) {
+          return http.Response(jsonEncode({'content': []}), 200);
+        }
+        return http.Response(jsonEncode({'status': 'SUBMITTED'}), 200);
+      }),
+    );
+    await api.authority();
+    await api.submitLabel('sample-1');
+    await api.reviewQueue();
+    await api.reviewLabel('sample-1', false, '需重新確認');
+    expect(requests, hasLength(4));
+    expect(
+        requests
+            .every((r) => r.headers['X-Custom-Exercise-Token'] == 'test-token'),
+        isTrue);
+    expect(jsonDecode(requests.last.body)['note'], '需重新確認');
   });
 }

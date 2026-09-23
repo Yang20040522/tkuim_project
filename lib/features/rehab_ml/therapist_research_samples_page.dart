@@ -3,6 +3,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
+import '../account/app_session.dart';
 import 'ml_research_api.dart';
 
 class TherapistResearchSamplesPage extends StatefulWidget {
@@ -21,6 +22,10 @@ class _TherapistResearchSamplesPageState
   bool _loading = true;
   String? _error;
   String _filter = 'all';
+  bool _reviewMode = false;
+  bool _canAnnotate = false;
+  bool _canReview = false;
+  String _reviewRequestStatus = 'NONE';
 
   @override
   void initState() {
@@ -34,8 +39,23 @@ class _TherapistResearchSamplesPageState
       _error = null;
     });
     try {
-      final samples = await _remote.listSamples();
-      if (mounted) setState(() => _samples = samples);
+      final access = await _remote.authority();
+      final canAnnotate = access['canAnnotate'] == true;
+      final canReview = access['canReview'] == true;
+      final samples = _reviewMode && canReview
+          ? await _remote.reviewQueue()
+          : canAnnotate
+              ? await _remote.listSamples()
+              : <Map<String, dynamic>>[];
+      if (mounted) {
+        setState(() {
+          _canAnnotate = canAnnotate;
+          _canReview = canReview;
+          _reviewRequestStatus =
+              access['reviewRequestStatus']?.toString() ?? 'NONE';
+          _samples = samples;
+        });
+      }
     } catch (_) {
       if (mounted) setState(() => _error = '研究樣本載入失敗，請確認網路與授權。');
     } finally {
@@ -49,7 +69,7 @@ class _TherapistResearchSamplesPageState
       final status = item['annotationStatus'];
       return _filter == 'all' ||
           (_filter == 'pending' && status == 'UNLABELED') ||
-          (_filter == 'labeled' && status == 'LABELED');
+          (_filter == 'labeled' && status != 'UNLABELED');
     }).toList();
     return Scaffold(
       backgroundColor: const Color(0xFFF5F6FA),
@@ -62,20 +82,49 @@ class _TherapistResearchSamplesPageState
             children: [
               const Text('僅顯示已同意研究、且與你有效綁定的患者樣本。骨架動畫為 2D 研究資料，不能取代臨床判斷。'),
               const SizedBox(height: 12),
-              Wrap(spacing: 8, children: [
-                ChoiceChip(
-                    label: const Text('全部'),
-                    selected: _filter == 'all',
-                    onSelected: (_) => setState(() => _filter = 'all')),
-                ChoiceChip(
-                    label: const Text('待標註'),
-                    selected: _filter == 'pending',
-                    onSelected: (_) => setState(() => _filter = 'pending')),
-                ChoiceChip(
-                    label: const Text('已標註'),
-                    selected: _filter == 'labeled',
-                    onSelected: (_) => setState(() => _filter = 'labeled')),
-              ]),
+              if (_canReview)
+                SwitchListTile(
+                  key: const Key('research-review-mode'),
+                  title: const Text('研究審核模式'),
+                  subtitle: const Text('僅顯示有權限審核的待審樣本'),
+                  value: _reviewMode,
+                  onChanged: (value) {
+                    setState(() => _reviewMode = value);
+                    _load();
+                  },
+                )
+              else if (_reviewRequestStatus == 'PENDING')
+                const ListTile(title: Text('研究審核權限申請待核准'))
+              else
+                TextButton(
+                  key: const Key('research-review-request'),
+                  onPressed: () async {
+                    try {
+                      await _remote.requestReviewAccess();
+                      await _load();
+                    } catch (_) {
+                      if (mounted) {
+                        setState(() => _error = '申請失敗，請確認患者綁定與研究資格。');
+                      }
+                    }
+                  },
+                  child: const Text('申請研究審核權限'),
+                ),
+              if (!_reviewMode && _canAnnotate)
+                Wrap(spacing: 8, children: [
+                  ChoiceChip(
+                      label: const Text('全部'),
+                      selected: _filter == 'all',
+                      onSelected: (_) => setState(() => _filter = 'all')),
+                  ChoiceChip(
+                      label: const Text('待標註'),
+                      selected: _filter == 'pending',
+                      onSelected: (_) => setState(() => _filter = 'pending')),
+                  ChoiceChip(
+                      label: const Text('已標註'),
+                      selected: _filter == 'labeled',
+                      onSelected: (_) => setState(() => _filter = 'labeled')),
+                ]),
               if (_loading) const Center(child: CircularProgressIndicator()),
               if (_error != null)
                 Text(_error!, style: const TextStyle(color: Colors.red)),
@@ -91,7 +140,7 @@ class _TherapistResearchSamplesPageState
                       '樣本 ${item['id']}\n匿名受試者 ${item['subjectId']} · '
                       '${item['movementSide'] == 'left' ? '左側' : '右側'} · '
                       '${item['capturedAt']}\n'
-                      '${item['annotationStatus'] == 'LABELED' ? '已標註' : '待標註'}',
+                      '${_statusText(item['annotationStatus']?.toString())}',
                     ),
                     isThreeLine: true,
                     trailing: const Icon(Icons.chevron_right),
@@ -100,6 +149,7 @@ class _TherapistResearchSamplesPageState
                         builder: (_) => ResearchSampleDetailPage(
                           remote: _remote,
                           sampleId: item['id'].toString(),
+                          reviewMode: _reviewMode,
                         ),
                       ));
                       if (mounted) _load();
@@ -112,13 +162,25 @@ class _TherapistResearchSamplesPageState
       ),
     );
   }
+
+  String _statusText(String? status) => switch (status) {
+        'DRAFT' || 'LABELED' => '草稿',
+        'SUBMITTED' => '待審核',
+        'APPROVED' => '已核准',
+        'RETURNED' => '已退回',
+        _ => '待標註',
+      };
 }
 
 class ResearchSampleDetailPage extends StatefulWidget {
   const ResearchSampleDetailPage(
-      {super.key, required this.remote, required this.sampleId});
+      {super.key,
+      required this.remote,
+      required this.sampleId,
+      this.reviewMode = false});
   final MlResearchRemote remote;
   final String sampleId;
+  final bool reviewMode;
 
   @override
   State<ResearchSampleDetailPage> createState() =>
@@ -128,12 +190,15 @@ class ResearchSampleDetailPage extends StatefulWidget {
 class _ResearchSampleDetailPageState extends State<ResearchSampleDetailPage> {
   Map<String, dynamic>? _detail;
   final TextEditingController _note = TextEditingController();
+  final TextEditingController _reviewNote = TextEditingController();
   Timer? _timer;
   int _frame = 0;
   bool _playing = false;
   bool _saving = false;
   String? _label;
   String? _error;
+  String? _status;
+  String? _annotatorId;
 
   static const labels = <String, String>{
     'meets_requirement': '符合指定動作要求',
@@ -158,6 +223,11 @@ class _ResearchSampleDetailPageState extends State<ResearchSampleDetailPage> {
         if (annotation is Map) {
           _label = annotation['label']?.toString();
           _note.text = annotation['note']?.toString() ?? '';
+          _status = annotation['status']?.toString();
+          _annotatorId = annotation['annotatorUserId']?.toString();
+        } else {
+          _status = null;
+          _annotatorId = null;
         }
       });
     } catch (_) {
@@ -209,10 +279,50 @@ class _ResearchSampleDetailPageState extends State<ResearchSampleDetailPage> {
     }
   }
 
+  Future<void> _submit() async {
+    if (_saving) return;
+    setState(() => _saving = true);
+    try {
+      await widget.remote.submitLabel(widget.sampleId);
+      await _load();
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(const SnackBar(content: Text('標註已提交審核。')));
+      }
+    } catch (_) {
+      if (mounted) setState(() => _error = '提交失敗，請先儲存完整標註。');
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  Future<void> _review(bool approve) async {
+    if (_saving) return;
+    if (!approve && _reviewNote.text.trim().isEmpty) {
+      setState(() => _error = '退回時請填寫原因。');
+      return;
+    }
+    setState(() => _saving = true);
+    try {
+      await widget.remote
+          .reviewLabel(widget.sampleId, approve, _reviewNote.text.trim());
+      await _load();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(approve ? '標註已核准。' : '標註已退回。')));
+      }
+    } catch (_) {
+      if (mounted) setState(() => _error = '審核失敗，請確認權限與樣本狀態。');
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
   @override
   void dispose() {
     _timer?.cancel();
     _note.dispose();
+    _reviewNote.dispose();
     super.dispose();
   }
 
@@ -270,6 +380,9 @@ class _ResearchSampleDetailPageState extends State<ResearchSampleDetailPage> {
                   '軀幹傾斜 ${(frame['angles'] as Map)['trunkLeanDeg']}°'),
           ],
           const SizedBox(height: 16),
+          if (_status != null) Text('標註狀態：$_status'),
+          if ((_detail!['annotation'] as Map?)?['reviewNote'] != null)
+            Text('審核備註：${(_detail!['annotation'] as Map)['reviewNote']}'),
           DropdownButtonFormField<String>(
             key: const Key('research-label'),
             initialValue: _label,
@@ -281,18 +394,57 @@ class _ResearchSampleDetailPageState extends State<ResearchSampleDetailPage> {
                       child: Text(entry.value),
                     ))
                 .toList(),
-            onChanged: (value) => setState(() => _label = value),
+            onChanged: widget.reviewMode ||
+                    _status == 'SUBMITTED' ||
+                    _status == 'APPROVED'
+                ? null
+                : (value) => setState(() => _label = value),
           ),
           const SizedBox(height: 12),
           TextField(
               controller: _note,
+              readOnly: widget.reviewMode ||
+                  _status == 'SUBMITTED' ||
+                  _status == 'APPROVED',
               maxLength: 1000,
               maxLines: 3,
               decoration: const InputDecoration(
                   labelText: '標註備註', border: OutlineInputBorder())),
-          FilledButton(
-              onPressed: _saving || _label == null ? null : _save,
-              child: const Text('儲存標註')),
+          if (!widget.reviewMode &&
+              _status != 'SUBMITTED' &&
+              _status != 'APPROVED')
+            FilledButton(
+                onPressed: _saving || _label == null ? null : _save,
+                child: const Text('儲存草稿')),
+          if (!widget.reviewMode &&
+              (_status == 'DRAFT' ||
+                  _status == 'RETURNED' ||
+                  _status == 'LABELED'))
+            OutlinedButton(
+              key: const Key('research-submit-label'),
+              onPressed: _saving ? null : _submit,
+              child: const Text('提交審核'),
+            ),
+          if (widget.reviewMode &&
+              _status == 'SUBMITTED' &&
+              _annotatorId != AppSession.userId) ...[
+            TextField(
+              controller: _reviewNote,
+              maxLength: 1000,
+              decoration: const InputDecoration(labelText: '審核備註／退回原因'),
+            ),
+            Row(children: [
+              OutlinedButton(
+                onPressed: _saving ? null : () => _review(false),
+                child: const Text('退回'),
+              ),
+              const SizedBox(width: 8),
+              FilledButton(
+                onPressed: _saving ? null : () => _review(true),
+                child: const Text('核准'),
+              ),
+            ]),
+          ],
         ],
       ])),
     );
