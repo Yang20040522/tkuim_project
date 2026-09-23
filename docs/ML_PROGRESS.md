@@ -15,6 +15,7 @@ Collection and training-pipeline POC implemented and validated with focused test
 - Confirmed the existing RTMPose pipeline, body motion template and pose evaluation files exist.
 - Created the isolated feature branch from the clean baseline.
 - Created continuation documents before implementation.
+- Committed this verified POC stage as `0a41d83e10e6e4ee81a3cab63671fdb2d96a95f2`.
 - Added opt-in local collection from the existing RTMPose stream and existing rule-based `scored` repetition boundary. The 17 body points are normalized with `BodyNormalization`; missing/low-confidence/non-finite/incomplete data is discarded.
 - Added local JSON review/export/delete UI, an anonymous researcher-provided subject code, camera side and segment metadata. Consent lasts only for the current training route.
 - Added a versioned Flutter/Python five-feature schema and an unavailable ML evaluation interface. Current repetition scoring remains authoritative.
@@ -47,9 +48,8 @@ Collection and training-pipeline POC implemented and validated with focused test
 
 ## Remaining
 
-1. Commit this verified POC stage (task files only); record commit in handoff.
-2. Human Android test: consent, actual standing-knee-raise capture, export/delete and no collection without consent.
-3. Collect and professionally label adequate real samples, then install `ml/requirements.txt`, run grouped training and verify ONNX parity on-device before optional classifier deployment.
+1. Human Android test: consent, actual standing-knee-raise capture, export/delete and no collection without consent.
+2. Collect and professionally label adequate real samples, then install `ml/requirements.txt`, run grouped training and verify ONNX parity on-device before optional classifier deployment.
 
 ## Privacy
 

@@ -3,7 +3,7 @@
 ## Git state
 
 - Branch: `feat/rehab-ml-poc`
-- Base commit: `a413cd806f82d372bcf56f412b4cb439784cd5dd`. Last implementation commit: pending this checkpoint commit; use `git log -1 --oneline` after it lands.
+- Base commit: `a413cd806f82d372bcf56f412b4cb439784cd5dd`. Last verified implementation commit: `0a41d83e10e6e4ee81a3cab63671fdb2d96a95f2`. Use `git log -1 --oneline` for the latest docs/checkpoint commit.
 - Check `git status --short` and `git log -1 --oneline` before continuing.
 
 ## Scope and status
@@ -40,10 +40,9 @@ Standing knee raise only. Opt-in research sample collection and Python training 
 
 ## Next files and commands
 
-1. Commit only task files, then update this handoff with the commit SHA.
-2. Android real-device acceptance: verify consent defaults off, valid knee-raise save, review/export/delete and no Pi/TV regression. Never claim runtime PASS without a device.
-3. Obtain physiotherapist-reviewed labels and versioned action definition. Install `ml/requirements.txt`, run `python ml/train.py --samples <private-dir> --labels <private-csv> --output <private-dir>`. Never train on synthetic test fixtures.
-4. If grouped metrics are adequate, verify ONNX input/output parity, app-side model load and release/R8 behavior before ever enabling ML predictions.
+1. Android real-device acceptance: verify consent defaults off, valid knee-raise save, review/export/delete and no Pi/TV regression. Never claim runtime PASS without a device.
+2. Obtain physiotherapist-reviewed labels and versioned action definition. Install `ml/requirements.txt`, run `python ml/train.py --samples <private-dir> --labels <private-csv> --output <private-dir>`. Never train on synthetic test fixtures.
+3. If grouped metrics are adequate, verify ONNX input/output parity, app-side model load and release/R8 behavior before ever enabling ML predictions.
 
 ## Do not redo
 
