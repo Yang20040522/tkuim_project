@@ -18,10 +18,9 @@
 
 ## Remaining (in order)
 
-1. B: final scoped analyze then checkpoint commits. A saved in frontend b44670b / backend fd82b4f.
-3. C: focused and full Flutter tests, classify failures against master evidence, analyze, debug APK.
-4. D: real local MySQL synthetic integration via existing ignored credential/helper; no schema rebuild or real participants. Record version compatibility and limits.
-5. E: only if tests/working-tree gates pass, local ff-only master merge; never push/deploy.
+1. Await owner direction for pre-existing generated Gradle report; do not overwrite unknown existing work. Local master merge not yet executed.
+2. If explicitly authorized, backup only the report externally and restore only its HEAD contents; recheck clean trees, current ancestry and regression report before ff-only local merge.
+3. Record final commits/merge state in handoffs. Render/device acceptance remains manual; no push/deploy/model training.
 
 ## Tests executed this round
 
@@ -38,6 +37,17 @@
 - Flutter research tests: 26 PASS after fixing a new const-expression compile issue (central constant list). Python unittest: 8 PASS. Backend focused research suites: 36 PASS after updating fixture version to still exercise annotator ownership instead of an earlier version rejection.
 - Scoped B analyze reported 2 new missing @override infos; corrected, rerun pending. Full suite/analyze/APK and real MySQL NOT RUN yet.
 - Scoped B rerun: No issues found. Stage B ready for checkpoint.
+
+## Stages C/D — local validation completed
+
+- See `docs/G35_VALIDATION.md` for exact commands, evidence, seven failure classifications and manual requirements.
+- Full Flutter 449 PASS / 7 FAIL. Same seven reproduced in isolated master snapshot (26 PASS/7 FAIL across six files). No new G3.5 regression identified; full suite NOT PASS.
+- Full analyze 47 diagnostics (44 info, 3 warnings, no errors); master 48, no added diagnostics. Final scoped research analyze clean; final research tests 26 PASS, Python 8 PASS.
+- Debug APK built, including final contract-driven angle names. Release NOT RUN (no native/R8/model/dependency change).
+- Backend full tests against actual MySQL 8.4.11: 258 PASS / 0 FAIL / 0 SKIP; MySQL 21 PASS. HTTP consent assertions added and MySQL suite rerun: 21 PASS. Package PASS.
+- Metadata existing29 tables/241 columns/33 FK/16 CHECK/75 indexes. No migration. Synthetic account/sample/policy final counts 0; production collection flag remained false.
+- Both diff-checks PASS. Existing generated report remains only frontend non-task dirty file; merge gate pending owner answer.
+- Backend final checkpoint `07f5e3b082c953fae5703880d4abf8b7fbac4f3f`, clean tree. Frontend final code/docs checkpoint follows; consult git log, do not repeat completed A–D work.
 
 ## Safety / Do not redo
 

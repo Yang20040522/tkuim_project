@@ -7,6 +7,7 @@ class MlActionDefinition {
     required this.displayName,
     required this.featureNames,
     required this.labels,
+    this.angleLabels = const {},
     this.schemaVersion = 1,
     this.labelVersion = 'research-v1',
     this.acceptLegacyVersion = false,
@@ -19,6 +20,7 @@ class MlActionDefinition {
   final String labelVersion;
   final List<String> featureNames;
   final Map<String, String> labels;
+  final Map<String, String> angleLabels;
   final bool acceptLegacyVersion;
 
   bool accepts(Map<String, dynamic> sample) {
@@ -67,6 +69,7 @@ class MlActionRegistry {
       'trunk_compensation': '軀幹代償',
       'unassessable': '無法評估',
     },
+    angleLabels: {'hipDeg': '髖角', 'kneeDeg': '膝角', 'trunkLeanDeg': '軀幹傾斜'},
   );
 
   // Only this action is exposed in production. Synthetic definitions live in tests.

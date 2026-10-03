@@ -80,6 +80,10 @@
 - Do not fabricate samples, labels, ethics approval, model accuracy or admin authority.
 # G3.5 checkpoint (2026-10-03)
 
+Compatible backend final feature SHA: `07f5e3b082c953fae5703880d4abf8b7fbac4f3f` on `codex/g35-research-integration` (clean). Frontend final own SHA must be read with `git log -1`. No master merge yet; retained generated-report change prevents the requested clean-tree gate. Final APK location/hash in G35_VALIDATION. Continuation should handle only the merge gate/manual deployment/device checks, not rerun A/B implementation.
+
+Local C/D acceptance completed; see `docs/G35_VALIDATION.md`. Full Flutter449PASS/7FAIL; all seven reproduced against isolated master baseline (no tests weakened). Final research26PASS/analyze0issues/Python8PASS/debugAPKPASS. Full analyze47existingdiagnostics (master48). Actual MySQL backend258PASS/0skip, then MySQL21PASS after HTTP contract assertions; package/metadata/diff-checkPASS. No migration/model training/real collection. E local merge still pending because pre-existing generated Gradle report is dirty; owner handling authorization requested. Do not redo implementation/full builds; inspect final commits and remaining merge gate/manual checks only.
+
 Stage B contract: see `docs/G35_ACTION_CONTRACT.md`. Legacy schema1 remains readable; new standing samples have definition version. Shared storage/queue/17-point viewer are reused. Backend label version is now sample-bound; export actionId defaults standing and never mixes actions; Python training selects --action with grouped subjects. Tests: Flutter research 26 PASS, Python 8 PASS, scoped analyze clean; backend focused 36 PASS. Next: full regression classification/debug APK and real MySQL (no migrations), then conditional local merge.
 
 Stage A consent diagnostics implemented. See `docs/G35_PROGRESS.md` for current baselines, tests and next actions. Backend compatible branch: `codex/g35-research-integration` (additive consent unavailableReason). No real collection enabled; actual Render availability reason needs authenticated manual verification. Historical sections below remain unchanged.

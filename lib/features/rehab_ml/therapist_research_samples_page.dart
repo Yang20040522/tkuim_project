@@ -386,9 +386,13 @@ class _ResearchSampleDetailPageState extends State<ResearchSampleDetailPage> {
                   child: const Text('重新播放')),
             ]),
             if (frame?['angles'] is Map)
-              Text('髖角 ${(frame!['angles'] as Map)['hipDeg']}° · '
-                  '膝角 ${(frame['angles'] as Map)['kneeDeg']}° · '
-                  '軀幹傾斜 ${(frame['angles'] as Map)['trunkLeanDeg']}°'),
+              Text((_definition?.angleLabels.entries ??
+                      const <MapEntry<String, String>>[])
+                  .where((entry) =>
+                      (frame!['angles'] as Map).containsKey(entry.key))
+                  .map((entry) =>
+                      '${entry.value} ${(frame!['angles'] as Map)[entry.key]}°')
+                  .join(' · ')),
           ],
           const SizedBox(height: 16),
           if (_definition == null) const Text('此樣本的動作或資料版本尚未支援，無法標註或提交。'),
