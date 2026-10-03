@@ -97,6 +97,7 @@ class ActionDefinition:
     required_right: tuple[int, ...]
     schema_version: int = 1
     accept_legacy_version: bool = False
+    preprocessing: str = 'rtmpose17-normalized-2d-v1;features-identity;float32'
 
 
 STANDING_DEFINITION = ActionDefinition(
@@ -106,6 +107,13 @@ STANDING_DEFINITION = ActionDefinition(
     accept_legacy_version=True)
 # Synthetic contracts are injected by tests, never exposed to patients/training CLI.
 ACTION_REGISTRY = {ACTION_ID: STANDING_DEFINITION}
+from hand_features import HAND_FEATURES, PREPROCESSING, hand_features
+for hand_id, names in HAND_FEATURES.items():
+    limitation = ('limited_rotation_proxy' if hand_id == 'turnPalm' else
+                  'limited_pinch_motion' if hand_id == 'sidePinch' else 'limited_wrist_motion')
+    ACTION_REGISTRY[hand_id] = ActionDefinition(hand_id, f'{hand_id}-hand-v1', names,
+        ('meets_requirement', limitation, 'unstable_motion'), hand_features, (), (),
+        schema_version=2, preprocessing=PREPROCESSING)
 
 
 def action_definition(sample: dict, registry=None) -> ActionDefinition:
@@ -124,6 +132,8 @@ def action_definition(sample: dict, registry=None) -> ActionDefinition:
 def features_from_sample(sample: dict, registry=None) -> list[float]:
     """Shared skeleton validation plus explicit per-action feature extractor."""
     definition = action_definition(sample, registry)
+    if definition.schema_version == 2:
+        return definition.extractor(sample)
     if sample.get("featureNames") != list(definition.feature_names):
         raise ValueError("feature order mismatch")
     if sample.get("movementSide") not in ("left", "right") or sample.get("cameraView") not in ("front", "rear"):

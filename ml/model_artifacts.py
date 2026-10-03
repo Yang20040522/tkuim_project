@@ -57,7 +57,7 @@ def export_verified(model, values, definition, metrics, output):
     manifest.update({"manifestVersion": 1, "inputName": session.get_inputs()[0].name,
         "labelOutputName": session.get_outputs()[0].name, "probabilityOutputName": session.get_outputs()[1].name,
         "inputDimension": len(definition.feature_names), "inputShape": [None, len(definition.feature_names)],
-        "inputDtype": "float32", "preprocessing": PREPROCESSING,
+        "inputDtype": "float32", "preprocessing": definition.preprocessing,
         "modelSha256": model_hash, "validationStatus": "parity_verified",
         "deploymentApproved": False, "onnxParity": parity,
         "confidenceThreshold": None, "confidenceThresholdValidated": False,
