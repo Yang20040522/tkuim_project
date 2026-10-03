@@ -3,9 +3,10 @@ import 'dart:ui';
 
 import '../analysis/body/body_normalization.dart';
 import '../analysis/body/body_rep_trajectory_collector.dart';
+import 'ml_action_definition.dart';
 
 /// Research-only, pseudonymous RTMPose sample. Never contains camera pixels.
-class StandingKneeRaiseSample {
+class StandingKneeRaiseSample implements MlResearchSample {
   const StandingKneeRaiseSample({
     required this.id,
     required this.subjectId,
@@ -18,14 +19,9 @@ class StandingKneeRaiseSample {
 
   static const actionId = 'standing_knee_raise';
   static const schemaVersion = 1;
-  static const featureNames = <String>[
-    'peak_leg_height',
-    'minimum_hip_angle_deg',
-    'minimum_knee_angle_deg',
-    'peak_abs_trunk_lean_deg',
-    'duration_seconds',
-  ];
+  static const featureNames = MlActionRegistry.standingFeatureNames;
 
+  @override
   final String id;
   final String subjectId;
   final String movementSide;
@@ -34,9 +30,11 @@ class StandingKneeRaiseSample {
   final List<Map<String, Object>> frames;
   final List<double> features;
 
+  @override
   Map<String, Object> toJson() => {
         'schemaVersion': schemaVersion,
         'actionId': actionId,
+        'actionDefinitionVersion': MlActionRegistry.standingKneeRaise.version,
         'sampleId': id,
         'subjectId': subjectId,
         'movementSide': movementSide,

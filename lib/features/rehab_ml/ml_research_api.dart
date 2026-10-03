@@ -94,7 +94,9 @@ abstract class MlResearchRemote {
   Future<void> upload(Map<String, dynamic> sample);
   Future<List<Map<String, dynamic>>> listSamples({int page = 0});
   Future<Map<String, dynamic>> sampleDetail(String id);
-  Future<void> labelSample(String id, String label, String note);
+  Future<void> labelSample(String id, String label, String note,
+      {String labelVersion = 'research-v1',
+      String actionDefinitionVersion = 'standing-knee-raise-v1'});
   Future<Map<String, dynamic>> authority();
   Future<Map<String, dynamic>> requestReviewAccess();
   Future<List<Map<String, dynamic>>> reviewQueue();
@@ -219,15 +221,17 @@ class MlResearchApi implements MlResearchRemote {
           headers: _headers())) as Map<String, dynamic>;
 
   @override
-  Future<void> labelSample(String id, String label, String note) async {
+  Future<void> labelSample(String id, String label, String note,
+      {String labelVersion = 'research-v1',
+      String actionDefinitionVersion = 'standing-knee-raise-v1'}) async {
     await _decode(_client.put(
       _uri('/samples/${Uri.encodeComponent(id)}/label'),
       headers: _headers(),
       body: jsonEncode({
         'label': label,
         'note': note,
-        'labelVersion': 'research-v1',
-        'actionDefinitionVersion': 'standing-knee-raise-v1',
+        'labelVersion': labelVersion,
+        'actionDefinitionVersion': actionDefinitionVersion,
       }),
     ));
   }

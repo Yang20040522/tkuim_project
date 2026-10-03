@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 
 import '../account/app_session.dart';
 import 'ml_research_api.dart';
+import 'ml_action_definition.dart';
 
 class TherapistResearchSamplesPage extends StatefulWidget {
   const TherapistResearchSamplesPage({super.key, this.remote});
@@ -137,7 +138,11 @@ class _TherapistResearchSamplesPageState
                 Card(
                   child: ListTile(
                     key: ValueKey('research-sample-${item['id']}'),
-                    title: const Text('站姿抬腳'),
+                    title: Text(MlActionRegistry.production
+                            .byId(item['actionId']?.toString() ??
+                                'standing_knee_raise')
+                            ?.displayName ??
+                        '尚未支援的研究動作'),
                     subtitle: Text(
                       '樣本 ${item['id']}\n匿名受試者 ${item['subjectId']} · '
                       '${item['movementSide'] == 'left' ? '左側' : '右側'} · '
@@ -202,12 +207,14 @@ class _ResearchSampleDetailPageState extends State<ResearchSampleDetailPage> {
   String? _status;
   String? _annotatorId;
 
-  static const labels = <String, String>{
-    'meets_requirement': '符合指定動作要求',
-    'insufficient_range': '活動幅度不足',
-    'trunk_compensation': '軀幹代償',
-    'unassessable': '無法評估',
-  };
+  MlActionDefinition? get _definition {
+    final payload = _detail?['payload'];
+    return payload is Map<String, dynamic>
+        ? MlActionRegistry.production.forSample(payload)
+        : null;
+  }
+
+  Map<String, String> get labels => _definition?.labels ?? const {};
 
   @override
   void initState() {
@@ -261,14 +268,16 @@ class _ResearchSampleDetailPageState extends State<ResearchSampleDetailPage> {
   }
 
   Future<void> _save() async {
-    if (_saving || _label == null) return;
+    if (_saving || _label == null || _definition == null) return;
     setState(() {
       _saving = true;
       _error = null;
     });
     try {
-      await widget.remote
-          .labelSample(widget.sampleId, _label!, _note.text.trim());
+      await widget.remote.labelSample(
+          widget.sampleId, _label!, _note.text.trim(),
+          labelVersion: _definition!.labelVersion,
+          actionDefinitionVersion: _definition!.version);
       if (mounted) {
         ScaffoldMessenger.of(context)
             .showSnackBar(const SnackBar(content: Text('研究標註已儲存。')));
@@ -282,7 +291,7 @@ class _ResearchSampleDetailPageState extends State<ResearchSampleDetailPage> {
   }
 
   Future<void> _submit() async {
-    if (_saving) return;
+    if (_saving || _definition == null) return;
     setState(() => _saving = true);
     try {
       await widget.remote.submitLabel(widget.sampleId);
@@ -382,12 +391,13 @@ class _ResearchSampleDetailPageState extends State<ResearchSampleDetailPage> {
                   '軀幹傾斜 ${(frame['angles'] as Map)['trunkLeanDeg']}°'),
           ],
           const SizedBox(height: 16),
+          if (_definition == null) const Text('此樣本的動作或資料版本尚未支援，無法標註或提交。'),
           if (_status != null) Text('標註狀態：$_status'),
           if ((_detail!['annotation'] as Map?)?['reviewNote'] != null)
             Text('審核備註：${(_detail!['annotation'] as Map)['reviewNote']}'),
           DropdownButtonFormField<String>(
             key: const Key('research-label'),
-            initialValue: _label,
+            initialValue: labels.containsKey(_label) ? _label : null,
             decoration: const InputDecoration(
                 labelText: '動作品質標註', border: OutlineInputBorder()),
             items: labels.entries
@@ -416,7 +426,9 @@ class _ResearchSampleDetailPageState extends State<ResearchSampleDetailPage> {
               _status != 'SUBMITTED' &&
               _status != 'APPROVED')
             FilledButton(
-                onPressed: _saving || _label == null ? null : _save,
+                onPressed: _saving || _label == null || _definition == null
+                    ? null
+                    : _save,
                 child: const Text('儲存草稿')),
           if (!widget.reviewMode &&
               (_status == 'DRAFT' ||
@@ -424,7 +436,7 @@ class _ResearchSampleDetailPageState extends State<ResearchSampleDetailPage> {
                   _status == 'LABELED'))
             OutlinedButton(
               key: const Key('research-submit-label'),
-              onPressed: _saving ? null : _submit,
+              onPressed: _saving || _definition == null ? null : _submit,
               child: const Text('提交審核'),
             ),
           if (widget.reviewMode &&

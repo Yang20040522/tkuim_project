@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_body/features/account/app_session.dart';
 import 'package:flutter_body/features/rehab_ml/ml_research_api.dart';
+import 'package:flutter_body/features/rehab_ml/ml_action_definition.dart';
 import 'package:flutter_body/features/rehab_ml/ml_research_sync.dart';
 import 'package:flutter_body/features/rehab_ml/ml_sample_repository.dart';
 import 'package:flutter_body/features/rehab_ml/ml_sample_sheet.dart';
@@ -67,6 +68,10 @@ class _Remote implements MlResearchRemote {
   Future<Map<String, dynamic>> sampleDetail(String id) async => {
         'sample': {'subjectId': 'server-subject'},
         'payload': {
+          'actionId': 'standing_knee_raise',
+          'schemaVersion': 1,
+          'featureNames': MlActionRegistry.standingKneeRaise.featureNames,
+          'features': [-1, 180, 180, 0, 0.3],
           'frames': [
             for (var t = 0; t < 4; t++)
               {
@@ -88,7 +93,9 @@ class _Remote implements MlResearchRemote {
               },
       };
   @override
-  Future<void> labelSample(String id, String value, String note) async {
+  Future<void> labelSample(String id, String value, String note,
+      {String labelVersion = 'research-v1',
+      String actionDefinitionVersion = 'standing-knee-raise-v1'}) async {
     label = value;
     annotationStatus = 'DRAFT';
   }

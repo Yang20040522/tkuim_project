@@ -86,3 +86,6 @@ Stage 2 minimal end-to-end Flutter slice implemented; not deployed or Android-ac
 ## Safety
 
 Do not submit real samples, patient identifiers, credentials or keys to Git. No ethical approval or participant consent has been claimed. No model has been trained.
+# G3.5 checkpoint
+
+Consent diagnostics and extensible action contracts implemented; current evidence and remaining work are in `docs/G35_PROGRESS.md` and `docs/G35_ACTION_CONTRACT.md`. Flutter research tests 26 PASS, Python 8 PASS; scoped research analyze clean. Backend compatible branch `codex/g35-research-integration`: 36 focused PASS. No schema migration/model training/production collection. Historical entries below are retained, not current results.

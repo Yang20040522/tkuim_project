@@ -9,21 +9,25 @@ import sys
 from collections import Counter, defaultdict
 from pathlib import Path
 
-from feature_schema import ACTION_ID, FEATURE_NAMES, SCHEMA_VERSION, features_from_sample
+from feature_schema import ACTION_ID, ACTION_REGISTRY, action_definition, features_from_sample
 
 LABELS = ("meets_requirement", "insufficient_range", "trunk_compensation")
 MIN_SAMPLES_PER_CLASS = 10
 MIN_SUBJECTS_PER_CLASS = 5
 
 
-def load_dataset(samples_dir: Path, labels_csv: Path):
+def load_dataset(samples_dir: Path, labels_csv: Path, action_id=ACTION_ID, registry=None):
+    registry = ACTION_REGISTRY if registry is None else registry
+    definition = registry.get(action_id)
+    if definition is None:
+        raise ValueError("unsupported research action")
     labels = {}
     with labels_csv.open(newline="", encoding="utf-8-sig") as source:
         for row in csv.DictReader(source):
             sample_id = row["sampleId"].strip()
             if sample_id in labels:
                 raise ValueError("duplicate label sample ID")
-            if row["label"] not in LABELS or not all(
+            if row["label"] not in definition.labels or not all(
                 row.get(field, "").strip() for field in
                 ("annotatorId", "labelVersion", "actionDefinitionVersion")
             ):
@@ -44,7 +48,10 @@ def load_dataset(samples_dir: Path, labels_csv: Path):
         if sample_id not in labels:
             continue
         row = labels.pop(sample_id)
-        features.append(features_from_sample(sample))
+        sample_definition = action_definition(sample, registry)
+        if sample_definition != definition or row["actionDefinitionVersion"] != definition.version:
+            raise ValueError("mixed action/definition versions; train separately")
+        features.append(features_from_sample(sample, registry))
         targets.append(row["label"])
         groups.append(sample["subjectId"])
         ids.append(sample_id)
@@ -55,13 +62,13 @@ def load_dataset(samples_dir: Path, labels_csv: Path):
     return features, targets, groups, label_versions.pop(), definition_versions.pop()
 
 
-def check_sufficiency(targets, groups):
+def check_sufficiency(targets, groups, labels=LABELS):
     counts = Counter(targets)
     subjects = defaultdict(set)
     for label, group in zip(targets, groups):
         subjects[label].add(group)
     if any(counts[label] < MIN_SAMPLES_PER_CLASS or
-           len(subjects[label]) < MIN_SUBJECTS_PER_CLASS for label in LABELS):
+           len(subjects[label]) < MIN_SUBJECTS_PER_CLASS for label in labels):
         raise ValueError(
             "等待標註資料：每類至少需要 10 筆、5 位不同受試者；不輸出模型或準確率"
         )
@@ -72,9 +79,12 @@ def main():
     parser.add_argument("--samples", required=True, type=Path)
     parser.add_argument("--labels", required=True, type=Path)
     parser.add_argument("--output", required=True, type=Path)
+    parser.add_argument("--action", default=ACTION_ID, choices=tuple(ACTION_REGISTRY))
     args = parser.parse_args()
-    x, y, groups, label_version, definition_version = load_dataset(args.samples, args.labels)
-    check_sufficiency(y, groups)
+    definition = ACTION_REGISTRY[args.action]
+    labels = definition.labels
+    x, y, groups, label_version, definition_version = load_dataset(args.samples, args.labels, args.action)
+    check_sufficiency(y, groups, labels)
 
     # Imported only after data validation so an empty dataset needs no ML stack.
     import joblib
@@ -93,7 +103,7 @@ def main():
         candidate = next(GroupShuffleSplit(n_splits=1, test_size=0.25,
                                            random_state=seed).split(x, y, groups))
         train_indices, test_indices = candidate
-        if set(y[train_indices]) == set(LABELS) and set(y[test_indices]) == set(LABELS):
+        if set(y[train_indices]) == set(labels) and set(y[test_indices]) == set(labels):
             split = candidate
             break
     if split is None:
@@ -106,21 +116,21 @@ def main():
     model.fit(x[train_indices], y[train_indices])
     predictions = model.predict(x[test_indices])
     report = {
-        "modelVersion": "standing_knee_raise_rf_v1",
+        "modelVersion": f"{definition.action_id}_rf_{definition.version}",
         "labelVersion": label_version,
         "actionDefinitionVersion": definition_version,
-        "actionId": ACTION_ID,
-        "schemaVersion": SCHEMA_VERSION,
-        "featureNames": FEATURE_NAMES,
+        "actionId": definition.action_id,
+        "schemaVersion": definition.schema_version,
+        "featureNames": list(definition.feature_names),
         "classes": list(model.classes_),
         "sampleCounts": dict(Counter(y.tolist())),
         "trainSubjects": len(set(groups[train_indices])),
         "testSubjects": len(set(groups[test_indices])),
-        "confusionMatrixLabels": list(LABELS),
+        "confusionMatrixLabels": list(labels),
         "confusionMatrix": confusion_matrix(y[test_indices], predictions,
-                                             labels=LABELS).tolist(),
+                                             labels=labels).tolist(),
         "classificationReport": classification_report(
-            y[test_indices], predictions, labels=LABELS,
+            y[test_indices], predictions, labels=labels,
             output_dict=True, zero_division=0),
         "medicalDisclaimer": "Research aid only; not a medical diagnosis or training gate.",
     }
@@ -130,7 +140,7 @@ def main():
         json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
     joblib.dump(model, args.output / "model.joblib")
     onnx = convert_sklearn(model,
-        initial_types=[("input", FloatTensorType([None, len(FEATURE_NAMES)]))],
+        initial_types=[("input", FloatTensorType([None, len(definition.feature_names)]))],
         options={id(model): {"zipmap": False}}, target_opset=15)
     (args.output / "model.onnx").write_bytes(onnx.SerializeToString())
     print("已完成真實分組測試；指標與混淆矩陣位於輸出目錄。部署前仍須審核與裝置端驗證。")

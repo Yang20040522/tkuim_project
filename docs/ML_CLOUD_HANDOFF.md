@@ -80,4 +80,6 @@
 - Do not fabricate samples, labels, ethics approval, model accuracy or admin authority.
 # G3.5 checkpoint (2026-10-03)
 
+Stage B contract: see `docs/G35_ACTION_CONTRACT.md`. Legacy schema1 remains readable; new standing samples have definition version. Shared storage/queue/17-point viewer are reused. Backend label version is now sample-bound; export actionId defaults standing and never mixes actions; Python training selects --action with grouped subjects. Tests: Flutter research 26 PASS, Python 8 PASS, scoped analyze clean; backend focused 36 PASS. Next: full regression classification/debug APK and real MySQL (no migrations), then conditional local merge.
+
 Stage A consent diagnostics implemented. See `docs/G35_PROGRESS.md` for current baselines, tests and next actions. Backend compatible branch: `codex/g35-research-integration` (additive consent unavailableReason). No real collection enabled; actual Render availability reason needs authenticated manual verification. Historical sections below remain unchanged.

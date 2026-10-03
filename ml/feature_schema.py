@@ -7,6 +7,8 @@ No raw image data or personally identifying fields are part of this schema.
 from __future__ import annotations
 
 import math
+from dataclasses import dataclass
+from typing import Callable
 
 ACTION_ID = "standing_knee_raise"
 SCHEMA_VERSION = 1
@@ -30,7 +32,7 @@ def _angle(a: list[float], center: list[float], b: list[float]) -> float:
     return math.degrees(math.acos(cosine))
 
 
-def features_from_sample(sample: dict) -> list[float]:
+def _standing_features(sample: dict) -> list[float]:
     if sample.get("schemaVersion") != SCHEMA_VERSION or sample.get("actionId") != ACTION_ID:
         raise ValueError("unsupported sample schema/action")
     if sample.get("featureNames") != FEATURE_NAMES:
@@ -80,5 +82,81 @@ def features_from_sample(sample: dict) -> list[float]:
         raise ValueError("missing Flutter features")
     if any(not math.isfinite(float(v)) or abs(float(v) - expected) > 1e-5
            for v, expected in zip(saved, result)):
+        raise ValueError("Flutter/Python feature mismatch")
+    return result
+
+
+@dataclass(frozen=True)
+class ActionDefinition:
+    action_id: str
+    version: str
+    feature_names: tuple[str, ...]
+    labels: tuple[str, ...]
+    extractor: Callable[[dict], list[float]]
+    required_left: tuple[int, ...]
+    required_right: tuple[int, ...]
+    schema_version: int = 1
+    accept_legacy_version: bool = False
+
+
+STANDING_DEFINITION = ActionDefinition(
+    ACTION_ID, "standing-knee-raise-v1", tuple(FEATURE_NAMES),
+    ("meets_requirement", "insufficient_range", "trunk_compensation"),
+    _standing_features, (5, 6, 11, 12, 13, 15), (5, 6, 11, 12, 14, 16),
+    accept_legacy_version=True)
+# Synthetic contracts are injected by tests, never exposed to patients/training CLI.
+ACTION_REGISTRY = {ACTION_ID: STANDING_DEFINITION}
+
+
+def action_definition(sample: dict, registry=None) -> ActionDefinition:
+    registry = ACTION_REGISTRY if registry is None else registry
+    definition = registry.get(sample.get("actionId"))
+    if definition is None or sample.get("schemaVersion") != definition.schema_version:
+        raise ValueError("unsupported sample schema/action")
+    version = sample.get("actionDefinitionVersion")
+    if version != definition.version and not (
+        definition.accept_legacy_version and "actionDefinitionVersion" not in sample
+    ):
+        raise ValueError("action definition version mismatch")
+    return definition
+
+
+def features_from_sample(sample: dict, registry=None) -> list[float]:
+    """Shared skeleton validation plus explicit per-action feature extractor."""
+    definition = action_definition(sample, registry)
+    if sample.get("featureNames") != list(definition.feature_names):
+        raise ValueError("feature order mismatch")
+    if sample.get("movementSide") not in ("left", "right") or sample.get("cameraView") not in ("front", "rear"):
+        raise ValueError("invalid anatomical side/camera")
+    if not sample.get("sampleId") or not sample.get("subjectId"):
+        raise ValueError("missing pseudonymous grouping key")
+    frames = sample.get("frames")
+    if not isinstance(frames, list) or not 4 <= len(frames) <= 80:
+        raise ValueError("incomplete motion")
+    required = definition.required_left if sample["movementSide"] == "left" else definition.required_right
+    previous = -1
+    for frame in frames:
+        points, scores, timestamp = frame.get("landmarks"), frame.get("confidence"), frame.get("timestampMs")
+        if not isinstance(points, list) or len(points) != 17 or not isinstance(scores, list) or len(scores) != 17:
+            raise ValueError("invalid frame shape")
+        if type(timestamp) is not int or timestamp <= previous:
+            raise ValueError("non-monotonic timestamps")
+        previous = timestamp
+        if any(not isinstance(p, list) or len(p) != 2 or any(
+            type(v) not in (int, float) or not math.isfinite(v) or abs(v) > 30 for v in p
+        ) for p in points):
+            raise ValueError("invalid joint")
+        if any(type(v) not in (int, float) or not math.isfinite(v) or not 0 <= v <= 1 for v in scores):
+            raise ValueError("invalid confidence")
+        if any(scores[i] < REQUIRED_CONFIDENCE for i in required):
+            raise ValueError("low-confidence key joint")
+    if not 300 <= frames[-1]["timestampMs"] - frames[0]["timestampMs"] <= 8000:
+        raise ValueError("invalid movement duration")
+    result = definition.extractor(sample)
+    saved = sample.get("features")
+    if len(result) != len(definition.feature_names) or not isinstance(saved, list) or len(saved) != len(result):
+        raise ValueError("missing action features")
+    if any(type(v) not in (int, float) or not math.isfinite(v) or not math.isfinite(expected)
+           or abs(v - expected) > 1e-5 for v, expected in zip(saved, result)):
         raise ValueError("Flutter/Python feature mismatch")
     return result
