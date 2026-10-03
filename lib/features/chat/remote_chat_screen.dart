@@ -56,6 +56,16 @@ class _RemoteChatScreenState extends State<RemoteChatScreen>
   bool _markingRead = false;
   bool _appIsActive = true;
   String? _error;
+  ModalRoute<dynamic>? _route;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _route = ModalRoute.of(context);
+    if (_messages.any((m) => m.senderId != _myUserId && !m.isRead)) {
+      unawaited(_markAsRead());
+    }
+  }
 
   String? get _myUserId {
     final value = AppSession.userId?.trim();
@@ -108,7 +118,12 @@ class _RemoteChatScreenState extends State<RemoteChatScreen>
 
   Future<void> _markAsRead() async {
     final userId = _myUserId;
-    if (userId == null || _markingRead) return;
+    if (userId == null ||
+        _markingRead ||
+        !_appIsActive ||
+        !(_route?.isCurrent ?? true)) {
+      return;
+    }
     _markingRead = true;
     try {
       await widget.backend.markAsRead(
@@ -187,8 +202,9 @@ class _RemoteChatScreenState extends State<RemoteChatScreen>
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
-      if (!_appIsActive && (ModalRoute.of(context)?.isCurrent ?? true)) {
-        _appIsActive = true;
+      final wasActive = _appIsActive;
+      _appIsActive = true;
+      if (!wasActive && (_route?.isCurrent ?? true)) {
         _refreshMessages();
       }
       return;

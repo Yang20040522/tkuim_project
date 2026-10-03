@@ -64,11 +64,22 @@ class _ChatHomeScreenState extends State<ChatHomeScreen>
 
   List<ChatContact> get _therapists => _contacts
       .where((contact) => contact.type == ConversationType.therapist)
-      .toList(growable: false);
+      .toList(growable: false)
+    ..sort(_compareContacts);
 
   List<ChatContact> get _peers => _contacts
       .where((contact) => contact.type == ConversationType.peer)
-      .toList(growable: false);
+      .toList(growable: false)
+    ..sort(_compareContacts);
+
+  int _compareContacts(ChatContact a, ChatContact b) {
+    final aTime = _conversationFor(a)?.updatedAt;
+    final bTime = _conversationFor(b)?.updatedAt;
+    if (aTime == null && bTime == null) return a.name.compareTo(b.name);
+    if (aTime == null) return 1;
+    if (bTime == null) return -1;
+    return bTime.compareTo(aTime);
+  }
 
   @override
   void initState() {

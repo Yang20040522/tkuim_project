@@ -22,6 +22,8 @@ import '../call/zego_call_invitation_service.dart';
 import 'user_role.dart';
 
 class AppSession {
+  /// Allows private realtime connections to close immediately on account changes.
+  static final ValueNotifier<int> changes = ValueNotifier<int>(0);
   static UserRole? role;
   static String? userId;
   static String? name;
@@ -68,6 +70,7 @@ class AppSession {
     bindingCode = prefs.getString(_keyBindingCode);
     friendCode = prefs.getString(_keyFriendCode);
     customExerciseToken = prefs.getString(_keyCustomExerciseToken);
+    changes.value++;
 
     // 不 await。
     // 讓 SplashScreen 可以立即繼續跑。
@@ -97,6 +100,7 @@ class AppSession {
     AppSession.bindingCode = bindingCode;
     AppSession.friendCode = friendCode;
     AppSession.customExerciseToken = customExerciseToken;
+    changes.value++;
 
     final prefs = await SharedPreferences.getInstance();
 
@@ -165,6 +169,7 @@ class AppSession {
     bindingCode = null;
     friendCode = null;
     customExerciseToken = null;
+    changes.value++;
 
     final prefs = await SharedPreferences.getInstance();
 

@@ -2,11 +2,13 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:http/http.dart' as http;
+import 'package:flutter/widgets.dart';
 
 import '../../core/api_config.dart';
 import '../account/app_session.dart';
 import 'chat_backend.dart';
 import 'chat_models.dart';
+import 'chat_realtime_connection.dart';
 
 typedef ChatSessionValueProvider = String? Function();
 
@@ -22,7 +24,7 @@ class ChatApiException implements Exception {
 
 /// REST implementation refreshed on subscription and explicit user/lifecycle
 /// events. It intentionally has no continuous polling timer.
-class RestChatBackend implements ChatBackend {
+class RestChatBackend with WidgetsBindingObserver implements ChatBackend {
   RestChatBackend({
     String baseUrl = ApiConfig.baseUrl,
     http.Client? httpClient,
@@ -32,12 +34,21 @@ class RestChatBackend implements ChatBackend {
     this.conversationPollInterval = const Duration(seconds: 3),
     this.messagePollInterval = const Duration(seconds: 2),
     this.unreadPollInterval = const Duration(seconds: 3),
+    bool? realtimeEnabled,
+    ChatRealtimeTransportFactory? realtimeTransportFactory,
   })  : _baseUrl = baseUrl.replaceFirst(RegExp(r'/+$'), ''),
         _client = httpClient ?? http.Client(),
         _ownsClient = httpClient == null,
         _userIdProvider = userIdProvider ?? (() => AppSession.userId),
         _identityTokenProvider =
-            identityTokenProvider ?? (() => AppSession.customExerciseToken) {
+            identityTokenProvider ?? (() => AppSession.customExerciseToken),
+        _realtimeEnabled = realtimeEnabled ??
+            (httpClient == null || realtimeTransportFactory != null),
+        _realtimeTransportFactory =
+            realtimeTransportFactory ?? StompChatTransport.new {
+    _sessionUserId = _userIdProvider()?.trim();
+    _sessionToken = _identityTokenProvider()?.trim();
+    AppSession.changes.addListener(_sessionChanged);
     if (conversationPollInterval < const Duration(seconds: 1) ||
         messagePollInterval < const Duration(seconds: 1) ||
         unreadPollInterval < const Duration(seconds: 1)) {
@@ -54,6 +65,13 @@ class RestChatBackend implements ChatBackend {
   final Duration conversationPollInterval;
   final Duration messagePollInterval;
   final Duration unreadPollInterval;
+  final bool _realtimeEnabled;
+  final ChatRealtimeTransportFactory _realtimeTransportFactory;
+  late final String? _sessionUserId;
+  late final String? _sessionToken;
+  ChatRealtimeConnection? _realtime;
+  bool _observingLifecycle = false;
+  bool _foreground = true;
 
   // Interval values remain source-compatible with existing construction sites,
   // but no channel schedules a periodic timer.
@@ -106,6 +124,8 @@ class RestChatBackend implements ChatBackend {
           myUserId,
           () => _RefreshChannel(
             fetch: () => _fetchConversations(myUserId),
+            listenersChanged: _listenersChanged,
+            canDeliver: _canUseSession,
           ),
         )
         .stream;
@@ -119,6 +139,8 @@ class RestChatBackend implements ChatBackend {
           conversationId,
           () => _RefreshChannel(
             fetch: () => _fetchMessages(conversationId),
+            listenersChanged: _listenersChanged,
+            canDeliver: _canUseSession,
           ),
         )
         .stream;
@@ -172,6 +194,8 @@ class RestChatBackend implements ChatBackend {
           myUserId,
           () => _RefreshChannel(
             fetch: () => _fetchUnreadCounts(myUserId),
+            listenersChanged: _listenersChanged,
+            canDeliver: _canUseSession,
           ),
         )
         .stream;
@@ -180,6 +204,7 @@ class RestChatBackend implements ChatBackend {
   @override
   void refresh() {
     _ensureNotDisposed();
+    _listenersChanged();
     for (final channel in _conversationChannels.values) {
       channel.refresh();
     }
@@ -328,10 +353,79 @@ class RestChatBackend implements ChatBackend {
     }
   }
 
+  bool _canUseSession() =>
+      !_disposed &&
+      _foreground &&
+      _sessionUserId == _userIdProvider()?.trim() &&
+      _sessionToken == _identityTokenProvider()?.trim();
+
+  void _sessionChanged() {
+    if (_sessionUserId != _userIdProvider()?.trim() ||
+        _sessionToken != _identityTokenProvider()?.trim()) {
+      dispose();
+    }
+  }
+
+  void _listenersChanged() {
+    if (!_realtimeEnabled ||
+        !_canUseSession() ||
+        _sessionUserId == null ||
+        _sessionToken == null ||
+        _sessionToken!.isEmpty) {
+      return;
+    }
+    final listening = _conversationChannels.values.any((c) => c.hasListener) ||
+        _messageChannels.values.any((c) => c.hasListener) ||
+        _unreadChannels.values.any((c) => c.hasListener);
+    if (!listening) {
+      _realtime?.pause();
+      return;
+    }
+    if (!_observingLifecycle) {
+      WidgetsBinding.instance.addObserver(this);
+      _observingLifecycle = true;
+      _foreground = WidgetsBinding.instance.lifecycleState == null ||
+          WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed;
+      if (!_foreground) return;
+    }
+    _realtime ??= ChatRealtimeConnection(
+      url: ChatRealtimeConnection.urlFromBase(_baseUrl),
+      headers: {
+        'X-User-Id': _sessionUserId!,
+        'X-Custom-Exercise-Token': _sessionToken!
+      },
+      isCurrentSession: _canUseSession,
+      transportFactory: _realtimeTransportFactory,
+      onConnected: refresh,
+      onEvent: (event) {
+        // No contact fetch and no queries for unobserved conversation channels.
+        _messageChannels[event.conversationId]?.refresh();
+        if (event.type != 'MESSAGE_READ') {
+          _conversationChannels[_sessionUserId]?.refresh();
+        }
+        _unreadChannels[_sessionUserId]?.refresh();
+      },
+    );
+    _realtime!.resume();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    _foreground = state == AppLifecycleState.resumed;
+    if (!_foreground) {
+      _realtime?.pause();
+      return;
+    }
+    if (!_disposed) refresh();
+  }
+
   @override
   void dispose() {
     if (_disposed) return;
     _disposed = true;
+    AppSession.changes.removeListener(_sessionChanged);
+    if (_observingLifecycle) WidgetsBinding.instance.removeObserver(this);
+    _realtime?.dispose();
     for (final channel in _conversationChannels.values) {
       unawaited(channel.close());
     }
@@ -348,37 +442,53 @@ class RestChatBackend implements ChatBackend {
 }
 
 class _RefreshChannel<T> {
-  _RefreshChannel({required this.fetch}) {
+  _RefreshChannel(
+      {required this.fetch,
+      required this.listenersChanged,
+      required this.canDeliver}) {
     _controller = StreamController<T>.broadcast(
       onListen: _start,
+      onCancel: listenersChanged,
     );
   }
 
   final Future<T> Function() fetch;
+  final void Function() listenersChanged;
+  final bool Function() canDeliver;
   late final StreamController<T> _controller;
   bool _fetching = false;
   bool _closed = false;
+  bool _dirty = false;
 
   Stream<T> get stream => _controller.stream;
+  bool get hasListener => !_closed && _controller.hasListener;
 
   void _start() {
     if (_closed) return;
     refresh();
+    // putIfAbsent must finish before we count listeners in the owner's map.
+    scheduleMicrotask(listenersChanged);
   }
 
   void refresh() {
-    if (_closed || _fetching || !_controller.hasListener) return;
+    if (_closed || !_controller.hasListener || !canDeliver()) return;
+    if (_fetching) {
+      _dirty = true;
+      return;
+    }
     _fetching = true;
+    _dirty = false;
     fetch().then((value) {
-      if (!_closed) {
+      if (!_closed && canDeliver()) {
         _controller.add(value);
       }
     }).catchError((Object error, StackTrace stackTrace) {
-      if (!_closed) {
+      if (!_closed && canDeliver()) {
         _controller.addError(error, stackTrace);
       }
     }).whenComplete(() {
       _fetching = false;
+      if (_dirty) refresh();
     });
   }
 
