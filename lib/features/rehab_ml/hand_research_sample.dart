@@ -17,8 +17,9 @@ class HandFeatureExtractor {
     if (p.length != 21 ||
         p.any((v) => v.length != 3 || v.any((n) => !n.isFinite)) ||
         p.any((v) =>
-            v[0] < 0 || v[0] > 1 || v[1] < 0 || v[1] > 1 || v[2].abs() > 5))
+            v[0] < 0 || v[0] > 1 || v[1] < 0 || v[1] > 1 || v[2].abs() > 5)) {
       return false;
+    }
     final scale = distance(p[0], p[9]);
     return scale >= 0.02 &&
         scale <= 0.8 &&
@@ -35,8 +36,9 @@ class HandFeatureExtractor {
 
   static List<double> extract(
       MlActionDefinition action, List<Map<String, Object>> frames) {
-    if (!action.isHand || frames.length < 4 || frames.length > 200)
+    if (!action.isHand || frames.length < 4 || frames.length > 200) {
       throw const FormatException('手部動作資料不完整');
+    }
     final points = <List<List<double>>>[];
     var previous = -1;
     for (final f in frames) {
@@ -47,15 +49,18 @@ class HandFeatureExtractor {
       if (t < 0 ||
           t <= previous ||
           (previous >= 0 && t - previous > 350) ||
-          !validPoints(p)) throw const FormatException('手部追蹤資料無效');
+          !validPoints(p)) {
+        throw const FormatException('手部追蹤資料無效');
+      }
       previous = t;
       points.add(p);
     }
     final duration = ((frames.last['timestampMs'] as int) -
             (frames.first['timestampMs'] as int)) /
         1000;
-    if (duration < 0.3 || duration > 20)
+    if (duration < 0.3 || duration > 20) {
       throw const FormatException('手部週期時間無效');
+    }
     final axis = <double>[0];
     for (var i = 1; i < points.length; i++) {
       axis.add(axis.last + delta(bearing(points[i]), bearing(points[i - 1])));
@@ -83,6 +88,9 @@ class HandFeatureExtractor {
       ];
     }
     if (range(axis) < 1) throw const FormatException('缺少完整姿態變化');
+    if (range(axis) > 360 || axis.any((v) => v.abs() > 360)) {
+      throw const FormatException('姿態變化超出研究特徵契約');
+    }
     if (action.actionId == 'turnPalm') {
       final x = points
           .map((p) => (p[9][0] - p[0][0]) / distance(p[0], p[9]))

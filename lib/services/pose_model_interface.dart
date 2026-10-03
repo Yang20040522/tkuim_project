@@ -26,6 +26,9 @@ class PoseFrame {
   final List<Landmark> handLandmarks;
   final List<Landmark> bodyLandmarks;
   final bool handDetected;
+
+  /// Actual native channel observations, not Dart display extrapolation; absent for Pi.
+  final List<Landmark>? observedHandLandmarks;
   final Uint8List? imageBytes; // 🚀 新增：原始影像 JPEG bytes
   final double? imageWidth; // 🚀 新增
   final double? imageHeight; // 🚀 新增
@@ -38,11 +41,11 @@ class PoseFrame {
     this.handLandmarks = const [],
     this.bodyLandmarks = const [],
     this.handDetected = false,
+    this.observedHandLandmarks,
     this.imageBytes, // 🚀 新增
     this.imageWidth, // 🚀 新增
     this.imageHeight, // 🚀 新增
     this.standardJoints = const {}, // 🚀 預設為空
-    
   });
 
   factory PoseFrame.empty() => const PoseFrame();

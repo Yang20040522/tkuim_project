@@ -63,6 +63,9 @@ def export_verified(model, values, definition, metrics, output):
         "confidenceThreshold": None, "confidenceThresholdValidated": False,
         "runtimeVersions": {"python": platform.python_version(), "sklearn": sklearn.__version__,
             "skl2onnx": skl2onnx.__version__, "onnxruntime": onnxruntime.__version__}})
+    if definition.schema_version == 2:
+        manifest.update({"landmarkSource": "mediapipe_hand_21", "extractorVersion": "hand-image-proxy-v1",
+            "modelInputVersion": "hand-features-v1"})
     output = Path(output)
     if output.exists() and any(output.iterdir()):
         raise ValueError("artifact output must be empty; do not overwrite model versions")

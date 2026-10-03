@@ -40,6 +40,8 @@ def load_dataset(samples_dir: Path, labels_csv: Path, action_id=ACTION_ID, regis
     definition_versions = {row["actionDefinitionVersion"] for row in labels.values()}
     if len(label_versions) != 1 or len(definition_versions) != 1:
         raise ValueError("混合標註或動作定義版本；請分開訓練")
+    if definition.schema_version == 2 and label_versions != {"hand-research-v1"}:
+        raise ValueError("hand label definition version mismatch")
 
     features, targets, groups, ids, seen = [], [], [], [], set()
     for path in sorted(samples_dir.glob("*.json")):

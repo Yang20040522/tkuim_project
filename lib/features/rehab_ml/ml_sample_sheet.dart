@@ -21,6 +21,8 @@ class MlSampleSheet extends StatefulWidget {
     this.initialCloudConsent = false,
     this.onCloudConsentChanged,
     this.qualityResult,
+    this.definition = MlActionRegistry.standingKneeRaise,
+    this.statusMessage,
   });
 
   final MlSampleRepository repository;
@@ -31,6 +33,8 @@ class MlSampleSheet extends StatefulWidget {
   final bool initialCloudConsent;
   final ValueChanged<bool>? onCloudConsentChanged;
   final ValueNotifier<MlQualityResult>? qualityResult;
+  final MlActionDefinition definition;
+  final ValueNotifier<String?>? statusMessage;
 
   @override
   State<MlSampleSheet> createState() => _MlSampleSheetState();
@@ -64,14 +68,18 @@ class _MlSampleSheetState extends State<MlSampleSheet> {
 
   Future<void> _reload() async {
     try {
-      final samples = await widget.repository.list();
+      final samples = (await widget.repository.list())
+          .where((s) => s['actionId'] == widget.definition.actionId)
+          .toList();
       if (mounted) setState(() => _samples = samples);
       MlResearchConsent? cloud;
       var pending = 0;
       var synced = 0;
       if (widget.cloudSync != null) {
         cloud = await widget.cloudSync!.remote.getConsent();
-        if (!cloud.active && _cloudEnabledForCapture) {
+        if ((!cloud.active ||
+                (widget.definition.isHand && !cloud.handAvailable)) &&
+            _cloudEnabledForCapture) {
           _cloudEnabledForCapture = false;
           widget.onCloudConsentChanged?.call(false);
         }
@@ -130,8 +138,11 @@ class _MlSampleSheetState extends State<MlSampleSheet> {
         // Refresh before an explicit opt-in; do not reuse a stale closed/version state.
         final state = await widget.cloudSync!.remote.getConsent();
         _cloudConsent = state;
-        if (!state.available) {
-          throw MlResearchException.unavailable(state.unavailableReason);
+        if (!state.available ||
+            (widget.definition.isHand && !state.handAvailable)) {
+          throw widget.definition.isHand && !state.handAvailable
+              ? const MlResearchException('手部研究範圍與同意版本尚未核准，仍可選擇本機收集。')
+              : MlResearchException.unavailable(state.unavailableReason);
         }
         _cloudConsent = await widget.cloudSync!.remote
             .setConsent(true, state.currentVersion);
@@ -231,11 +242,14 @@ class _MlSampleSheetState extends State<MlSampleSheet> {
           child: ListView(
             shrinkWrap: true,
             children: [
-              const Text('站姿抬腳研究資料',
-                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+              Text('${widget.definition.displayName}研究資料',
+                  style: const TextStyle(
+                      fontSize: 20, fontWeight: FontWeight.bold)),
               const SizedBox(height: 8),
-              const Text(
-                '僅在明確同意後收集 RTMPose 骨架點、信心值與角度；雲端同步另需單獨同意。不另存相機影像。現有訓練錄影設定不受此開關控制。資料僅供研究標註，並非醫療診斷。',
+              Text(
+                widget.definition.isHand
+                    ? '僅在明確同意後收集 MediaPipe 手部 21 點影像座標與動作代理特徵，沒有逐點信心值、真實腕角或握力。第一個完成動作僅用於分段，後續完整週期才保存。雲端另需新研究範圍同意與核准；不另存相機影像。現有錄影設定不受此開關控制。'
+                    : '僅在明確同意後收集 RTMPose 骨架點、信心值與角度；雲端同步另需單獨同意。不另存相機影像。現有訓練錄影設定不受此開關控制。資料僅供研究標註，並非醫療診斷。',
               ),
               const SizedBox(height: 12),
               TextField(
@@ -286,7 +300,7 @@ class _MlSampleSheetState extends State<MlSampleSheet> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(result.available
-                          ? '研究模型 ${result.modelVersion}：${MlActionRegistry.standingKneeRaise.labels[result.label]} · 模型機率 ${((result.confidence ?? 0) * 100).toStringAsFixed(1)}%'
+                          ? '研究模型 ${result.modelVersion}：${widget.definition.labels[result.label]} · 模型機率 ${((result.confidence ?? 0) * 100).toStringAsFixed(1)}%'
                           : '模型狀態：${result.reason}'),
                       if (result.available) Text(result.reason),
                     ],
@@ -294,6 +308,11 @@ class _MlSampleSheetState extends State<MlSampleSheet> {
                 ),
               if (_error != null)
                 Text(_error!, style: const TextStyle(color: Colors.red)),
+              if (widget.statusMessage != null)
+                ValueListenableBuilder<String?>(
+                    valueListenable: widget.statusMessage!,
+                    builder: (_, value, __) =>
+                        value == null ? const SizedBox.shrink() : Text(value)),
               const Divider(height: 32),
               const Text('本機研究樣本',
                   style: TextStyle(fontWeight: FontWeight.bold)),
@@ -301,7 +320,7 @@ class _MlSampleSheetState extends State<MlSampleSheet> {
               for (final sample in _samples)
                 ListTile(
                   title: Text(
-                      '${sample['movementSide']} · ${sample['capturedAt']}'),
+                      '${sample['movementSide'] == 'unknown' ? '未確認左右側' : sample['movementSide']} · ${sample['capturedAt']}'),
                   subtitle: Text(
                       '匿名代碼 ${sample['subjectId']} · ${(sample['frames'] as List).length} 幀'),
                   trailing: Wrap(

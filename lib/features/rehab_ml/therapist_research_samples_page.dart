@@ -354,14 +354,17 @@ class _ResearchSampleDetailPageState extends State<ResearchSampleDetailPage> {
           Text(
               '樣本 ${widget.sampleId} · 匿名受試者 ${(_detail!['sample'] as Map)['subjectId']}'),
           const SizedBox(height: 8),
-          const Text('僅保存 17 個 2D 骨架點，無原始影像或深度；無法可靠判斷時請選「無法評估」。'),
+          Text(_definition?.isHand == true
+              ? '21 點手部影像座標；z 為模型估計的相對深度，非真實世界座標；沒有逐點信心值或原始影像。無法可靠判斷時請選「無法評估」。'
+              : '僅保存 17 個 2D 骨架點，無原始影像或深度；無法可靠判斷時請選「無法評估」。'),
           const SizedBox(height: 12),
           AspectRatio(
               aspectRatio: 1,
               child: Card(
                   child: CustomPaint(
                 key: const Key('research-skeleton-player'),
-                painter: ResearchSkeletonPainter(frame?['landmarks'] as List?),
+                painter: ResearchSkeletonPainter(frame?['landmarks'] as List?,
+                    isHand: _definition?.isHand == true),
               ))),
           if (frames.isNotEmpty) ...[
             Text(
@@ -471,8 +474,32 @@ class _ResearchSampleDetailPageState extends State<ResearchSampleDetailPage> {
 
 /// COCO 17-point edges; drawing is presentation only, never relabeled/inferred.
 class ResearchSkeletonPainter extends CustomPainter {
-  const ResearchSkeletonPainter(this.points);
+  const ResearchSkeletonPainter(this.points, {this.isHand = false});
   final List? points;
+  final bool isHand;
+  static const handEdges = <(int, int)>[
+    (0, 1),
+    (1, 2),
+    (2, 3),
+    (3, 4),
+    (0, 5),
+    (5, 6),
+    (6, 7),
+    (7, 8),
+    (5, 9),
+    (9, 10),
+    (10, 11),
+    (11, 12),
+    (9, 13),
+    (13, 14),
+    (14, 15),
+    (15, 16),
+    (13, 17),
+    (17, 18),
+    (18, 19),
+    (19, 20),
+    (0, 17)
+  ];
   static const edges = <(int, int)>[
     (5, 6),
     (5, 7),
@@ -491,10 +518,13 @@ class ResearchSkeletonPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final values = points;
-    if (values == null || values.length != 17) return;
+    if (values == null || values.length != (isHand ? 21 : 17)) return;
     final xy = <Offset>[];
     for (final raw in values) {
-      if (raw is! List || raw.length != 2 || raw[0] is! num || raw[1] is! num) {
+      if (raw is! List ||
+          raw.length != (isHand ? 3 : 2) ||
+          raw[0] is! num ||
+          raw[1] is! num) {
         return;
       }
       final x = (raw[0] as num).toDouble();
@@ -515,7 +545,7 @@ class ResearchSkeletonPainter extends CustomPainter {
     final paint = Paint()
       ..color = const Color(0xFF4A65FF)
       ..strokeWidth = 3;
-    for (final (a, b) in edges) {
+    for (final (a, b) in isHand ? handEdges : edges) {
       canvas.drawLine(at(a), at(b), paint);
     }
     for (var i = 0; i < xy.length; i++) {
@@ -525,5 +555,5 @@ class ResearchSkeletonPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant ResearchSkeletonPainter oldDelegate) =>
-      oldDelegate.points != points;
+      oldDelegate.points != points || oldDelegate.isHand != isHand;
 }

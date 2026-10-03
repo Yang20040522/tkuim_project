@@ -81,6 +81,7 @@ class MlResearchSync {
       if (payload is! Map<String, dynamic>) {
         throw const MlResearchException('本機研究樣本格式錯誤。');
       }
+      if (payload['schemaVersion'] == 2 && !consent.handAvailable) continue;
       await remote.upload(payload);
       final remaining = prefs.getStringList(queueKey) ?? <String>[];
       remaining.remove(id);

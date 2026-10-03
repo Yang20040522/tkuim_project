@@ -63,6 +63,8 @@ def hand_features(sample):
     else:
         if spread(axis) < 1:
             raise ValueError('missing orientation movement')
+        if spread(axis) > 360 or any(abs(v) > 360 for v in axis):
+            raise ValueError('orientation exceeds feature contract')
         if action == 'turnPalm':
             normal = []
             for p in points:

@@ -12,8 +12,9 @@ const mlPreprocessing = 'rtmpose17-normalized-2d-v1;features-identity;float32';
 
 /// Trusted build-time manifest, not a downloaded/self-authorizing model.
 class MlModelManifest {
-  MlModelManifest._(this.json);
+  MlModelManifest._(this.json, this.definition);
   final Map<String, dynamic> json;
+  final MlActionDefinition definition;
   String get version => json['modelVersion'] as String;
   List<String> get classes => List<String>.from(json['classes'] as List);
   String get inputName => json['inputName'] as String;
@@ -23,28 +24,41 @@ class MlModelManifest {
       ];
   double? get threshold => (json['confidenceThreshold'] as num?)?.toDouble();
 
-  static MlModelManifest validate(Map<String, dynamic> json, Uint8List bytes) {
-    const definition = MlActionRegistry.standingKneeRaise;
+  static MlModelManifest validate(
+    Map<String, dynamic> json,
+    Uint8List bytes, {
+    MlActionDefinition definition = MlActionRegistry.standingKneeRaise,
+    bool requireApproval = true,
+  }) {
     final classes = json['classes'];
     final parity = json['onnxParity'];
     final threshold = json['confidenceThreshold'];
-    if (json['manifestVersion'] != 1 ||
+    if ((definition.isHand &&
+            (json['landmarkSource'] != 'mediapipe_hand_21' ||
+                json['extractorVersion'] != 'hand-image-proxy-v1' ||
+                json['modelInputVersion'] != 'hand-features-v1')) ||
+        json['manifestVersion'] != 1 ||
         json['actionId'] != definition.actionId ||
-        json['schemaVersion'] != 1 ||
+        json['schemaVersion'] != definition.schemaVersion ||
         json['actionDefinitionVersion'] != definition.version ||
         json['labelVersion'] != definition.labelVersion ||
         !listEquals(
             json['featureNames'] is List ? json['featureNames'] as List : null,
             definition.featureNames) ||
-        json['inputDimension'] != 5 ||
+        json['inputDimension'] != definition.featureNames.length ||
         !listEquals(
             json['inputShape'] is List ? json['inputShape'] as List : null,
-            [null, 5]) ||
+            [null, definition.featureNames.length]) ||
         json['inputDtype'] != 'float32' ||
-        json['preprocessing'] != mlPreprocessing ||
+        json['preprocessing'] != definition.preprocessing ||
         json['dataOrigin'] != 'reviewed_export' ||
-        json['validationStatus'] != 'approved_research' ||
-        json['deploymentApproved'] != true ||
+        json['disabled'] == true ||
+        (requireApproval &&
+            (json['validationStatus'] != 'approved_research' ||
+                json['deploymentApproved'] != true)) ||
+        (!requireApproval &&
+            !const {'parity_verified', 'approved_research'}
+                .contains(json['validationStatus'])) ||
         classes is! List ||
         classes.length != 3 ||
         classes.toSet().length != 3 ||
@@ -81,7 +95,7 @@ class MlModelManifest {
                 json['confidenceThresholdValidated'] != true))) {
       throw const FormatException('研究模型契約或核准狀態不符');
     }
-    return MlModelManifest._(Map.unmodifiable(json));
+    return MlModelManifest._(Map.unmodifiable(json), definition);
   }
 }
 
@@ -127,7 +141,8 @@ class _NativeMlSession implements MlOnnxSession {
 
   @override
   Future<MlModelOutput> infer(Float32List features) async {
-    final input = OrtValueTensor.createTensorWithDataList(features, [1, 5]);
+    final input = OrtValueTensor.createTensorWithDataList(
+        features, [1, manifest.definition.featureNames.length]);
     final options = OrtRunOptions();
     List<OrtValue?>? outputs;
     try {
@@ -178,6 +193,7 @@ class OnnxMlQualityEvaluator extends MlQualityEvaluator {
     Future<Uint8List> Function()? manifestLoader,
     Future<Uint8List> Function()? modelLoader,
     MlSessionFactory? sessionFactory,
+    MlActionDefinition definition = MlActionRegistry.standingKneeRaise,
   }) async {
     try {
       Future<Uint8List> asset(String path) async {
@@ -185,12 +201,15 @@ class OnnxMlQualityEvaluator extends MlQualityEvaluator {
         return data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes);
       }
 
-      final metadata = await (manifestLoader ??
-          () => asset('assets/models/rehab_ml/model_manifest.json'))();
-      final bytes = await (modelLoader ??
-          () => asset('assets/models/rehab_ml/model.onnx'))();
+      final base = definition.isHand
+          ? 'assets/models/rehab_ml/${definition.actionId}'
+          : 'assets/models/rehab_ml';
+      final metadata =
+          await (manifestLoader ?? () => asset('$base/model_manifest.json'))();
+      final bytes = await (modelLoader ?? () => asset('$base/model.onnx'))();
       final manifest = MlModelManifest.validate(
-          jsonDecode(utf8.decode(metadata)) as Map<String, dynamic>, bytes);
+          jsonDecode(utf8.decode(metadata)) as Map<String, dynamic>, bytes,
+          definition: definition);
       final session =
           await (sessionFactory ?? _NativeMlSession.open)(bytes, manifest);
       return OnnxMlQualityEvaluator._(session, manifest);
@@ -204,17 +223,21 @@ class OnnxMlQualityEvaluator extends MlQualityEvaluator {
     if (_disposed || _pending != null) {
       return const MlQualityResult.unavailable('研究模型目前不可用。');
     }
-    if (features.length != 5 ||
+    if (features.length != manifest.definition.featureNames.length ||
         features.any((v) => !v.isFinite) ||
-        features[0].abs() > 60 ||
-        features[1] < 0 ||
-        features[1] > 180 ||
-        features[2] < 0 ||
-        features[2] > 180 ||
-        features[3] < 0 ||
-        features[3] > 180 ||
-        features[4] < 0.3 ||
-        features[4] > 8) {
+        (manifest.definition.isHand
+            ? (features.any((v) => v.abs() > 360) ||
+                features.last < 0.3 ||
+                features.last > 20)
+            : (features[0].abs() > 60 ||
+                features[1] < 0 ||
+                features[1] > 180 ||
+                features[2] < 0 ||
+                features[2] > 180 ||
+                features[3] < 0 ||
+                features[3] > 180 ||
+                features[4] < 0.3 ||
+                features[4] > 8))) {
       return const MlQualityResult.unavailable('本次動作資料不足或特徵無效。');
     }
     final tensor = Float32List.fromList(features);

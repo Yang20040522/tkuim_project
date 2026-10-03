@@ -71,17 +71,20 @@ class MlResearchConsent {
     required this.currentVersion,
     this.subjectId,
     this.unavailableReason,
+    this.handAvailable = false,
   });
   final bool active;
   final bool available;
   final String currentVersion;
   final String? subjectId;
   final String? unavailableReason;
+  final bool handAvailable;
 
   factory MlResearchConsent.fromJson(Map<String, dynamic> json) =>
       MlResearchConsent(
         active: json['active'] == true,
         available: json['available'] == true,
+        handAvailable: json['handAvailable'] == true,
         currentVersion: json['currentVersion']?.toString() ?? '',
         subjectId: json['subjectId']?.toString(),
         unavailableReason: json['unavailableReason']?.toString(),
@@ -110,7 +113,7 @@ abstract class MlResearchRemote {
       {required bool canAnnotate,
       required bool canReview,
       required bool canManage});
-  Future<Uint8List> exportApproved();
+  Future<Uint8List> exportApproved({String actionId = 'standing_knee_raise'});
   Future<List<Map<String, dynamic>>> retentionPolicies();
   Future<void> createRetentionPolicy(
       {required String version,
@@ -305,9 +308,13 @@ class MlResearchApi implements MlResearchRemote {
   }
 
   @override
-  Future<Uint8List> exportApproved() async {
+  Future<Uint8List> exportApproved(
+      {String actionId = 'standing_knee_raise'}) async {
     final response = await _client
-        .get(_uri('/management/export'), headers: _headers())
+        .get(
+            _uri('/management/export')
+                .replace(queryParameters: {'actionId': actionId}),
+            headers: _headers())
         .timeout(const Duration(seconds: 30));
     if (response.statusCode != 200 ||
         response.headers['content-type']?.contains('application/zip') != true) {

@@ -6,6 +6,8 @@ Payload retains existing sampleId, subjectId, actionId, featureNames/features, c
 
 Quality: x/y in [0,1], |z|<=5, wrist-to-middle-MCP image length 0.02..0.8; valid palm span; at least4 frames, <=200, monotonic timestamps, gaps<=350ms, full interval 0.3..20s. Decimate to at most10Hz while inspecting every raw observation for loss/invalidity. Occlusion cannot be proved absent from landmarks alone. No per-joint confidence is fabricated.
 
+Image-axis features outside a single revolution (unwrapped excursion/range above360°) are rejected consistently in Dart/Python/backend, not clipped. This is a contract quality bound, not a change to the original rehabilitation rules.
+
 Features normalize lengths by wrist-to-middle-MCP XY length; no pixels/force/medical 3D angle. Axis bearing is atan2(middleMCP.y-wrist.y,middleMCP.x-wrist.x), relative to first frame, circularly unwrapped. Mean absolute step is an image-motion proxy, not tremor diagnosis. Native front input/output conventions are preserved; no new reflection/LR swap. Camera view is metadata and camera switches discard the active interval.
 
 | Action | Ordered features | Draft trainable labels |

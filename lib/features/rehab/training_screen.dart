@@ -91,6 +91,9 @@ import 'package:permission_handler/permission_handler.dart';
 import '../training/training_preview_screen.dart';
 import '../analysis/widgets/template_training_mode_dialog.dart';
 import 'training_camera_session.dart';
+import '../rehab_ml/hand_research_session.dart';
+import '../rehab_ml/ml_action_definition.dart';
+import '../rehab_ml/ml_sample_sheet.dart';
 
 class TrainingScreen extends StatefulWidget {
   final TrainingAction action;
@@ -115,7 +118,8 @@ class TrainingScreen extends StatefulWidget {
 enum _PauseChoice { resume, end }
 
 class _TrainingScreenState extends State<TrainingScreen>
-    with TickerProviderStateMixin {
+    with TickerProviderStateMixin, WidgetsBindingObserver {
+  HandResearchSession? _handResearch;
   late RehabSessionController _controller;
 
   // 🚀 樹莓派新增:是否使用外接來源、記住上次輸入的 IP
@@ -169,6 +173,12 @@ class _TrainingScreenState extends State<TrainingScreen>
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    final definition =
+        MlActionRegistry.production.byId(widget.action.type.name);
+    if (!widget.isDisplay && definition?.isHand == true) {
+      _handResearch = HandResearchSession(definition!);
+    }
 
     _isExternalCamera = widget.initialCameraSelection.usesRaspberryPi;
     _lastPiIp = widget.initialCameraSelection.raspberryPiIp;
@@ -259,6 +269,9 @@ class _TrainingScreenState extends State<TrainingScreen>
     required bool useExternal,
     String? ip,
   }) {
+    if (!useExternal) {
+      _handResearch?.cameraView = 'front';
+    }
     final IPoseModel selectedModel =
         useExternal ? PiPoseModel(ip: ip!) : MediaPipeModel();
 
@@ -266,6 +279,11 @@ class _TrainingScreenState extends State<TrainingScreen>
       model: selectedModel,
       action: widget.action,
       difficulty: widget.difficulty,
+      onResearchObservation: useExternal || widget.isDisplay
+          ? null
+          : (frame, time, reps, level, ready) =>
+              _handResearch?.observe(frame, time, reps, level, ready),
+      onResearchReset: _handResearch?.reset,
     );
   }
 
@@ -298,7 +316,6 @@ class _TrainingScreenState extends State<TrainingScreen>
           'imageHeight': state.imageHeight, // 🖥️ 電視投放新增
           'showStickGuide': _showStickGuide && !state.isComplete, // 🖥️ 電視投放新增
           'showPinchGuide': _showPinchGuide && !state.isComplete, // 🖥️ 電視投放新增
-
         };
         if (_clientService.isConnected) {
           _clientService.sendCommand(poseMsg);
@@ -579,6 +596,8 @@ class _TrainingScreenState extends State<TrainingScreen>
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    unawaited(_handResearch?.dispose());
     // 保險:如果畫面被意外關掉而沒有走到完整結束流程,錄影可能還在跑,
     // 這裡補一次停止並直接刪除暫存檔(視為不保留)。
     if (!widget.isDisplay && !_completionShown) {
@@ -611,6 +630,9 @@ class _TrainingScreenState extends State<TrainingScreen>
       return;
     }
     await _controller.flipCamera();
+    _handResearch?.cameraView =
+        _handResearch?.cameraView == 'front' ? 'rear' : 'front';
+    _handResearch?.reset();
     if (mounted) setState(() {});
   }
 
@@ -1081,6 +1103,32 @@ class _TrainingScreenState extends State<TrainingScreen>
   // 🚀 新增:取得樹莓派來源目前這一幀的原始尺寸,給 HandOverlayWidget
   // 用來算 BoxFit.cover 的縮放/裁切偏移。手機鏡頭模式回傳 null,
   // HandOverlayPainter 收到 null 時會維持原本(未受影響)的行為。
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    _handResearch?.foreground = state == AppLifecycleState.resumed;
+    _handResearch?.reset();
+  }
+
+  Future<void> _openHandResearch() async {
+    final research = _handResearch;
+    if (research == null || _isExternalCamera) return;
+    await showModalBottomSheet<void>(
+        context: context,
+        isScrollControlled: true,
+        builder: (_) => MlSampleSheet(
+              definition: research.action,
+              repository: research.repository,
+              cloudSync: research.sync,
+              initialConsent: research.localConsent,
+              initialSubjectId: research.subjectId,
+              initialCloudConsent: research.cloudConsent,
+              qualityResult: research.quality.latest,
+              statusMessage: research.message,
+              onConsentChanged: research.setLocalConsent,
+              onCloudConsentChanged: (value) => research.cloudConsent = value,
+            ));
+  }
+
   Size? _currentPiSourceSize() {
     if (!_isExternalCamera) return null;
     final model = _controller.currentModel;
@@ -1112,6 +1160,9 @@ class _TrainingScreenState extends State<TrainingScreen>
                       : widget.difficulty.description,
                   onBack: () => Navigator.of(context).pop(),
                   onFlipCamera: _flipCamera,
+                  onResearch: !_isExternalCamera && _handResearch != null
+                      ? _openHandResearch
+                      : null,
                   isExternalCamera: _isExternalCamera,
                   onTogglePi: _isExternalCamera
                       ? _disableExternalCamera
@@ -1624,6 +1675,7 @@ class _TrainingTopBarWithPi extends StatelessWidget {
   final VoidCallback onFlipCamera;
   final bool isExternalCamera;
   final VoidCallback onTogglePi;
+  final VoidCallback? onResearch;
 
   const _TrainingTopBarWithPi({
     required this.actionName,
@@ -1632,6 +1684,7 @@ class _TrainingTopBarWithPi extends StatelessWidget {
     required this.onFlipCamera,
     required this.isExternalCamera,
     required this.onTogglePi,
+    this.onResearch,
   });
 
   @override
@@ -1676,6 +1729,11 @@ class _TrainingTopBarWithPi extends StatelessWidget {
             ),
           ),
           // 🚀 樹莓派新增:外接鏡頭開關按鈕
+          if (onResearch != null)
+            IconButton(
+                tooltip: '手部研究資料',
+                icon: const Icon(Icons.science_outlined),
+                onPressed: onResearch),
           GestureDetector(
             onTap: onTogglePi,
             child: Container(

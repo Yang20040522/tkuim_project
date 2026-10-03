@@ -58,6 +58,7 @@ class MediaPipeModel implements IPoseModel {
 
       _frameCtrl.add(PoseFrame(
         handLandmarks: predicted,
+        observedHandLandmarks: result.landmarks,
         handDetected: result.handDetected,
         imageBytes: imgBytes, // 🚀 新增
         imageWidth: _imageWidth,
@@ -66,7 +67,7 @@ class MediaPipeModel implements IPoseModel {
     });
   }
 
-    Future<void> _decodeSize(Uint8List bytes) async {
+  Future<void> _decodeSize(Uint8List bytes) async {
     try {
       final ui.Codec codec = await ui.instantiateImageCodec(bytes);
       final ui.FrameInfo fi = await codec.getNextFrame();

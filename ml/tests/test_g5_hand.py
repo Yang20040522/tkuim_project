@@ -3,9 +3,11 @@ import json
 import math
 import sys
 import unittest
+import tempfile
 from pathlib import Path
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 from feature_schema import ACTION_REGISTRY, features_from_sample
+from train import load_dataset, train_artifacts
 
 def sample(action):
     g=json.loads((Path(__file__).parent/'fixtures/g5_hand_motion.json').read_text())
@@ -24,6 +26,35 @@ def sample(action):
         'segment':{'startMs':0,'endMs':1500,'kind':'rule-rep-boundaries','completedReps':1},'frames':frames}
 
 class HandTests(unittest.TestCase):
+    def test_independent_synthetic_rf_onnx_contracts_never_deployment_approved(self):
+        for action in ('turnPalm','sidePinch','wristExtension','wristSideBend'):
+            with self.subTest(action=action), tempfile.TemporaryDirectory() as d:
+                definition=ACTION_REGISTRY[action]
+                # Pipeline exercise only: artificial features, not clinical samples/accuracy.
+                x,y,groups=[],[],[]
+                for subject in range(10):
+                    for cls,label in enumerate(definition.labels):
+                        for rep in range(2):
+                            x.append([float(cls),1+cls,2+cls,3+cls,1+subject/100+rep/1000])
+                            y.append(label); groups.append(f'synthetic_{subject}')
+                metrics=train_artifacts(x,y,groups,'hand-research-v1',definition,Path(d),data_origin='synthetic_fixture')
+                manifest=json.loads((Path(d)/'model_manifest.json').read_text())
+                self.assertEqual(metrics['onnxParity']['status'],'PASS')
+                self.assertEqual(manifest['actionId'],action)
+                self.assertEqual(manifest['preprocessing'],definition.preprocessing)
+                self.assertEqual(manifest['landmarkSource'],'mediapipe_hand_21')
+                self.assertFalse(manifest['deploymentApproved'])
+                self.assertEqual(manifest['dataOrigin'],'synthetic_fixture')
+    def test_labels_action_and_definition_isolation(self):
+        for action in ('turnPalm','sidePinch','wristExtension','wristSideBend'):
+            with self.subTest(action=action), tempfile.TemporaryDirectory() as d:
+                root=Path(d); s=sample(action); (root/'s.json').write_text(json.dumps(s))
+                labels=root/'labels.csv'
+                header='sampleId,label,annotatorId,labelVersion,actionDefinitionVersion\n'
+                labels.write_text(header+f'synthetic,meets_requirement,synthetic_labeler,hand-research-v1,{s["actionDefinitionVersion"]}\n')
+                self.assertEqual(load_dataset(root,labels,action)[2],['synthetic_group'])
+                labels.write_text(labels.read_text().replace('hand-research-v1','research-v1'))
+                with self.assertRaisesRegex(ValueError,'label definition'): load_dataset(root,labels,action)
     def test_all_golden(self):
         for a in ('turnPalm','sidePinch','wristExtension','wristSideBend'):
             with self.subTest(action=a):

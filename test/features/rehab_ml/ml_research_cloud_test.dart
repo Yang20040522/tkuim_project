@@ -7,6 +7,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_body/features/account/app_session.dart';
 import 'package:flutter_body/features/rehab_ml/ml_research_api.dart';
 import 'package:flutter_body/features/rehab_ml/ml_action_definition.dart';
+import 'package:flutter_body/features/rehab_ml/hand_research_sample.dart';
 import 'package:flutter_body/features/rehab_ml/ml_research_sync.dart';
 import 'package:flutter_body/features/rehab_ml/ml_sample_repository.dart';
 import 'package:flutter_body/features/rehab_ml/ml_sample_sheet.dart';
@@ -15,6 +16,12 @@ import 'package:flutter_body/features/rehab_ml/research_management_page.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'hand_research_sample_test.dart' show pose;
+
+class _EmptyLocal extends MlSampleRepository {
+  @override
+  Future<List<Map<String, dynamic>>> list() async => [];
+}
 
 class _Remote implements MlResearchRemote {
   MlResearchConsent consent = const MlResearchConsent(
@@ -32,6 +39,8 @@ class _Remote implements MlResearchRemote {
   int? grantedUserId;
   String? retentionVersion;
   int consentWrites = 0;
+  Map<String, dynamic>? detailOverride;
+  String? savedLabelVersion, exportedAction;
   Object? consentFailure;
   @override
   Future<MlResearchConsent> getConsent() async => consent;
@@ -65,7 +74,9 @@ class _Remote implements MlResearchRemote {
         }
       ];
   @override
-  Future<Map<String, dynamic>> sampleDetail(String id) async => {
+  Future<Map<String, dynamic>> sampleDetail(String id) async =>
+      detailOverride ??
+      {
         'sample': {'subjectId': 'server-subject'},
         'payload': {
           'actionId': 'standing_knee_raise',
@@ -97,6 +108,7 @@ class _Remote implements MlResearchRemote {
       {String labelVersion = 'research-v1',
       String actionDefinitionVersion = 'standing-knee-raise-v1'}) async {
     label = value;
+    savedLabelVersion = labelVersion;
     annotationStatus = 'DRAFT';
   }
 
@@ -148,8 +160,10 @@ class _Remote implements MlResearchRemote {
   }
 
   @override
-  Future<Uint8List> exportApproved() async {
+  Future<Uint8List> exportApproved(
+      {String actionId = 'standing_knee_raise'}) async {
     exported = true;
+    exportedAction = actionId;
     return Uint8List.fromList([1, 2, 3]);
   }
 
@@ -172,6 +186,79 @@ class _Remote implements MlResearchRemote {
 }
 
 void main() {
+  testWidgets('21-point hand player uses hand labels and schema2 label version',
+      (tester) async {
+    tester.view.physicalSize = const Size(900, 2400);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+    final a = MlActionRegistry.sidePinch,
+        collector = HandMotionCollector(MlActionRegistry.sidePinch);
+    Map<String, Object>? payload;
+    for (var i = -1; i < 6; i++) {
+      final sample = collector.observe(
+          landmarks: pose(i < 0 ? 0 : i),
+          detected: true,
+          timestampMs: i < 0 ? 0 : 1 + i * 300,
+          repCount: i < 0
+              ? 0
+              : i == 5
+                  ? 2
+                  : 1,
+          level: 1,
+          consent: true,
+          ready: true,
+          subjectId: 'synthetic',
+          cameraView: 'front',
+          sampleId: 'synthetic',
+          capturedAt: DateTime.utc(2026));
+      if (sample != null) payload = sample.toJson();
+    }
+    final remote = _Remote()
+      ..detailOverride = {
+        'sample': {'subjectId': 'synthetic'},
+        'payload': payload,
+        'annotation': null
+      };
+    await tester.pumpWidget(MaterialApp(
+        home: ResearchSampleDetailPage(remote: remote, sampleId: 'synthetic')));
+    await tester.pumpAndSettle();
+    final painted = tester
+        .widget<CustomPaint>(find.byKey(const Key('research-skeleton-player')));
+    expect((painted.painter! as ResearchSkeletonPainter).isHand, true);
+    expect(find.textContaining('第 1 / 6 幀'), findsOneWidget);
+    await tester.tap(find.byKey(const Key('research-label')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text(a.labels['limited_pinch_motion']!).last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('儲存草稿'));
+    await tester.pumpAndSettle();
+    expect(remote.label, 'limited_pinch_motion');
+    expect(remote.savedLabelVersion, 'hand-research-v1');
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+  testWidgets(
+      'hand cloud scope unavailable never asks for inherited standing consent',
+      (tester) async {
+    final local = _EmptyLocal(), remote = _Remote();
+    await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+            body: MlSampleSheet(
+                repository: local,
+                definition: MlActionRegistry.turnPalm,
+                initialConsent: true,
+                initialSubjectId: 'synthetic',
+                onConsentChanged: (_, __) {},
+                cloudSync: MlResearchSync(remote: remote, local: local)))));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.byKey(const Key('ml-cloud-consent')));
+    await tester.tap(find.byKey(const Key('ml-cloud-consent')));
+    await tester.pumpAndSettle();
+    expect(remote.consentWrites, 0);
+    expect(find.textContaining('手部研究範圍與同意版本尚未核准'), findsOneWidget);
+  });
   setUp(() {
     SharedPreferences.setMockInitialValues({});
     AppSession.userId = '1';
@@ -461,11 +548,17 @@ void main() {
       },
     )));
     await tester.pumpAndSettle();
+    await tester.ensureVisible(find.byKey(const Key('research-export-action')));
+    await tester.tap(find.byKey(const Key('research-export-action')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('側捏訓練').last);
+    await tester.pumpAndSettle();
     await tester
         .ensureVisible(find.byKey(const Key('research-export-approved')));
     await tester.tap(find.byKey(const Key('research-export-approved')));
     await tester.pumpAndSettle();
     expect(allowed.exported, isTrue);
+    expect(allowed.exportedAction, 'sidePinch');
     expect(saved, isTrue);
     await tester.ensureVisible(find.text('研究資料保存政策'));
     await tester.tap(find.text('研究資料保存政策'));

@@ -4,6 +4,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 
 import 'ml_research_api.dart';
+import 'ml_action_definition.dart';
 
 typedef ResearchExportSaver = Future<bool> Function(Uint8List bytes);
 
@@ -34,6 +35,7 @@ class _ResearchManagementPageState extends State<ResearchManagementPage> {
   bool _canReview = false;
   bool _canManage = false;
   String? _error;
+  String _exportAction = 'standing_knee_raise';
 
   @override
   void initState() {
@@ -126,7 +128,7 @@ class _ResearchManagementPageState extends State<ResearchManagementPage> {
     if (_busy) return;
     setState(() => _busy = true);
     try {
-      final bytes = await _remote.exportApproved();
+      final bytes = await _remote.exportApproved(actionId: _exportAction);
       final saved =
           await (widget.saveExport?.call(bytes) ?? _saveWithPicker(bytes));
       if (mounted) {
@@ -379,6 +381,23 @@ class _ResearchManagementPageState extends State<ResearchManagementPage> {
                             style: TextStyle(
                                 fontSize: 18, fontWeight: FontWeight.bold)),
                         const Text('僅包含有效同意、已獨立核准且可用於訓練的匿名樣本；檔案請儲存在受控位置。'),
+                        DropdownButtonFormField<String>(
+                            key: const Key('research-export-action'),
+                            initialValue: _exportAction,
+                            decoration:
+                                const InputDecoration(labelText: '匯出動作'),
+                            items: MlActionRegistry.production.definitions
+                                .map((a) => DropdownMenuItem(
+                                    value: a.actionId,
+                                    child: Text(a.displayName)))
+                                .toList(),
+                            onChanged: _busy
+                                ? null
+                                : (value) {
+                                    if (value != null) {
+                                      setState(() => _exportAction = value);
+                                    }
+                                  }),
                         FilledButton.icon(
                           key: const Key('research-export-approved'),
                           onPressed: _busy ? null : _export,

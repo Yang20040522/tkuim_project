@@ -174,6 +174,12 @@ class RehabSessionController implements RehabActionCallback {
 
   final DifficultyOption difficulty;
 
+  /// Optional observer, cannot change Action callbacks or count.
+  final void Function(PoseFrame frame, int timestampMs, int repCount, int level,
+      bool ready)? onResearchObservation;
+  final VoidCallback? onResearchReset;
+  final Stopwatch _researchClock = Stopwatch()..start();
+
   BaseRehabAction? _actionLogic;
 
   StreamSubscription? _frameSub;
@@ -200,11 +206,14 @@ class RehabSessionController implements RehabActionCallback {
       );
 
   bool _isPaused = false;
+  bool _researchSwitching = false;
 
   RehabSessionController({
     required this.model,
     required this.action,
     required this.difficulty,
+    this.onResearchObservation,
+    this.onResearchReset,
   }) {
     final diffIdx = action.difficulties.indexWhere(
           (d) => d.level == difficulty.level,
@@ -308,9 +317,18 @@ class RehabSessionController implements RehabActionCallback {
         );
 
         /// Action 先處理這一幀。
+        final researchReady = !_researchSwitching &&
+            _state.countdownDone &&
+            !_state.pendingLevelUp &&
+            !_state.isComplete;
+        final researchLevel = _state.currentLevel;
         _actionLogic?.processLandmarks(
           frame.handLandmarks,
         );
+        try {
+          onResearchObservation?.call(frame, _researchClock.elapsedMilliseconds,
+              _state.repCount, researchLevel, researchReady);
+        } catch (_) {/* Research failure never interrupts rule training. */}
 
         /// 關鍵：
         /// 每一幀處理完後，把目前這一階 Action
@@ -338,8 +356,17 @@ class RehabSessionController implements RehabActionCallback {
     );
   }
 
+  void _resetResearch() {
+    try {
+      onResearchReset?.call();
+    } catch (_) {
+      // Auxiliary research must not interrupt the existing training session.
+    }
+  }
+
   void pause() {
     _isPaused = true;
+    _resetResearch();
   }
 
   void resume() {
@@ -349,6 +376,7 @@ class RehabSessionController implements RehabActionCallback {
   void confirmLevelUp({
     int? customTargetReps,
   }) {
+    _resetResearch();
     // _actionLogic 目前允許為 null，因為某些 Action 在 constructor
     // 尚未完成指派前就可能先 callback。
     //
@@ -389,6 +417,8 @@ class RehabSessionController implements RehabActionCallback {
   }
 
   Future<void> flipCamera() async {
+    _resetResearch();
+    _researchSwitching = true;
     _emit(
       _state.copyWith(
         handLandmarks: const [],
@@ -403,10 +433,16 @@ class RehabSessionController implements RehabActionCallback {
       logic.resetForCameraFlip();
     }
 
-    await model.flipCamera();
+    try {
+      await model.flipCamera();
+    } finally {
+      _researchSwitching = false;
+      _resetResearch();
+    }
   }
 
   Future<void> disposeAsync() async {
+    _resetResearch();
     _actionLogic?.dispose();
 
     await _frameSub?.cancel();
@@ -431,6 +467,7 @@ class RehabSessionController implements RehabActionCallback {
   }
 
   void dispose() {
+    _resetResearch();
     _actionLogic?.dispose();
 
     _frameSub?.cancel();
@@ -499,6 +536,7 @@ class RehabSessionController implements RehabActionCallback {
     required String levelLabel,
     required int newTargetReps,
   }) {
+    _resetResearch();
     _emit(
       _state.copyWith(
         currentLevelLabel: levelLabel,
