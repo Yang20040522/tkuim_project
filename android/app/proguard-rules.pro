@@ -19,3 +19,21 @@
 -keepclassmembers class com.google.mediapipe.** extends com.google.protobuf.GeneratedMessageLite {
     <fields>;
 }
+
+# MediaPipe Graph initializes a Flogger logger via stack inspection. Inlining
+# this factory into Graph removes the logger frame. The caller finder also
+# needs its own frame because it skips one stack entry before finding the logger.
+# Preserve these two boundaries, not all of MediaPipe/Flogger. Class obfuscation
+# and optimization of other methods remain allowed.
+-keepclassmembers,allowobfuscation class com.google.common.flogger.FluentLogger {
+    public static com.google.common.flogger.FluentLogger forEnclosingClass();
+}
+-keepclassmembers,allowobfuscation class com.google.common.flogger.backend.system.StackBasedCallerFinder {
+    public java.lang.String findLoggingClass(java.lang.Class);
+}
+
+# CalculatorGraphConfig contains protobuf Any messages resolved through lite
+# schema metadata rather than direct Java construction. R8 otherwise reduces
+# Any to an abstract class token and its default-instance lookup fails at runtime.
+# Preserve this specific message (including metadata field names), not protobuf.**.
+-keep class com.google.protobuf.Any { *; }
