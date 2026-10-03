@@ -11,8 +11,10 @@
 
 ## Remaining (ordered)
 
-1. Stage E: full regression, Debug/Release builds, R8/packaged assets inspection.
-2. Final document exact evidence/commits and NOT RUN real-data/device/deployment gates. Do not start G5.
+1. Owner supplies fresh authorized independently reviewed export, professionally approved action/labels and current consent/retention evidence. Readiness remains NOT READY; do not invent labels or enable collection.
+2. Run documented CLI against those private files, review subject-grouped real-data metrics and actual ONNX parity. No formal model has been trained this round.
+3. Validate the real candidate on Android (native TreeEnsemble kernel, exact output contract, completed-rep behavior, offline operation, latency/memory and lifecycle). Only after separate human release approval package its versioned manifest/model. Do not authorize by merely flipping booleans.
+4. Do not start G5, push/deploy or alter backend/database automatically.
 
 ## Decisions / Do not redo
 
@@ -45,4 +47,13 @@ Stage A: branch/remote/status and static source contract inspection PASS. Clinic
 - Shared synthetic JSON golden tested in Python and Dart: anatomical L/R, valid/incomplete/low confidence/non-finite, legacy schema1 and wrong definition/feature order.
 - Flutter focused research+rehab+normalization/template **68/68 PASS**, scoped research analyze **0 issues**, Python **16/16 PASS**. Initial fake async typing/lints fixed; reproducible ONNX graph explicitly named (converter otherwise generated random graph name/hash).
 - ADB device detected, arm64-v8a. No formal model exists, so actual clinical-model loading/rep/offline latency/memory remains NOT RUN. Do not describe this as no device available or actual inference PASS.
-- Next run full Flutter once and Debug/Release builds. Do not rerun earlier implementation or access production data.
+- Stage D checkpoint: `967c9f6`. Final Stage E results below supersede the earlier remaining validation list; do not rerun full tests/builds without code changes.
+
+## Stage E completed / final checkpoint
+
+- Full Flutter suite executed once: **469 PASS / 7 FAIL**. All seven names/reasons match the recorded baseline; details in G4_VALIDATION.md. No tests deleted/skipped or unrelated fixes attempted.
+- Full analyze: **47 existing diagnostics (44 info, 3 warnings, 0 errors)**. Research scope remains 0 issues.
+- Debug and Release builds both PASS. Release assets include original RTMDet, RTMPose and hand model; no synthetic classifier model/manifest included. Existing ONNX and MediaPipe R8 rules retained; no Android/native changes.
+- Final diff check PASS; both working trees were clean after the Stage D commit/builds. Backend still `7c55d1c7527d94ca0e23c50213f68f7e4f973d7a`, read-only. Final documentation commit contains only these G4 documents; obtain its SHA with `git log -1` (self-referential hash not stored here).
+- Engineering stages A–E completed to the available-data boundary. Formal model training, real-data metrics, qualified-model Android runtime and formal deployment acceptance remain NOT RUN / BLOCKED by absent approved data. An Android device is attached; it was not used to install/run this build. No clinical accuracy or hardware performance claim.
+- No remote push, branch creation, backend/DB mutation, deployment, research enablement or model packaging. Existing RTMPose/MediaPipe, reps, local/cloud consent, chat and TV behavior were not redesigned.
