@@ -4,7 +4,7 @@
 
 - Flutter: `feat/rehab-ml-poc` / `429f200cefe085cbb72c8d612146cd296ec16045`.
 - Local master: `a413cd806f82d372bcf56f412b4cb439784cd5dd`.
-- Existing change: `android/build/reports/problems/problems-report.html`; preserve, exclude from task commits. This dirty artifact is a final merge gate until safely resolved with owner direction.
+- Original existing change: `android/build/reports/problems/problems-report.html`; excluded from task commits. Owner subsequently authorized an external verified backup and single-file restore; resolved in Stage E below.
 - Backend: clean `main` / `5394f735a461476ee692bf44350aafb0f6888648`. Backend changes will use a small feature branch, not redo main integration.
 - Read R2.5/R3/Tailscale reports and ML handoffs. Old SQL Server handoff entries are historical; current MySQL V001/V002/V003 and `validate` are authoritative. No migration replay.
 
@@ -18,9 +18,9 @@
 
 ## Remaining (in order)
 
-1. Await owner direction for pre-existing generated Gradle report; do not overwrite unknown existing work. Local master merge not yet executed.
-2. If explicitly authorized, backup only the report externally and restore only its HEAD contents; recheck clean trees, current ancestry and regression report before ff-only local merge.
-3. Record final commits/merge state in handoffs. Render/device acceptance remains manual; no push/deploy/model training.
+1. No remaining local integration work. Verify final documentation checkpoint with `git log -1` / `git status`; do not redo the completed merge or A–D implementation.
+2. Remote push/backend integration/Render deployment require separate owner review and authorization. Manual Render/device acceptance remains NOT RUN.
+3. Preserve all seven full-suite failures and research governance prerequisites; do not start G4/G5 or enable real collection.
 
 ## Tests executed this round
 
@@ -46,8 +46,18 @@
 - Debug APK built, including final contract-driven angle names. Release NOT RUN (no native/R8/model/dependency change).
 - Backend full tests against actual MySQL 8.4.11: 258 PASS / 0 FAIL / 0 SKIP; MySQL 21 PASS. HTTP consent assertions added and MySQL suite rerun: 21 PASS. Package PASS.
 - Metadata existing29 tables/241 columns/33 FK/16 CHECK/75 indexes. No migration. Synthetic account/sample/policy final counts 0; production collection flag remained false.
-- Both diff-checks PASS. Existing generated report remains only frontend non-task dirty file; merge gate pending owner answer.
+- Both diff-checks PASS. At the C/D checkpoint the original generated report remained dirty; the later authorized Stage E procedure resolved this gate.
 - Backend final checkpoint `07f5e3b082c953fae5703880d4abf8b7fbac4f3f`, clean tree. Frontend final code/docs checkpoint follows; consult git log, do not repeat completed A–D work.
+
+## Stage E — completed local integration
+
+- Owner authorization received; verified only dirty file was a generated Gradle report. Backed up complete 147,151-byte file outside repository and compared source/backup SHA-256 before restore.
+- Backup: `C:/Users/kuoja/AppData/Local/Temp/RehabAssist-G35-report-backup-9164787e2d5a43d3bf9d5d32f3420895/problems-report.html`; SHA-256 `893303AFBBBE0F35C6A63DE09ACCAE064B325B9542600BA695ED44677E4046AA`.
+- Restored only `android/build/reports/problems/problems-report.html` using the specifically authorized git command. No other unknown changes touched. Feature working tree clean and G3.5 checkpoint intact.
+- master before: `a413cd806f82d372bcf56f412b4cb439784cd5dd`; source feature: `20103f139b20b3ec9c68867d4e962195198673df`; master after ff-only merge: `20103f139b20b3ec9c68867d4e962195198673df`. Ancestry rechecked (0 ahead/13 behind before merge), feature branch preserved.
+- On merged master: necessary Flutter regression **93 PASS**, scoped analyze **0 issues**, Python **8 PASS**, clean tree/diff-check PASS. Exact commands/logs in G35_VALIDATION.md. Original full suite **449 PASS / 7 FAIL** remains documented; not represented as all-pass.
+- Final documentation-only checkpoint updates these two G35 files on master. Read `git log -1` for final SHA; no runtime code/tests changed in this continuation.
+- No push/force push/deploy/backend work/SQL/branch deletion/model training; stop before G4.
 
 ## Safety / Do not redo
 

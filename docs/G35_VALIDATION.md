@@ -2,7 +2,7 @@
 
 ## Status
 
-Implementation/local checks A–D completed; overall PARTIAL pending clean-tree local merge and manual Render/device acceptance. No push/deploy/real collection/model training.
+Implementation/local checks A–E and Flutter local master integration completed. Manual Render/device acceptance remains NOT RUN; the full Flutter suite still has the seven documented baseline failures below. Local integration completion is not a claim of production readiness or all-tests-pass. No push/deploy/real collection/model training.
 
 ## Versions
 
@@ -69,13 +69,27 @@ Actual service/repository tests cover consent, synthetic 17-point upload and ret
 
 Metadata validator reports the same seven `UNEXPECTED_INDEX_REVIEW` entries as prior R2.5: InnoDB-created FK support indexes, not new discrepancies (68 declared + 7 automatic = 75). Final read-only counts: fictional `@example.invalid` accounts 0, research samples 0, research policies 0. Test rollback retained existing catalog/schema. Flutter real-network → Render end-to-end was NOT RUN; Flutter HTTP boundaries were mock tested, backend MySQL/API tested locally.
 
-## Merge gate
+## Stage E — final local merge (2026-10-03)
 
-Fast-forward ancestry verified. Existing dirty `android/build/reports/problems/problems-report.html` was present before task and remains uncommitted. It is a generated artifact, not task code. Asked owner to authorize external backup + restoring only this artifact; absent response, do not overwrite/stash/commit it to manufacture a clean tree. E is pending; local master remains at `a413cd8`. Feature branches retained. Do not push/deploy automatically.
+The owner explicitly authorized backup and single-file restore of the original dirty Gradle report. Verified its generated signatures (`Gradle Configuration Cache`, `problemsReport`, Gradle documentation references). It was the only working-tree change before restore; no other file was restored, overwritten or cleaned.
+
+- Complete external backup: `C:/Users/kuoja/AppData/Local/Temp/RehabAssist-G35-report-backup-9164787e2d5a43d3bf9d5d32f3420895/problems-report.html`.
+- Backup size: **147,151 bytes**. Original and backup SHA-256 both **893303AFBBBE0F35C6A63DE09ACCAE064B325B9542600BA695ED44677E4046AA**.
+- Executed exactly: `git restore --source=HEAD --worktree -- android/build/reports/problems/problems-report.html`. Verified clean feature working tree and retained G3.5 checkpoint `20103f1`.
+- Before merge master: `a413cd806f82d372bcf56f412b4cb439784cd5dd`.
+- Source `feat/rehab-ml-poc`: `20103f139b20b3ec9c68867d4e962195198673df`.
+- Ancestry rechecked; master behind 13/ahead 0. Executed `git switch master` and `git merge --ff-only feat/rehab-ml-poc`.
+- After Fast-forward master: `20103f139b20b3ec9c68867d4e962195198673df`, exactly matching source. No merge conflicts or additional merge commit. Working tree verified clean; feature branch preserved at this SHA.
+- Post-merge required Flutter regression: **93/93 PASS** (research, shared login, Google patient flows, Session, rehab camera/score, body normalization/trajectory/template). Command: `flutter test --no-pub test/features/rehab_ml test/features/account/common_login_test.dart test/features/account/google_auth_ui_test.dart test/features/account/google_auth_service_test.dart test/features/account/google_auth_api_client_test.dart test/features/account/app_session_test.dart test/features/account/patient_login_session_test.dart test/features/rehab test/features/analysis/body_normalization_test.dart test/features/analysis/body_rep_trajectory_collector_test.dart test/features/analysis/body_template_analyzer_test.dart --reporter expanded`. Evidence: `build/g35/post-merge-tests.log`.
+- Post-merge scoped analyzer: **0 issues**. Command: `flutter analyze --no-pub lib/features/rehab_ml test/features/rehab_ml lib/features/account/login_screen.dart lib/features/account/role_select_screen.dart test/features/account/common_login_test.dart`. Evidence: `build/g35/post-merge-analyze.log`.
+- Post-merge Python: **8/8 PASS**, `python -m unittest discover -s ml/tests -v`.
+- `git diff --check`: PASS. No full-suite/build rerun was necessary for a Fast-forward of the already built source; the full-suite historical result remains **449 PASS / 7 FAIL**, not all-pass. Tests were not changed for this merge.
+- This final record is saved in a documentation-only commit on master after the Fast-forward; final master SHA is obtained with `git rev-parse master` and reported to the owner (a committed file cannot contain its own commit hash). Only G35_VALIDATION.md/G35_PROGRESS.md are changed by that record commit.
+- Remote push, force push, deployment and feature-branch deletion: **NOT PERFORMED**. Backend untouched in this continuation. G4/G5 NOT STARTED.
 
 ## Manual acceptance / next steps
 
-1. Review paired feature commits. Authorize the existing generated-report handling, then recheck clean trees/master ancestry before local `git switch master` + `git merge --ff-only feat/rehab-ml-poc`. Do not force merge if master changed.
+1. Local Flutter merge is complete. Review final master and paired backend feature commits before separately authorizing any remote push or deployment. Do not repeat the merge or earlier A–D implementation. The Gradle backup is in the system temporary directory; retain an additional copy elsewhere manually if long-term archival is required.
 2. With explicit deployment approval, integrate backend feature, preserve MySQL/validate/Tailscale configuration, deploy backend before Flutter. No new SQL is needed.
 3. Obtain authenticated consent GET on Android: note HTTP status + safe reason only, never token/subject/sample content. Check collection flag, current consent version and effective approved policy. Keep real collection OFF until necessary research approval and retention policy exist.
 4. In an isolated/synthetic environment: patient login/local opt-in/cloud opt-in → upload duplicate → bound/granted therapist 17-point playback/draft/submit → different granted reviewer approval → manager single-action export → withdrawal blocks export. Local-only refusal must still allow rehab and local sample management.
