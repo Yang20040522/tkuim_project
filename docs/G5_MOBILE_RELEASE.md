@@ -8,15 +8,21 @@ Minimum phone acceptance: run each existing hand action without research consent
 
 All hardware/model-performance steps initially NOT RUN. No formal model accuracy or clinical claims.
 
-## Current device gate
+## Initial device failure and resolved packaging gate
 - Debug and minified Release built successfully. Initial Release installed on RMX3371; hand training **FAIL** (MediaPipe Graph/Flogger initialization crash). Automated collector/count tests do not override this failed device gate.
-- R8 mapping/bytecode investigation and a single factory-boundary keep rule are in progress; final phone retest required before stating that the21-point skeleton, voice or counting works on Release.
+- R8 mapping/bytecode investigation and successive minimal fixes are fully recorded in G5_VALIDATION.md. Final phone retest now confirms skeleton/voice/count; earlier failures are retained as history, not current failures.
 - Formal model inference latency/memory **NOT RUN**: no qualified approved model exists. Do not substitute synthetic test artifacts in the patient APK.
-- Latest corrective Release installed: `build/app/outputs/flutter-apk/app-release.apk`, 489659515 bytes, SHA256 `9F63F7DC0BAF71069D4DFC2EF387C4B87F781C01802FE7EEC47C2571F7F71F64`. Packaging-only R8 fix keeps Flogger factory/caller-finder boundaries and protobuf.Any; minification and original algorithms retained. Phone retest pending. Earlier factory-only attempt failed; subsequent two-method attempt removed fatal crash but exposed Any initialization failure, both retained in G5_VALIDATION.md.
+- Latest corrective Release installed: `build/app/outputs/flutter-apk/app-release.apk`, 489659515 bytes, SHA256 `9F63F7DC0BAF71069D4DFC2EF387C4B87F781C01802FE7EEC47C2571F7F71F64`. Packaging-only R8 fix keeps Flogger factory/caller-finder boundaries and protobuf.Any; minification and original algorithms retained. User-assisted phone training checks PASS. Earlier factory-only attempt failed; subsequent two-method attempt removed fatal crash but exposed Any initialization failure, both retained in G5_VALIDATION.md.
 
-| Action | Collector / contract tests | Professional labels / real data | Formal training / ONNX | Flutter interface | Phone acceptance | Formal enablement |
-|---|---|---|---|---|---|---|
-| turnPalm | PASS | NOT READY | NOT RUN (synthetic parity PASS only) | PASS with fakes | FAIL at initialization; retest pending | NO |
-| sidePinch | PASS | NOT READY | NOT RUN (synthetic parity PASS only) | PASS with fakes | NOT RUN; shared initialization blocker | NO |
-| wristExtension | PASS | NOT READY | NOT RUN (synthetic parity PASS only) | PASS with fakes | NOT RUN; shared initialization blocker | NO |
-| wristSideBend | PASS | NOT READY | NOT RUN (synthetic parity PASS only) | PASS with fakes | NOT RUN; shared initialization blocker | NO |
+| Action | Collector | Contract | Professional label definition | Qualified real data | Formal training | ONNX verification | Flutter interface | Phone training | Formal enablement |
+|---|---|---|---|---|---|---|---|---|---|
+| turnPalm | PASS | PASS | NOT READY | NOT READY | NOT RUN | synthetic parity PASS / formal NOT RUN | PASS with fakes / formal model NOT RUN | user-assisted PASS | NO |
+| sidePinch | PASS | PASS | NOT READY | NOT READY | NOT RUN | synthetic parity PASS / formal NOT RUN | PASS with fakes / formal model NOT RUN | user-assisted PASS | NO |
+| wristExtension | PASS | PASS | NOT READY | NOT READY | NOT RUN | synthetic parity PASS / formal NOT RUN | PASS with fakes / formal model NOT RUN | user-assisted PASS | NO |
+| wristSideBend | PASS | PASS | NOT READY | NOT READY | NOT RUN | synthetic parity PASS / formal NOT RUN | PASS with fakes / formal model NOT RUN | user-assisted PASS | NO |
+
+Final Release turnPalm no longer crashes and displays skeleton per user retest; a subsequent user test confirms the other three actions, not an assumed shared-implementation PASS. The hand cloud-consent switch remains closed on purpose: hand scope/consent version/retention have not been approved/configured; local research opt-in is separate. Do not just set an environment flag to bypass professional approval. Older backend consent responses without handAvailable also fail closed.
+
+Live final-APK trace confirms initialized Hand Landmarker, camera analyzer, detector result and `landmarks=21`. Successful init/events do not by themselves prove all voice/count/collection/lifecycle checks.
+
+Final user reply confirms the requested remaining three actions, pause/flip/reentry and local-only sample/no-model UI checks are all normal. User-assisted results are not evidence of formal model accuracy. Separately pending phone export/delete/background/explicit difficulty/history checks are listed in G5_VALIDATION.md; qualified-model performance and cloud deployment remain NOT RUN. Final G5 full-suite result remains497PASS/7FAIL, not all PASS.
