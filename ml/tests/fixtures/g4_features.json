@@ -1,0 +1,19 @@
+{
+  "fixtureKind": "synthetic_contract_only",
+  "schemaVersion": 1,
+  "actionId": "standing_knee_raise",
+  "actionDefinitionVersion": "standing-knee-raise-v1",
+  "featureNames": ["peak_leg_height", "minimum_hip_angle_deg", "minimum_knee_angle_deg", "peak_abs_trunk_lean_deg", "duration_seconds"],
+  "rawPoints": [[0,0],[0,0],[0,0],[0,0],[0,0],[-1,-2],[1,-2],[0,0],[0,0],[0,0],[0,0],[-1,0],[1,0],[-1,1],[1,1],[-1,2],[1,2]],
+  "cases": [
+    {"name":"left_static","side":"left","features":[-0.5,180,180,0,0.3]},
+    {"name":"right_static_legacy","side":"right","legacy":true,"features":[-0.5,180,180,0,0.3]},
+    {"name":"left_raise","side":"left","overrides":{"13":[-2,0],"15":[-2,1]},"features":[0,90,90,0,0.3]},
+    {"name":"right_raise","side":"right","overrides":{"14":[2,0],"16":[2,1]},"features":[0,90,90,0,0.3]},
+    {"name":"incomplete","side":"left","frameCount":3},
+    {"name":"low_confidence","side":"left","confidence":0.2},
+    {"name":"nonfinite","side":"left","mutation":"nan"},
+    {"name":"unsupported_definition","side":"left","version":"unsupported-v2","features":[-0.5,180,180,0,0.3]},
+    {"name":"wrong_feature_order","side":"right","reverseFeatures":true,"features":[-0.5,180,180,0,0.3]}
+  ]
+}

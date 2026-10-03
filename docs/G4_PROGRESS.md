@@ -11,8 +11,7 @@
 
 ## Remaining (ordered)
 
-1. Stage B/C: harden dataset validation/group split; explicit approved-export/governance input; metrics/model manifest and ORT parity tests, synthetic only.
-2. Stage D: existing onnxruntime_v2 adapter + strict manifest/hash/tensor gate, completed-rep observer, safe UI result, tests.
+1. Stage D: existing onnxruntime_v2 adapter + strict manifest/hash/tensor gate, completed-rep observer, safe UI result, tests.
 3. Stage E: shared synthetic golden fixtures, focused/scoped/full regression, Debug/Release builds, R8 inspection.
 4. Final document exact evidence/commits and NOT RUN real-data/device/deployment gates. Do not start G5.
 
@@ -27,3 +26,12 @@
 ## Tests
 
 Stage A: branch/remote/status and static source contract inspection PASS. Clinical/data readiness NOT READY; Android and real-data training NOT RUN.
+
+## Stage B/C completed
+
+- Hardened train.py without replacing existing extractor/action registry; duplicate JSON IDs checked before label removal, class/group/version/float32 validation, deterministic grouped holdout and frozen RF parameters.
+- CLI requires fresh existing export manifest and trusted private governance/content-hash verification. Backend export and auth unchanged. Offline attestation cannot prove new withdrawals or clinician credentials; manual governance remains necessary.
+- model_artifacts.py checks actual sklearn/ORT string labels + ordered probabilities (1e-5 absolute tolerance), before writing versioned artifacts. Default deploymentApproved=false; synthetic artifacts remain nondeployable.
+- Python 16/16 PASS (`.dart_tool/g4-python-tests.log`), actual ORT parity/reproducibility exercised only on temporary synthetic fixtures. No formal dataset/training/model/metrics.
+- Initial two test failures fixed: preserved existing waiting-data error wording; protobuf7 rejects skl2onnx1.19.1 boolean integer attributes, pinned protobuf5.29.5 in Python-only requirements and validated. No native dependency upgrade.
+- Files: ml/train.py, model_artifacts.py, requirements.txt, LABELS.md, test_g4_training.py, test_g4_golden.py, synthetic g4_features.json; G4 docs. No patient data committed.
