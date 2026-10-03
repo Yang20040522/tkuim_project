@@ -6,6 +6,8 @@ import 'package:flutter/material.dart';
 import 'ml_sample_repository.dart';
 import 'ml_research_api.dart';
 import 'ml_research_sync.dart';
+import 'ml_quality_evaluator.dart';
+import 'ml_action_definition.dart';
 
 /// Explicit research opt-in, local sample review and optional cloud sync.
 class MlSampleSheet extends StatefulWidget {
@@ -18,6 +20,7 @@ class MlSampleSheet extends StatefulWidget {
     this.cloudSync,
     this.initialCloudConsent = false,
     this.onCloudConsentChanged,
+    this.qualityResult,
   });
 
   final MlSampleRepository repository;
@@ -27,6 +30,7 @@ class MlSampleSheet extends StatefulWidget {
   final MlResearchSync? cloudSync;
   final bool initialCloudConsent;
   final ValueChanged<bool>? onCloudConsentChanged;
+  final ValueNotifier<MlQualityResult>? qualityResult;
 
   @override
   State<MlSampleSheet> createState() => _MlSampleSheetState();
@@ -273,7 +277,21 @@ class _MlSampleSheetState extends State<MlSampleSheet> {
                   child: const Text('刪除我的雲端研究資料'),
                 ),
               ],
-              const Text('模型狀態：等待物理治療師標註及驗證；不顯示 AI 分類。'),
+              if (widget.qualityResult == null)
+                const Text('模型狀態：等待物理治療師標註及驗證；不顯示 AI 分類。')
+              else
+                ValueListenableBuilder<MlQualityResult>(
+                  valueListenable: widget.qualityResult!,
+                  builder: (_, result, __) => Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(result.available
+                          ? '研究模型 ${result.modelVersion}：${MlActionRegistry.standingKneeRaise.labels[result.label]} · 模型機率 ${((result.confidence ?? 0) * 100).toStringAsFixed(1)}%'
+                          : '模型狀態：${result.reason}'),
+                      if (result.available) Text(result.reason),
+                    ],
+                  ),
+                ),
               if (_error != null)
                 Text(_error!, style: const TextStyle(color: Colors.red)),
               const Divider(height: 32),

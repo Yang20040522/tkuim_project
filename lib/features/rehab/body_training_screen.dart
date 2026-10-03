@@ -100,6 +100,8 @@ import '../../features/analysis/widgets/template_training_mode_dialog.dart';
 import '../rehab_ml/ml_sample_repository.dart';
 import '../rehab_ml/ml_sample_sheet.dart';
 import '../rehab_ml/standing_knee_raise_sample.dart';
+import '../rehab_ml/onnx_ml_quality_evaluator.dart';
+import '../rehab_ml/ml_rep_quality_controller.dart';
 
 // 🖥️ 電視投放新增
 import 'dart:async';
@@ -253,6 +255,7 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
     local: _mlSampleRepository,
   );
   final Stopwatch _mlClock = Stopwatch();
+  final _mlQuality = MlRepQualityController(LazyMlQualityEvaluator());
   bool _mlCollectionConsent = false;
   bool _mlCloudConsent = false;
   bool _mlSheetOpen = false;
@@ -594,6 +597,7 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
           samples: _mlTrajectoryCollector.takeCompletedRep(),
         );
         if (sample != null) {
+          unawaited(_mlQuality.completed(sample));
           final cloudConsentAtCapture = _mlCloudConsent;
           unawaited(_mlSampleRepository.save(sample).then((_) async {
             if (!cloudConsentAtCapture || !_mlCloudConsent) {
@@ -1435,6 +1439,7 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
 
   @override
   void dispose() {
+    unawaited(_mlQuality.dispose());
     _aiSessionClock.stop();
     _aiTrajectoryCollector.reset();
     if (_recordingStarted && !_completionShown) {
@@ -2279,6 +2284,7 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
         context: context,
         isScrollControlled: true,
         builder: (_) => MlSampleSheet(
+          qualityResult: _mlQuality.latest,
           repository: _mlSampleRepository,
           cloudSync: _mlCloudSync,
           initialCloudConsent: _mlCloudConsent,
@@ -2286,6 +2292,7 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
           initialConsent: _mlCollectionConsent,
           initialSubjectId: _mlAnonymousSubjectId,
           onConsentChanged: (consent, subjectId) {
+            _mlQuality.reset();
             _mlTrajectoryCollector.reset();
             if (mounted) {
               setState(() {

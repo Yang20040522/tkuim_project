@@ -11,9 +11,8 @@
 
 ## Remaining (ordered)
 
-1. Stage D: existing onnxruntime_v2 adapter + strict manifest/hash/tensor gate, completed-rep observer, safe UI result, tests.
-3. Stage E: shared synthetic golden fixtures, focused/scoped/full regression, Debug/Release builds, R8 inspection.
-4. Final document exact evidence/commits and NOT RUN real-data/device/deployment gates. Do not start G5.
+1. Stage E: full regression, Debug/Release builds, R8/packaged assets inspection.
+2. Final document exact evidence/commits and NOT RUN real-data/device/deployment gates. Do not start G5.
 
 ## Decisions / Do not redo
 
@@ -35,3 +34,15 @@ Stage A: branch/remote/status and static source contract inspection PASS. Clinic
 - Python 16/16 PASS (`.dart_tool/g4-python-tests.log`), actual ORT parity/reproducibility exercised only on temporary synthetic fixtures. No formal dataset/training/model/metrics.
 - Initial two test failures fixed: preserved existing waiting-data error wording; protobuf7 rejects skl2onnx1.19.1 boolean integer attributes, pinned protobuf5.29.5 in Python-only requirements and validated. No native dependency upgrade.
 - Files: ml/train.py, model_artifacts.py, requirements.txt, LABELS.md, test_g4_training.py, test_g4_golden.py, synthetic g4_features.json; G4 docs. No patient data committed.
+
+## Stage D completed / E focused checks
+
+- Local checkpoints: Stage A `8280669`, Stage B/C `6940978`; current checkpoint obtained using git log after commit.
+- OnnxMlQualityEvaluator uses existing onnxruntime_v2, CPU one thread, exact manifest/type/order/classes/preprocessing/bytes hash + reviewed_export/approved_research gate. Native tensors/options/outputs released, disposal waits in-flight call; shared RTMPose OrtEnv never released.
+- Lazy model loader returns Unavailable with absent/rejected model. No model assets created. Only crypto3.0.7 promoted from existing transitive dependency (same locked version).
+- BodyTrainingScreen observes existing consented completed-rep sample, one auxiliary async call, no rule/rep/RTMPose changes. Busy inference cannot publish older rep as current. Sheet presents version/prediction/probability and research disclaimer; no arbitrary confidence cutoff.
+- Existing local/cloud consent separation preserved. No camera images transmitted for inference. No backend changes.
+- Shared synthetic JSON golden tested in Python and Dart: anatomical L/R, valid/incomplete/low confidence/non-finite, legacy schema1 and wrong definition/feature order.
+- Flutter focused research+rehab+normalization/template **68/68 PASS**, scoped research analyze **0 issues**, Python **16/16 PASS**. Initial fake async typing/lints fixed; reproducible ONNX graph explicitly named (converter otherwise generated random graph name/hash).
+- ADB device detected, arm64-v8a. No formal model exists, so actual clinical-model loading/rep/offline latency/memory remains NOT RUN. Do not describe this as no device available or actual inference PASS.
+- Next run full Flutter once and Debug/Release builds. Do not rerun earlier implementation or access production data.

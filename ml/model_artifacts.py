@@ -45,18 +45,20 @@ def export_verified(model, values, definition, metrics, output):
     import onnxruntime
     from skl2onnx import convert_sklearn
     from skl2onnx.common.data_types import FloatTensorType
-    onnx = convert_sklearn(model,
+    onnx = convert_sklearn(model, name=f"{definition.action_id}_{definition.version}",
         initial_types=[("input", FloatTensorType([None, len(definition.feature_names)]))],
         options={id(model): {"zipmap": False}}, target_opset=15)
     data = onnx.SerializeToString()
     session, parity = verify_parity(model, data, values)
+    model_hash = hashlib.sha256(data).hexdigest()
+    metrics['modelVersion'] = f"{definition.action_id}_rf_{definition.version}_{model_hash[:12]}"
     metrics["onnxParity"] = parity
     manifest = {k: metrics[k] for k in ("modelVersion", "actionId", "schemaVersion", "actionDefinitionVersion", "labelVersion", "featureNames", "classes", "dataOrigin")}
     manifest.update({"manifestVersion": 1, "inputName": session.get_inputs()[0].name,
         "labelOutputName": session.get_outputs()[0].name, "probabilityOutputName": session.get_outputs()[1].name,
         "inputDimension": len(definition.feature_names), "inputShape": [None, len(definition.feature_names)],
         "inputDtype": "float32", "preprocessing": PREPROCESSING,
-        "modelSha256": hashlib.sha256(data).hexdigest(), "validationStatus": "parity_verified",
+        "modelSha256": model_hash, "validationStatus": "parity_verified",
         "deploymentApproved": False, "onnxParity": parity,
         "confidenceThreshold": None, "confidenceThresholdValidated": False,
         "runtimeVersions": {"python": platform.python_version(), "sklearn": sklearn.__version__,
