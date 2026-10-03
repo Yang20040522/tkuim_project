@@ -87,8 +87,10 @@ class _MlSampleSheetState extends State<MlSampleSheet> {
           _error = null;
         });
       }
-    } catch (_) {
-      if (mounted) setState(() => _error = '雲端研究狀態暫時無法讀取；本機訓練不受影響。');
+    } catch (error) {
+      if (mounted) {
+        setState(() => _error = MlResearchException.safeMessage(error));
+      }
     }
   }
 
@@ -121,10 +123,11 @@ class _MlSampleSheetState extends State<MlSampleSheet> {
     setState(() => _busy = true);
     try {
       if (enabled) {
-        final state =
-            _cloudConsent ?? await widget.cloudSync!.remote.getConsent();
+        // Refresh before an explicit opt-in; do not reuse a stale closed/version state.
+        final state = await widget.cloudSync!.remote.getConsent();
+        _cloudConsent = state;
         if (!state.available) {
-          throw const MlResearchException('雲端研究服務尚未開放。');
+          throw MlResearchException.unavailable(state.unavailableReason);
         }
         _cloudConsent = await widget.cloudSync!.remote
             .setConsent(true, state.currentVersion);
@@ -139,8 +142,10 @@ class _MlSampleSheetState extends State<MlSampleSheet> {
         });
       }
       if (mounted) widget.onCloudConsentChanged?.call(enabled);
-    } catch (_) {
-      if (mounted) setState(() => _error = '雲端研究同意更新失敗；本機樣本仍可保存。');
+    } catch (error) {
+      if (mounted) {
+        setState(() => _error = MlResearchException.safeMessage(error));
+      }
     } finally {
       if (mounted) setState(() => _busy = false);
     }

@@ -30,10 +30,14 @@ class _Remote implements MlResearchRemote {
   bool exported = false;
   int? grantedUserId;
   String? retentionVersion;
+  int consentWrites = 0;
+  Object? consentFailure;
   @override
   Future<MlResearchConsent> getConsent() async => consent;
   @override
   Future<MlResearchConsent> setConsent(bool agree, String version) async {
+    consentWrites++;
+    if (consentFailure != null) throw consentFailure!;
     expect(version, 'study-v1');
     consent = MlResearchConsent(
         active: agree,
@@ -262,6 +266,71 @@ void main() {
     expect(collecting, isFalse);
     expect(cloudCollecting, isFalse);
     expect(remote.consent.active, isFalse);
+  });
+
+  testWidgets(
+      'closed cloud research explains policy gate but preserves local consent',
+      (tester) async {
+    final dir = (await tester.runAsync(
+        () => Directory.systemTemp.createTemp('ml-consent-closed-')))!;
+    addTearDown(() => dir.delete(recursive: true));
+    final local = MlSampleRepository(directoryProvider: () async => dir);
+    final remote = _Remote()
+      ..consent = const MlResearchConsent(
+          active: false,
+          available: false,
+          currentVersion: 'study-v1',
+          unavailableReason: 'RESEARCH_RETENTION_UNSET');
+    bool localConsent = false;
+    bool cloudConsent = false;
+    await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+            body: MlSampleSheet(
+      repository: local,
+      cloudSync: MlResearchSync(remote: remote, local: local),
+      initialConsent: false,
+      initialSubjectId: 'subject_01',
+      onConsentChanged: (value, _) => localConsent = value,
+      onCloudConsentChanged: (value) => cloudConsent = value,
+    ))));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('ml-local-consent')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('ml-cloud-consent')));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('保存政策尚未核准或尚未生效'), findsOneWidget);
+    expect(remote.consentWrites, 0);
+    expect(localConsent, isTrue);
+    expect(cloudConsent, isFalse);
+    expect(await tester.runAsync(() => local.list()), isEmpty);
+  });
+
+  testWidgets(
+      'consent version mismatch is explained without enabling cloud capture',
+      (tester) async {
+    final dir = (await tester.runAsync(
+        () => Directory.systemTemp.createTemp('ml-consent-version-')))!;
+    addTearDown(() => dir.delete(recursive: true));
+    final local = MlSampleRepository(directoryProvider: () async => dir);
+    final remote = _Remote()
+      ..consentFailure = MlResearchException.fromResponse(
+          400, {'code': 'CONSENT_VERSION_MISMATCH'});
+    bool cloudConsent = false;
+    await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+            body: MlSampleSheet(
+      repository: local,
+      cloudSync: MlResearchSync(remote: remote, local: local),
+      initialConsent: true,
+      initialSubjectId: 'subject_01',
+      onConsentChanged: (_, __) {},
+      onCloudConsentChanged: (value) => cloudConsent = value,
+    ))));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('ml-cloud-consent')));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('同意版本已更新'), findsOneWidget);
+    expect(cloudConsent, isFalse);
   });
 
   testWidgets('therapist opens a real sample and saves explicit label',

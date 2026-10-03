@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 
@@ -7,9 +8,58 @@ import '../../core/api_config.dart';
 import '../account/app_session.dart';
 
 class MlResearchException implements Exception {
-  const MlResearchException(this.message, {this.statusCode});
+  const MlResearchException(this.message, {this.statusCode, this.code});
   final String message;
   final int? statusCode;
+  final String? code;
+
+  static const _messages = <String, String>{
+    'RESEARCH_COLLECTION_NOT_ENABLED': '研究服務尚未開放；本機樣本仍可保存。',
+    'RESEARCH_CONSENT_VERSION_UNSET': '研究同意版本尚未設定；請聯絡研究團隊。',
+    'RESEARCH_RETENTION_UNSET': '研究資料保存政策尚未核准或尚未生效；暫時無法啟用雲端同步。',
+    'CONSENT_VERSION_MISMATCH': '研究同意版本已更新，請重新開啟研究資料頁後再確認同意。',
+    'RESEARCH_AUTH_REQUIRED': '登入狀態已失效，請重新登入。',
+    'NETWORK_ERROR': '研究服務連線失敗，請檢查網路後再試；本機樣本仍可保存。',
+    'NETWORK_TIMEOUT': '研究服務連線逾時，請稍後再試；本機樣本仍可保存。',
+    'INVALID_RESPONSE': '研究服務回應格式錯誤，請稍後再試。',
+  };
+
+  factory MlResearchException.fromResponse(int status, [dynamic body]) {
+    String? code;
+    if (body is Map) {
+      for (final field in ['code', 'message', 'detail']) {
+        final candidate = body[field];
+        // Never pass through arbitrary server text (it may contain identifiers).
+        if (candidate is String && _messages.containsKey(candidate)) {
+          code = candidate;
+          break;
+        }
+      }
+    }
+    return MlResearchException(
+      _messages[code] ??
+          (status == 401
+              ? '登入狀態已失效，請重新登入。'
+              : status == 403
+                  ? '目前沒有存取研究資料的權限。'
+                  : status == 503
+                      ? _messages['RESEARCH_COLLECTION_NOT_ENABLED']!
+                      : '研究資料操作失敗（HTTP $status），請稍後重試。'),
+      statusCode: status,
+      code: code,
+    );
+  }
+
+  factory MlResearchException.unavailable(String? reason) =>
+      MlResearchException.fromResponse(503, {'code': reason});
+
+  static String safeMessage(Object error) => error is MlResearchException
+      ? error.message
+      : error is TimeoutException
+          ? _messages['NETWORK_TIMEOUT']!
+          : error is http.ClientException
+              ? _messages['NETWORK_ERROR']!
+              : '研究資料操作失敗，請稍後重試；本機樣本仍可保存。';
   @override
   String toString() => message;
 }
@@ -20,11 +70,13 @@ class MlResearchConsent {
     required this.available,
     required this.currentVersion,
     this.subjectId,
+    this.unavailableReason,
   });
   final bool active;
   final bool available;
   final String currentVersion;
   final String? subjectId;
+  final String? unavailableReason;
 
   factory MlResearchConsent.fromJson(Map<String, dynamic> json) =>
       MlResearchConsent(
@@ -32,6 +84,7 @@ class MlResearchConsent {
         available: json['available'] == true,
         currentVersion: json['currentVersion']?.toString() ?? '',
         subjectId: json['subjectId']?.toString(),
+        unavailableReason: json['unavailableReason']?.toString(),
       );
 }
 
@@ -80,7 +133,8 @@ class MlResearchApi implements MlResearchRemote {
     final id = AppSession.userId?.trim();
     final token = AppSession.customExerciseToken?.trim();
     if (id == null || id.isEmpty || token == null || token.isEmpty) {
-      throw const MlResearchException('登入狀態已失效，請重新登入。', statusCode: 401);
+      throw const MlResearchException('登入狀態已失效，請重新登入。',
+          statusCode: 401, code: 'RESEARCH_AUTH_REQUIRED');
     }
     return {
       'Content-Type': 'application/json; charset=UTF-8',
@@ -99,19 +153,31 @@ class MlResearchApi implements MlResearchRemote {
   }
 
   Future<dynamic> _decode(Future<http.Response> request) async {
-    final response = await request.timeout(const Duration(seconds: 20));
+    final http.Response response;
+    try {
+      response = await request.timeout(const Duration(seconds: 20));
+    } on TimeoutException {
+      throw const MlResearchException('研究服務連線逾時，請稍後再試；本機樣本仍可保存。',
+          code: 'NETWORK_TIMEOUT');
+    } on http.ClientException {
+      throw const MlResearchException('研究服務連線失敗，請檢查網路後再試；本機樣本仍可保存。',
+          code: 'NETWORK_ERROR');
+    }
     if (response.statusCode < 200 || response.statusCode >= 300) {
-      throw MlResearchException(
-        response.statusCode == 503
-            ? '研究資料服務尚未開放。'
-            : response.statusCode == 401 || response.statusCode == 403
-                ? '目前沒有存取研究資料的權限。'
-                : '研究資料操作失敗，請稍後重試。',
-        statusCode: response.statusCode,
-      );
+      dynamic errorBody;
+      try {
+        errorBody = jsonDecode(utf8.decode(response.bodyBytes));
+      } on FormatException {/* Proxy HTML is not a trusted API error. */}
+      throw MlResearchException.fromResponse(response.statusCode, errorBody);
     }
     if (response.bodyBytes.isEmpty) return null;
-    final value = jsonDecode(utf8.decode(response.bodyBytes));
+    final dynamic value;
+    try {
+      value = jsonDecode(utf8.decode(response.bodyBytes));
+    } on FormatException {
+      throw const MlResearchException('研究服務回應格式錯誤，請稍後再試。',
+          code: 'INVALID_RESPONSE');
+    }
     if (value is Map<String, dynamic> || value is List<dynamic>) return value;
     throw const MlResearchException('研究資料格式錯誤。');
   }
