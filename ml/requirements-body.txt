@@ -1,0 +1,4 @@
+# Body Round 4 Python tooling only; no Flutter/native inference dependency changes.
+-r requirements.txt
+xgboost==2.1.4
+onnxmltools==1.14.0

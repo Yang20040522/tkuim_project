@@ -1,0 +1,18 @@
+{
+  "fixtureOrigin": "SYNTHETIC_ENGINEERING_ONLY",
+  "extractorVersion": "standing-knee-raise-aspect-2d-v2",
+  "extendedVersion": "body-aspect-extended-v1",
+  "units": ["torso_length_ratio", "degrees_2d", "degrees_2d", "degrees_2d", "seconds"],
+  "tolerance": 0.00001,
+  "baseKeypoints": [[0.5,0.1],[0.48,0.09],[0.52,0.09],[0.45,0.1],[0.55,0.1],[0.4,0.2],[0.6,0.2],[0.35,0.35],[0.65,0.35],[0.3,0.5],[0.7,0.5],[0.43,0.5],[0.57,0.5],[0.43,0.7],[0.57,0.7],[0.43,0.9],[0.57,0.9]],
+  "cases": [
+    {"name":"normal", "steps":[{}, {"points":{"13":[0.3,0.55]}}, {"points":{"13":[0.26,0.45]}}, {"points":{"13":[0.28,0.4]}}, {"points":{"13":[0.3,0.55]}}, {}]},
+    {"name":"insufficient_range", "steps":[{}, {"points":{"13":[0.42,0.65]}}, {"points":{"13":[0.41,0.6]}}, {"points":{"13":[0.42,0.65]}}, {}, {}]},
+    {"name":"missing_landmark", "steps":[{}, {"missing":[15]}, {}, {}, {}, {}]},
+    {"name":"tracking_gap", "steps":[{}, {}, {"missing":[5],"timeMs":200}, {"timeMs":1300}, {"timeMs":1400}, {"timeMs":1500}]},
+    {"name":"partial_valid", "steps":[{}, {}, {}, {}, {}, {"missing":[13]}, {"missing":[13]}, {"missing":[13]}]},
+    {"name":"unavailable", "steps":[{}, {"missing":[5]}, {"missing":[11]}, {"missing":[13]}, {"missing":[15]}, {}]},
+    {"name":"aspect_edge", "width":192, "height":256, "steps":[{}, {"points":{"13":[0.3,0.55]}}, {"points":{"13":[0.26,0.45]}}, {"points":{"13":[0.28,0.4]}}, {"points":{"13":[0.3,0.55]}}, {}]},
+    {"name":"display_mirror_rotation", "mirrored":true, "rotation":90, "steps":[{}, {"points":{"13":[0.3,0.55]}}, {"points":{"13":[0.26,0.45]}}, {"points":{"13":[0.28,0.4]}}, {"points":{"13":[0.3,0.55]}}, {}]}
+  ]
+}
