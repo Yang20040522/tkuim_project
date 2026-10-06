@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:onnxruntime_v2/onnxruntime_v2.dart';
 import 'body_ml_contract.dart';
@@ -90,6 +91,15 @@ class NativeBodyMlSession implements BodyMlOnnxSession {
 class BodyMlEvaluator {
   factory BodyMlEvaluator.runtime({LocalMlModelStore? store}) {
     const fixture = String.fromEnvironment('BODY_ML_ENGINEERING_BUNDLE');
+    const fixtureFile = String.fromEnvironment('BODY_ML_ENGINEERING_FILE');
+    if (bodyMlEngineeringValidation && fixtureFile.isNotEmpty) {
+      BodyMlBundle? bundle;
+      return BodyMlEvaluator(
+          engineering: true,
+          revision: () async => 'r5-engineering-fixture-v1',
+          bundleLoader: (_) async => bundle ??= BodyMlBundle.fromFixtureJson(
+              await File(fixtureFile).readAsString()));
+    }
     if (bodyMlEngineeringValidation && fixture.isNotEmpty) {
       BodyMlBundle? bundle;
       return BodyMlEvaluator(

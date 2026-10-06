@@ -45,6 +45,11 @@ class BodyResearchSession {
   late final MlResearchSync sync;
   final ValueNotifier<String?> message = ValueNotifier(null);
   final Stopwatch _idle = Stopwatch();
+  Future<void> _pendingPersistence = Future.value();
+
+  /// Deterministic completion boundary for tests/explicit lifecycle tooling;
+  /// never awaited by camera/inference or the authoritative counting path.
+  Future<void> get pendingPersistence => _pendingPersistence;
   String? get resampleOfSampleId => collector.context.resampleOfSampleId;
 
   /// Only between attempts; existing motion/counters and immutable samples
@@ -141,7 +146,7 @@ class BodyResearchSession {
     unawaited(advisory
         .finalized(sample)); // finalized only, never the camera hot loop
     final cloud = cloudConsent, epoch = _consentEpoch;
-    unawaited(repository.save(sample).then((_) async {
+    final save = repository.save(sample).then<void>((_) async {
       if (_disposed || !owner.isCurrent) return;
       message.value = '已保存 Body attempt（含未計次動作）';
       if (cloud && cloudConsent && epoch == _consentEpoch) {
@@ -151,7 +156,10 @@ class BodyResearchSession {
       }
     }).catchError((Object _) {
       if (!_disposed && owner.isCurrent) message.value = '研究保存／同步失敗；復健訓練不受影響';
-    }));
+    });
+    _pendingPersistence =
+        Future.wait<void>([_pendingPersistence, save]).then((_) {});
+    unawaited(_pendingPersistence);
   }
 
   void _accountChanged() {

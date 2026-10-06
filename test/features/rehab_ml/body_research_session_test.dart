@@ -104,7 +104,7 @@ void main() {
     session.setLocalConsent(true);
     begin();
     session.userFinished();
-    await Future<void>.delayed(const Duration(milliseconds: 60));
+    await session.pendingPersistence;
     final samples = await session.repository.list();
     expect(samples, hasLength(1));
     expect(samples.single['completedRepsAfter'], 0);
@@ -118,7 +118,7 @@ void main() {
     begin();
     session.setForeground(false);
     session.observe(moving(400), completedReps: 7, setIndex: 2);
-    await Future<void>.delayed(const Duration(milliseconds: 60));
+    await session.pendingPersistence;
     final samples = await session.repository.list();
     expect(samples.single['terminationReason'], 'INTERRUPTED');
     expect(samples.single['completedRepsAfter'], 0);
@@ -130,7 +130,7 @@ void main() {
     await session.selectResample('00000000-0000-4000-8000-000000000001');
     begin();
     session.userFinished();
-    await Future<void>.delayed(const Duration(milliseconds: 60));
+    await session.pendingPersistence;
     final samples = await session.repository.list();
     expect(samples.single['resampleOfSampleId'],
         '00000000-0000-4000-8000-000000000001');

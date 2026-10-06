@@ -27,17 +27,18 @@ class _SmokeState extends State<_Smoke> {
   }
 
   Future<void> _run() async {
-    const encoded = String.fromEnvironment('BODY_ML_ENGINEERING_BUNDLE');
-    if (!bodyMlEngineeringValidation || encoded.isEmpty) {
+    const fixtureFile = String.fromEnvironment('BODY_ML_ENGINEERING_FILE');
+    if (!bodyMlEngineeringValidation || fixtureFile.isEmpty) {
       debugPrint('BODY_R5_SMOKE DEFAULT_OFF PASS');
       return;
     }
     BodyMlOnnxSession? session;
     BodyMlEvaluator? evaluator;
     try {
-      final json = jsonDecode(utf8.decode(base64Decode(encoded))) as Map;
+      final content = await File(fixtureFile).readAsString();
+      final json = jsonDecode(content) as Map;
       final parity = json['parity'] as Map;
-      final bundle = BodyMlBundle.decodeFixture(encoded);
+      final bundle = BodyMlBundle.fromFixtureJson(content);
       final memory = ProcessInfo.currentRss;
       final load = Stopwatch()..start();
       session = await NativeBodyMlSession.open(

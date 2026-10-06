@@ -26,7 +26,15 @@
 - Default-OFF research focused regression: 162/162 PASS.
 - Engineering flag focused + actual Flutter Windows ONNX parity: 41/41 PASS (40 state tests + 1 test covering all 56 vectors).
 - Native max probability error 1.9868214962137642e-8. Host ORT load 82,604 us; inference p50 219 us/p95 330 us; host process RSS delta 4,427,776 bytes (not Android benchmark).
-- Normal Debug APK build PASS; Release build in progress. Android physical tests NOT REQUIRED. Phone emulator started for automated fixture smoke only.
+- Normal Debug and Release APK builds PASS. First release --no-pub hit stale dev-only flutter_native_splash registrant; normal build regenerated plugin metadata and succeeded, no source/dependency change.
+- Full Flutter suite once: 596 PASS / 7 FAIL, matching Round4's seven baseline failures. Later four added safety tests pass focused; full suite was not repeated merely to change counts.
+- Python 73/73 PASS. Engineering final focused+real parity 45/45 PASS (44 state tests + 56-vector parity).
+- TV focused46/46 PASS; scoped analyze0issues (before final file-loader refinement).
+- Engineering Release fixture APK PASS, distinct ID com.rehabassist.bodyml.r5validation. Initial embedding via large dart-define exceeded Windows command length; replaced by compile-gated app-owned fixture file path, normal assets unchanged.
+- Physical-phone install blocked by auto-review (no clear phone mutation authority). Phone untouched. Original emulator has insufficient space; investigating disposable userdata, not deleting/wiping original AVD.
+- Disposable emulator now boots with fresh userdata (4.4GiB free), original AVD untouched. Validation APK application ID confirmed via aapt before install; direct Gradle -P was required because ORG_GRADLE_PROJECT environment variable did not apply through Flutter build invocation.
+- Release fixture app installs/launches, stays alive, but fixture file access failed with PathAccessException; actual Android inference/benchmark NOT PASS yet. Diagnose only fixture transport; production sources unchanged.
+- Two existing session tests exposed fixed60ms filesystem-wait flakiness under concurrent Gradle work. Added pendingPersistence completion boundary and replaced sleeps with exact waits (same assertions). Final core64/64 and TV50/50 PASS; no weakened assertions.
 - First focused run had one test fixture notifier error (test manually changed userId without production changes notifier); corrected fixture and rerun passed. Initial analyze errors during implementation resolved; final analyze pending.
 - Real dataset/training: DATA_INSUFFICIENT. Real model available/validated/deployed: NO.
 
