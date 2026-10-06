@@ -10,6 +10,8 @@
 - Implemented typed v3 contract/bundle/integrity, ONNX numeric-class evaluator, same-store activation/rollback and scoped advisory consumers.
 - Finalized BodyResearchSession and therapist v3 detail consumers wired; annotation/payload/counters unchanged.
 - Added explicit compile-time fixture-only validation path and committed 18,694-byte SYNTHETIC test model encoded in test/fixtures (not app assets).
+- Synced only necessary shared runtime to existing TV branch; no whole-branch merge. Master core64/64, TV50/50, engineering45/45 and actual Windows/Android56-vector parity PASS.
+- Normal Debug/Release and isolated engineering/default-OFF Release builds PASS; emulator launch/inference PASS. Disposable emulator stopped; original AVD/physical phone untouched.
 
 ## Decisions
 - Extend LocalMlModelStore, not a second registry; namespace v3 separately from legacy v1 with the same action ID.
@@ -18,9 +20,8 @@
 - No backend/database access required for local advisory inference. No lab/production access, push/deploy, Pi changes or physical motion requests.
 
 ## Remaining
-1. Synchronize necessary shared runtime with existing TV branch; preserve all platform code and existing generated changes.
-2. Finish focused regressions/analyze, Release build and emulator validation smoke/benchmark. Debug build already PASS.
-3. Full suite once, R4 Python regression, report/handoff and task-only commits. Preserve known failures without claiming them passed.
+- No implementation or engineering validation work remains. Final task-only documentation commits and Git verification recorded in completion response.
+- Stop before Round 6. Real dataset/calibration/model approval/deployment remain unavailable, not silently inferred.
 
 ## Tests
 - Default-OFF research focused regression: 162/162 PASS.
@@ -37,6 +38,19 @@
 - Two existing session tests exposed fixed60ms filesystem-wait flakiness under concurrent Gradle work. Added pendingPersistence completion boundary and replaced sleeps with exact waits (same assertions). Final core64/64 and TV50/50 PASS; no weakened assertions.
 - First focused run had one test fixture notifier error (test manually changed userId without production changes notifier); corrected fixture and rerun passed. Initial analyze errors during implementation resolved; final analyze pending.
 - Real dataset/training: DATA_INSUFFICIENT. Real model available/validated/deployed: NO.
+- Shared runtime synchronized to existing TV branch; final TV focused50/50 PASS. Seven pre-existing generated desktop edits remain untouched.
+- Final master and TV scoped analyze: 0 issues. One initial analyze invocation used a wrong model-store path; corrected to actual rehab_ml directory, not a source defect.
+- Android x86_64 Release engineering runtime PASS on disposable emulator: all56 vectors, maxError1.9868214962137642e-8, typed=PREDICTED. load111334us, first91069us, p501068us, p958244us, processRSSdelta33394688bytes (includes Flutter/FFI and two sessions, not model-only RAM).
+- PathAccessException resolved by chmod755 of exactly the shell-created isolated test-app fixture directories; production code unchanged. Physical phone untouched.
+- Default-OFF direct Gradle smoke initially hit the same stale dev-only splash registrant after analyze/pub; retry through Flutter Release preparation in progress. No dependency, native or keep-rule changes.
+- Default-OFF retry completed: Flutter preparation + explicit existing Gradle validation applicationId; Release build/isolated emulator launch PASS, logcat DEFAULT_OFF PASS. Engineering56-vector logs retained. This smoke checks flag/UI; catalog no-model behavior tested by unit tests.
+- Final normal main.dart builds after0f8f0fc: Debug29.4s/Release96.2s PASS. Release490151035bytes; SHA256679741BFD36CB777A2C22CC096C49C2CFC77CFB378FD2AB25C88AA9556136AB2. Final APK ABI/pose/hand assets and unchanged ORT keep/mapping checked; no fixture asset.
+- Final TV Debug after34bc367 PASS26.6s. Both branch diff --check against task baselines PASS; full7 baseline failures preserved. Untracked zero-byte Kotlin compiler session cache from this build archived into ignored .dart_tool/body-r5, not deleted/committed.
+
+## Completion status
+- MODEL_RUNTIME_ENGINEERING=PASS; REAL_MODEL_AVAILABLE/VALIDATED/DEPLOYED=NO; PRODUCTION_MODEL=NONE.
+- Complete report: BODY_RESEARCH_ROUND5_REPORT.md. No production/push/lab/Pi/physical motion operations. Original AVD preserved; temporary validation emulator stopped.
+- Implementation commits masterc3f70e9/0f8f0fc; TV20291d1/34bc367 plus final docs43901d0ae1269d162446b924e6570b27cd70fc9d. Final master documentation SHA in completion response/git log; backend9871f96 unchanged.
 
 ## Do Not Redo
 - Do not retrain Round 4 synthetic model or alter frozen feature mathematics.
