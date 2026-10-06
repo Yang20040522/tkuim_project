@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter_body/features/account/app_session.dart';
 import 'package:flutter_body/features/analysis/body/body_rep_trajectory_collector.dart';
 import 'package:flutter_body/features/rehab_ml/ml_quality_evaluator.dart';
 import 'package:flutter_body/features/rehab_ml/ml_sample_repository.dart';
@@ -81,6 +82,10 @@ void main() {
   });
 
   test('save, inspect, export and delete use local JSON only', () async {
+    AppSession.userId = 'synthetic-local-owner';
+    addTearDown(() {
+      AppSession.userId = null;
+    });
     final directory = await Directory.systemTemp.createTemp('rehab_ml_test_');
     addTearDown(() => directory.delete(recursive: true));
     final repository =

@@ -5,7 +5,7 @@ import 'dart:typed_data';
 import 'package:http/http.dart' as http;
 
 import '../../core/api_config.dart';
-import '../account/app_session.dart';
+import 'research_owner_scope.dart';
 
 class MlResearchException implements Exception {
   const MlResearchException(this.message, {this.statusCode, this.code});
@@ -129,15 +129,19 @@ class MlResearchApi implements MlResearchRemote {
   MlResearchApi({http.Client? client, String? baseUrl})
       : _client = client ?? http.Client(),
         _baseUrl =
-            (baseUrl ?? ApiConfig.baseUrl).replaceFirst(RegExp(r'/+$'), '');
+            (baseUrl ?? ApiConfig.baseUrl).replaceFirst(RegExp(r'/+$'), ''),
+        _owner = ResearchOwnerScope.captureIfPresent();
 
   final http.Client _client;
   final String _baseUrl;
+  ResearchOwnerScope? _owner;
 
   Map<String, String> _headers() {
-    final id = AppSession.userId?.trim();
-    final token = AppSession.customExerciseToken?.trim();
-    if (id == null || id.isEmpty || token == null || token.isEmpty) {
+    final scope = _owner ??= ResearchOwnerScope.capture();
+    scope.check(requireToken: true);
+    final id = scope.userId;
+    final token = scope.token;
+    if (id.isEmpty || token == null || token.isEmpty) {
       throw const MlResearchException('登入狀態已失效，請重新登入。',
           statusCode: 401, code: 'RESEARCH_AUTH_REQUIRED');
     }
@@ -161,6 +165,7 @@ class MlResearchApi implements MlResearchRemote {
     final http.Response response;
     try {
       response = await request.timeout(const Duration(seconds: 20));
+      _owner?.check(requireToken: true);
     } on TimeoutException {
       throw const MlResearchException('研究服務連線逾時，請稍後再試；本機樣本仍可保存。',
           code: 'NETWORK_TIMEOUT');
@@ -316,6 +321,7 @@ class MlResearchApi implements MlResearchRemote {
                 .replace(queryParameters: {'actionId': actionId}),
             headers: _headers())
         .timeout(const Duration(seconds: 30));
+    _owner?.check(requireToken: true);
     if (response.statusCode != 200 ||
         response.headers['content-type']?.contains('application/zip') != true) {
       throw MlResearchException('已審核資料匯出失敗，請確認授權與資料狀態。',

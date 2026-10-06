@@ -35,6 +35,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:onnxruntime_v2/onnxruntime_v2.dart';
 import '../models/pose_data.dart';
+import '../models/body_pose_observation.dart';
 
 import 'package:image/image.dart' as img;
 
@@ -194,6 +195,7 @@ class BodyPoseEngine {
   bool _externalMirror = false;
 
   List<Offset> _smoothedKeypoints = [];
+  String? _researchStreamSession;
   bool _disposed = false;
 
   // 目前正在跑的那一次推論(runAsync 還沒回來前不能 release session/runOpts)
@@ -474,14 +476,17 @@ class BodyPoseEngine {
   //   代表是否鏡像。
   //   樹莓派畫面(needsRotation:false)時代表畫面是否需要左右鏡像,
   //   一般固定架設鏡頭不需要,傳 false 即可。
-  Future<void> processExternalFrame(
+  Future<BodyPoseObservation?> processExternalFrame(
     Uint8List rgbBytes,
     int width,
     int height, {
     bool isMirror = false,
     bool needsRotation = true,
+    BodyFrameIdentity? identity,
+    bool Function()? shouldPublish,
+    void Function(BodyPoseObservation)? onObservation,
   }) async {
-    if (_disposed || _poseSession == null) return;
+    if (_disposed || _poseSession == null) return null;
 
     // 等目前正在跑的推論結束(避免衝突)
     if (_processing) {
@@ -492,26 +497,70 @@ class BodyPoseEngine {
       }
     }
 
+    // A timed-out native call still owns the session. Never overlap inference.
+    if (_disposed || _processing || !(shouldPublish?.call() ?? true)) {
+      return null;
+    }
+
     _processing = true;
+    if (identity != null &&
+        identity.streamSessionId != _researchStreamSession) {
+      _researchStreamSession = identity.streamSessionId;
+      _smoothedKeypoints = [];
+    }
 
     // 🚀 修正:外部畫面(樹莓派/影片分析)走獨立旗標,
     // 不再覆蓋 _isFrontCamera,避免跟手機鏡頭的座標映射邏輯互相污染。
     _isExternalFrame = true;
     _externalMirror = isMirror;
 
-    final converted = convertRGB(
-      rgbBytes,
-      width,
-      height,
-      isFrontCamera: isMirror,
-      needsRotation: needsRotation,
-    );
-    _pendingInference = _runInference(converted);
+    late final Float32List converted;
+    try {
+      converted = convertRGB(
+        rgbBytes,
+        width,
+        height,
+        isFrontCamera: isMirror,
+        needsRotation: needsRotation,
+      );
+    } catch (_) {
+      _processing = false;
+      rethrow;
+    }
+    if (_disposed || !(shouldPublish?.call() ?? true)) {
+      _processing = false;
+      return null;
+    }
+    BodyPoseObservation? result;
+    _pendingInference = _runInference(converted,
+        shouldPublish: shouldPublish,
+        publishObservation: identity == null
+            ? null
+            : (points, scores) {
+                result = BodyPoseObservation(
+                    frameId: identity.frameId,
+                    streamSessionId: identity.streamSessionId,
+                    receivedAtMs: identity.receivedAtMs,
+                    imageWidth: width,
+                    imageHeight: height,
+                    source: 'tv_pi',
+                    keypoints: List<Offset?>.generate(points.length,
+                        (i) => scores[i] >= scoreThreshold ? points[i] : null),
+                    scores: scores,
+                    mirrored: isMirror,
+                    rotationDegrees: needsRotation ? 90 : 0);
+                onObservation?.call(result!);
+              });
     await _pendingInference;
+    return result;
   }
 
   // ── ONNX 推論 + 解碼 + EMA (搬自 body_test_screen,邏輯相同) ──────
-  Future<void> _runInference(Float32List converted) async {
+  Future<void> _runInference(
+    Float32List converted, {
+    bool Function()? shouldPublish,
+    void Function(List<Offset>, List<double>)? publishObservation,
+  }) async {
     OrtValueTensor? tensor;
     List<OrtValue?>? outputs;
 
@@ -523,6 +572,7 @@ class BodyPoseEngine {
       );
 
       outputs = await _poseSession!.runAsync(_runOpts!, {'input': tensor});
+      if (_disposed || !(shouldPublish?.call() ?? true)) return;
       if (outputs == null || outputs.length < 2) return;
       if (outputs[0] == null || outputs[1] == null) return;
 
@@ -663,6 +713,11 @@ class BodyPoseEngine {
       }
 
       // 對外永遠提供固定 133 點，index 0~132 不會因缺點而位移。
+      if (_disposed || !(shouldPublish?.call() ?? true)) return;
+      // Pi publishes the immutable JPEG/observation packet before legacy pose
+      // listeners fire, so both overlay and research consume this exact frame.
+      publishObservation?.call(
+          List<Offset>.from(_smoothedKeypoints), List<double>.from(scores));
       poseNotifier.value = PoseData(
         List<Offset>.from(_smoothedKeypoints),
         List<double>.from(scores),

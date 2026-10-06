@@ -10,6 +10,7 @@ import 'ml_rep_quality_controller.dart';
 import 'ml_research_api.dart';
 import 'ml_research_sync.dart';
 import 'ml_sample_repository.dart';
+import 'research_owner_scope.dart';
 
 /// Auxiliary opt-in research, independent of Action rules and cloud consent.
 class HandResearchSession {
@@ -23,6 +24,7 @@ class HandResearchSession {
             evaluator ?? CatalogMlQualityEvaluator(action)) {
     sync = MlResearchSync(
         remote: remote ?? MlResearchApi(), local: this.repository);
+    AppSession.changes.addListener(_accountChanged);
   }
   final MlActionDefinition action;
   final MlSampleRepository repository;
@@ -42,8 +44,21 @@ class HandResearchSession {
   String? subjectId;
   String cameraView = 'front';
   bool _disposed = false;
+  ResearchOwnerScope? _owner;
+  void _accountChanged() {
+    if (_owner != null && !_owner!.isCurrent) {
+      localConsent = false;
+      cloudConsent = false;
+      subjectId = null;
+      reset();
+      sync.stop();
+      message.value = null;
+    }
+  }
+
   int _serial = 0;
   void setLocalConsent(bool consent, String? subject) {
+    if (consent) _owner ??= repository.owner;
     _consentEpoch++;
     reset();
     localConsent = consent;
@@ -93,6 +108,8 @@ class HandResearchSession {
   Future<void> dispose() async {
     if (_disposed) return;
     _disposed = true;
+    AppSession.changes.removeListener(_accountChanged);
+    sync.stop();
     collector.reset();
     message.dispose();
     await quality.dispose();

@@ -1,3 +1,6 @@
+import 'body_research_contract.dart';
+import 'body_research_feature_extractor.dart';
+
 /// Versioned research contract, independent of camera, training/counting and UI.
 /// A registry entry is not clinical validation or permission to collect data.
 class MlActionDefinition {
@@ -27,6 +30,7 @@ class MlActionDefinition {
   bool get isHand => schemaVersion == 2;
 
   bool accepts(Map<String, dynamic> sample) {
+    if (schemaVersion == 3) return BodyResearchContract.accepts(sample);
     final names = sample['featureNames'];
     final features = sample['features'];
     return (!isHand ||
@@ -160,11 +164,24 @@ class MlActionRegistry {
     labels: wristLabels,
   );
   static const hands = [turnPalm, sidePinch, wristExtension, wristSideBend];
+  static final bodyAttempt = MlActionDefinition(
+      actionId: 'standing_knee_raise',
+      version: BodyResearchFeatureExtractor.actionDefinitionVersion,
+      displayName: '站姿抬腳（Body attempt）',
+      schemaVersion: 3,
+      featureNames: BodyResearchFeatureExtractor.featureNames,
+      labels: standingKneeRaise.labels,
+      angleLabels: standingKneeRaise.angleLabels,
+      preprocessing: 'body-attempt-aspect-2d-v2;NOT_DEPLOYED');
   static final production = MlActionRegistry([standingKneeRaise, ...hands]);
   Iterable<MlActionDefinition> get definitions => _definitions.values;
 
   MlActionDefinition? byId(String? id) => _definitions[id];
   MlActionDefinition? forSample(Map<String, dynamic> sample) {
+    if (sample['schemaVersion'] == 3 &&
+        _definitions.containsKey('standing_knee_raise')) {
+      return bodyAttempt.accepts(sample) ? bodyAttempt : null;
+    }
     final definition = byId(sample['actionId']?.toString());
     return definition != null && definition.accepts(sample) ? definition : null;
   }

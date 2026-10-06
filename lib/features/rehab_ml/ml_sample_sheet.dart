@@ -8,6 +8,7 @@ import 'ml_research_api.dart';
 import 'ml_research_sync.dart';
 import 'ml_quality_evaluator.dart';
 import 'ml_action_definition.dart';
+import '../account/app_session.dart';
 
 /// Explicit research opt-in, local sample review and optional cloud sync.
 class MlSampleSheet extends StatefulWidget {
@@ -50,10 +51,27 @@ class _MlSampleSheetState extends State<MlSampleSheet> {
   int _syncedCount = 0;
   bool _busy = false;
   bool _cloudEnabledForCapture = false;
+  late final int _accountGeneration;
+  bool get _sameAccount => _accountGeneration == AppSession.changes.value;
+  void _accountChanged() {
+    if (!_sameAccount && mounted) {
+      widget.cloudSync?.stop();
+      setState(() {
+        _samples = [];
+        _cloudConsent = null;
+        _consent = false;
+        _cloudEnabledForCapture = false;
+        _pendingCount = 0;
+        _syncedCount = 0;
+      });
+    }
+  }
 
   @override
   void initState() {
     super.initState();
+    _accountGeneration = AppSession.changes.value;
+    AppSession.changes.addListener(_accountChanged);
     _consent = widget.initialConsent;
     _cloudEnabledForCapture = widget.initialCloudConsent;
     _subjectController = TextEditingController(text: widget.initialSubjectId);
@@ -62,6 +80,7 @@ class _MlSampleSheetState extends State<MlSampleSheet> {
 
   @override
   void dispose() {
+    AppSession.changes.removeListener(_accountChanged);
     _subjectController.dispose();
     super.dispose();
   }
@@ -71,7 +90,8 @@ class _MlSampleSheetState extends State<MlSampleSheet> {
       final samples = (await widget.repository.list())
           .where((s) => s['actionId'] == widget.definition.actionId)
           .toList();
-      if (mounted) setState(() => _samples = samples);
+      if (!mounted || !_sameAccount) return;
+      setState(() => _samples = samples);
       MlResearchConsent? cloud;
       var pending = 0;
       var synced = 0;
@@ -90,7 +110,7 @@ class _MlSampleSheetState extends State<MlSampleSheet> {
         }
         synced = (await widget.cloudSync!.syncedIds()).length;
       }
-      if (mounted) {
+      if (mounted && _sameAccount) {
         setState(() {
           _samples = samples;
           _cloudConsent = cloud;
@@ -107,6 +127,7 @@ class _MlSampleSheetState extends State<MlSampleSheet> {
   }
 
   Future<void> _setConsent(bool enabled) async {
+    if (!_sameAccount) return;
     if (_busy) return;
     final id = _subjectController.text.trim();
     if (enabled && !RegExp(r'^[A-Za-z0-9_-]{3,40}$').hasMatch(id)) {
@@ -123,6 +144,7 @@ class _MlSampleSheetState extends State<MlSampleSheet> {
   }
 
   Future<void> _setCloudConsent(bool enabled) async {
+    if (!_sameAccount) return;
     if (_busy || widget.cloudSync == null) return;
     if (enabled && !_consent) {
       setState(() => _error = '請先同意本機研究樣本收集。');
@@ -150,13 +172,13 @@ class _MlSampleSheetState extends State<MlSampleSheet> {
         await widget.cloudSync!.withdraw();
         _cloudConsent = await widget.cloudSync!.remote.getConsent();
       }
-      if (mounted) {
+      if (mounted && _sameAccount) {
         setState(() {
           _cloudEnabledForCapture = enabled;
           _error = null;
         });
       }
-      if (mounted) widget.onCloudConsentChanged?.call(enabled);
+      if (mounted && _sameAccount) widget.onCloudConsentChanged?.call(enabled);
     } catch (error) {
       if (mounted) {
         setState(() => _error = MlResearchException.safeMessage(error));
