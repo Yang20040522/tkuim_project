@@ -9,6 +9,9 @@ import 'package:flutter_body/features/rehab_ml/body_ml_advisory_card.dart';
 import 'package:flutter_body/features/rehab_ml/local_ml_model_store.dart';
 import 'package:flutter_body/features/account/app_session.dart';
 import 'body_ml_test_support.dart';
+import 'package:flutter_body/features/rehab_ml/body_research_sample.dart';
+import 'package:flutter_body/features/rehab_ml/body_research_context.dart';
+import 'body_research_foundation_test.dart' show observation;
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -125,6 +128,111 @@ void main() {
         BodyMlDecision.domainMismatch);
     expect(opens, 0);
     await evaluator.dispose();
+  });
+  test(
+      'frozen extractor sample adapter leaves counters and annotation untouched',
+      () async {
+    final sample = BodyResearchSample(
+        context: BodyResearchContext(
+            ownerId: 'FAKE',
+            accountGeneration: 0,
+            exerciseId: '99',
+            movementSide: 'left',
+            capturedAt: DateTime.utc(2026)),
+        attemptId: 'immutable',
+        observations: [
+          for (final t in [0, 100, 200, 300]) observation(t)
+        ],
+        termination: BodyAttemptTermination.returnedToBaseline,
+        setIndex: 2,
+        completedRepsBefore: 4,
+        completedRepsAfter: 5,
+        intendedRepetition: 5);
+    final before = sample.toJson();
+    final annotation = <String, Object>{
+      'label': 'trunk_compensation',
+      'revision': 2
+    };
+    final evaluator = BodyMlEvaluator(
+        revision: () async => null, bundleLoader: (_) async => null);
+    final vector = BodyMlInput.fromSample(sample);
+    expect(vector.features, sample.features.values);
+    expect(vector.problem, isNull);
+    expect((await evaluator.evaluate(vector)).decisionStatus,
+        BodyMlDecision.modelUnavailable);
+    expect(sample.toJson(), before);
+    expect(sample.completedRepsAfter, 5);
+    expect(sample.setIndex, 2);
+    expect(annotation, {'label': 'trunk_compensation', 'revision': 2});
+    await evaluator.dispose();
+  });
+  test('engineering threshold abstains without a clinical confidence claim',
+      () async {
+    final bundle = fakeBundle(changes: {
+      'modelStatus': 'EXPERIMENTAL',
+      'dataOrigin': 'SYNTHETIC',
+      'deploymentApproved': false,
+      'abstentionThreshold': 0.9
+    });
+    final evaluator = BodyMlEvaluator(
+        engineering: true,
+        revision: () async => 'A',
+        bundleLoader: (_) async => bundle,
+        sessionFactory: (_, __) async => FakeBodySession());
+    final result = await evaluator.evaluate(input());
+    expect(
+        result.decisionStatus,
+        bodyMlEngineeringValidation
+            ? BodyMlDecision.lowConfidence
+            : BodyMlDecision.disabled);
+    expect(result.label, isNull);
+    await evaluator.dispose();
+  });
+  test('model version change invalidates and reloads scoped native session',
+      () async {
+    String? version = 'A';
+    final sessions = <FakeBodySession>[];
+    final evaluator = BodyMlEvaluator(
+        revision: () async => version,
+        bundleLoader: (v) async => fakeBundle(changes: {'modelVersion': v}),
+        sessionFactory: (_, __) async {
+          final s = FakeBodySession();
+          sessions.add(s);
+          return s;
+        });
+    await evaluator.evaluate(input());
+    version = 'B';
+    await evaluator.evaluate(input(id: 'next'));
+    expect(sessions, hasLength(2));
+    expect(sessions.first.closes, 1);
+    version = null;
+    await evaluator.evaluate(input(id: 'disabled'));
+    expect(sessions.last.closes, 1);
+    await evaluator.dispose();
+  });
+  test('logout during inference ignores result and releases session', () async {
+    AppSession.userId = 'FAKE-A';
+    final started = Completer<void>(), completion = Completer<BodyMlOutput>();
+    final s = FakeBodySession()
+      ..handler = () {
+        started.complete();
+        return completion.future;
+      };
+    final controller = BodyMlAdvisoryController(
+        evaluator: BodyMlEvaluator(
+            revision: () async => 'A',
+            bundleLoader: (_) async => fakeBundle(),
+            sessionFactory: (_, __) async => s));
+    final result = controller.evaluate(input());
+    await started.future;
+    AppSession.userId = null;
+    AppSession.changes.value++;
+    completion.complete(const BodyMlOutput(0, [0.8, 0.1, 0.1]));
+    await result;
+    await Future<void>.delayed(Duration.zero);
+    expect(controller.latest.value, isNull);
+    expect(s.closes, 1);
+    await controller.dispose();
   });
   test('missing/corrupt/ORT failure/inference failure structured fallback',
       () async {

@@ -58,7 +58,10 @@ class BodyMlContractFailure implements Exception {
 /// from trusted build tooling or an app-private, governed local model store.
 class BodyMlBundle {
   factory BodyMlBundle.decodeFixture(String encoded) {
-    final json = jsonDecode(utf8.decode(base64Decode(encoded))) as Map;
+    return BodyMlBundle.fromFixtureJson(utf8.decode(base64Decode(encoded)));
+  }
+  factory BodyMlBundle.fromFixtureJson(String content) {
+    final json = jsonDecode(content) as Map;
     return BodyMlBundle(
         manifest: base64Decode(json['manifest.json'] as String),
         model: base64Decode(json['model.onnx'] as String),

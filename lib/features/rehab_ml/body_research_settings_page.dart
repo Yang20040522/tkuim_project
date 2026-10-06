@@ -164,7 +164,8 @@ class _BodyResearchSettingsPageState extends State<BodyResearchSettingsPage> {
           const SizedBox(height: 20),
           ValueListenableBuilder<BodyMlPrediction?>(
               valueListenable: widget.session.advisory.latest,
-              builder: (_, prediction, __) => BodyMlAdvisoryCard(prediction: prediction)),
+              builder: (_, prediction, __) =>
+                  BodyMlAdvisoryCard(prediction: prediction)),
           CheckboxListTile(
               autofocus: true,
               title: const Text('同意本機 Body attempt 收集'),
