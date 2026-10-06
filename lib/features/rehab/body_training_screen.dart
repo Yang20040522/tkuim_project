@@ -59,6 +59,10 @@ import 'dart:typed_data'; // 用到 Uint8List
 import 'package:flutter/material.dart';
 import 'package:camera/camera.dart';
 import '../../models/pose_data.dart';
+import '../rehab_ml/body_research_session.dart';
+import '../rehab_ml/body_research_assignment_client.dart';
+import '../rehab_ml/body_research_settings_page.dart';
+import '../rehab_ml/ml_research_api.dart';
 import '../../models/body_frame.dart';
 import '../../models/training_action.dart';
 import '../../services/body_pose_engine.dart';
@@ -167,7 +171,53 @@ class BodyTrainingScreen extends StatefulWidget {
 
 enum _PauseChoice { resume, end }
 
-class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
+class _BodyTrainingScreenState extends State<BodyTrainingScreen>
+    with WidgetsBindingObserver {
+  BodyResearchSession? _bodyResearch;
+  bool _restartPiOnResume = false;
+  Future<void> _showBodyResearch() async {
+    if (widget.action is! StandingKneeRaiseAction || _waitingLegSelect) return;
+    try {
+      final side = (widget.action as StandingKneeRaiseAction).movingLegIsLeft;
+      if (side == null) return;
+      if (_bodyResearch == null) {
+        final id = await assignedStandingBodyExercise();
+        if (!mounted) return;
+        if (id == null) {
+          throw const MlResearchException('需由治療師指派站姿抬腳式訓練，才能收集 Body 研究資料。');
+        }
+        _bodyResearch = BodyResearchSession(
+            exerciseId: id, movementSide: side ? 'left' : 'right');
+      }
+      _bodyResearch!.setForeground(false);
+      await Navigator.of(context).push(MaterialPageRoute<void>(
+          builder: (_) => BodyResearchSettingsPage(session: _bodyResearch!)));
+      if (mounted) _bodyResearch?.setForeground(!_isPaused);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(MlResearchException.safeMessage(e))));
+      }
+    }
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (!AppPlatform.current.isTv) return;
+    if (state != AppLifecycleState.resumed) {
+      _bodyResearch?.setForeground(false);
+      _restartPiOnResume =
+          _restartPiOnResume || _piCamera?.connected.value == true;
+      unawaited(_piCamera?.stop());
+    } else {
+      _bodyResearch?.setForeground(!_isPaused);
+      if (_restartPiOnResume) {
+        _restartPiOnResume = false;
+        unawaited(_piCamera?.start());
+      }
+    }
+  }
+
   final BodyPoseEngine _engine = BodyPoseEngine();
   late final TrainingVoiceGate _voice;
   static const double _scoreThreshold = BodyPoseEngine.scoreThreshold;
@@ -299,6 +349,7 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _voice = widget.voiceGate ??
         TrainingVoiceGate(
           speak: VoiceService.speak,
@@ -454,7 +505,16 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
       });
 
       // 🆕 達標了 → 依照 autoLevelUp 開關決定「自動升級」還是「跳出詢問」
+      final packet = _piCamera?.processedFrame.value;
+      if (AppPlatform.current.isTv &&
+          packet != null &&
+          !_isPaused &&
+          !_waitingLegSelect) {
+        _bodyResearch?.observe(packet.observation,
+            completedReps: _repCount, setIndex: _levelToInt(_previousLevel));
+      }
       if (justReachedLevelUp) {
+        _bodyResearch?.interrupt();
         final action = widget.action;
         final controllable = action is LevelUpControllable
             ? action as LevelUpControllable
@@ -794,6 +854,7 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
 
   Future<void> _handleStopButtonTap() async {
     if (_completionShown || _isPaused) return;
+    _bodyResearch?.setForeground(false);
 
     _aiTrajectoryCollector.reset();
     setState(() => _isPaused = true);
@@ -812,6 +873,7 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
 
     if (choice != _PauseChoice.end) {
       setState(() => _isPaused = false);
+      _bodyResearch?.setForeground(true);
       _voice.resume();
       return;
     }
@@ -820,6 +882,7 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
   }
 
   Future<void> _handleRealEnd() async {
+    _bodyResearch?.userFinished();
     _completionShown = true;
     _isPaused = true;
     // Completion dialog can remain open: stop Pi frames before showing it.
@@ -1082,6 +1145,8 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _bodyResearch?.dispose();
     _aiSessionClock.stop();
     _aiTrajectoryCollector.reset();
     if (_recordingStarted && !_completionShown) {
@@ -1172,6 +1237,7 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
         _tvModelReady = true;
       }
       final previous = _piCamera;
+      _bodyResearch?.interrupt();
       if (previous != null) {
         // Detach listeners before disposing their notifier source.
         setState(() => _piCamera = null);
@@ -1263,6 +1329,13 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
                           ),
                         ),
                         const SizedBox(height: 12),
+                        if (widget.action is StandingKneeRaiseAction)
+                          OutlinedButton.icon(
+                              key: const Key('tv-body-research'),
+                              onPressed:
+                                  _waitingLegSelect ? null : _showBodyResearch,
+                              icon: const Icon(Icons.science_outlined),
+                              label: const Text('Body 研究資料')),
                         OutlinedButton(
                           onPressed: _handleStopButtonTap,
                           child: const Text('暫停 / 結束'),
@@ -1291,22 +1364,30 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
           if (status != PiConnectionStatus.connected) {
             return TvWaitingView(message: status.label);
           }
-          return ValueListenableBuilder<Uint8List?>(
-            valueListenable: source.latestJpeg,
-            builder: (_, jpeg, child) {
-              if (jpeg == null) {
+          return ValueListenableBuilder<PiProcessedFrame?>(
+            valueListenable: source.processedFrame,
+            builder: (_, packet, child) {
+              if (packet == null) {
                 return const TvWaitingView(message: '已連線，等待外部影像');
               }
               // Publish/display only after existing inference completed for this JPEG.
               return Stack(
                 fit: StackFit.expand,
                 children: [
-                  Image.memory(jpeg, fit: BoxFit.cover, gaplessPlayback: true),
+                  Image.memory(packet.jpeg,
+                      fit: BoxFit.cover, gaplessPlayback: true),
                   CustomPaint(
                     painter: _SkeletonPainter(
-                      _engine.poseNotifier.value,
+                      PoseData(
+                          packet.observation.keypoints
+                              .map((p) => p ?? Offset.zero)
+                              .toList(),
+                          packet.observation.scores
+                              .map((s) => s ?? 0)
+                              .toList()),
                       _scoreThreshold,
-                      sourceSize: source.frameSize.value,
+                      sourceSize: Size(packet.observation.imageWidth.toDouble(),
+                          packet.observation.imageHeight.toDouble()),
                     ),
                   ),
                 ],

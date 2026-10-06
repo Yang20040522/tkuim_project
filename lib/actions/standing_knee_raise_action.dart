@@ -98,6 +98,10 @@ class StandingKneeRaiseAction
   bool get legAndModeSelected =>
       _trainedLegIsLeft != null && _supportLegIsLeft != null;
 
+  /// Passive research metadata, derived from the authoritative leg mapping.
+  bool? get movingLegIsLeft =>
+      _movingHip == null ? null : _movingHip == RehabJoint.leftHip;
+
   @override
   bool get trainedLegSelected => _trainedLegIsLeft != null; // 🆕
 

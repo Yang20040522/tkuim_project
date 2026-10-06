@@ -1,245 +1,259 @@
-// lib/services/pi_camera_source.dart
-//
-// ══════════════════════════════════════════════════════════════════
-//  樹莓派外接鏡頭來源
-//  - 透過 WebSocket 連線樹莓派的 camera_server.py (ws://<pi_ip>:8765)
-//  - 預覽直接顯示 JPEG；解碼和 RTMPose 在獨立的 latest-frame 推論路徑
-//
-//  frameSize — 從 JPEG header 讀取原始 pixel 尺寸,跟
-//     latestJpeg 同一幀更新。畫面顯示是用 Image.memory(fit: BoxFit.cover)
-//     塞進跟原始畫面長寬比不同的容器,骨架 painter 需要這個尺寸,
-//     才能算出跟 BoxFit.cover 一致的縮放/裁切偏移,讓骨架貼合畫面
-//     (詳見 body_training_screen.dart 的 _SkeletonPainter)。
-// ══════════════════════════════════════════════════════════════════
-
 import 'dart:async';
 import 'dart:ui';
+
 import 'package:flutter/foundation.dart';
 import 'package:image/image.dart' as img;
 import 'package:web_socket_channel/web_socket_channel.dart';
 
+import '../models/body_pose_observation.dart';
+import '../features/rehab_ml/body_research_context.dart' show newResearchId;
 import 'body_pose_engine.dart';
 
 enum PiConnectionStatus {
-  disconnected('未連線'),
-  connecting('連線中'),
-  connected('已連線'),
-  failed('連線失敗，請重新連線');
+  disconnected,
+  connecting,
+  connected,
+  failed;
 
-  final String label;
-  const PiConnectionStatus(this.label);
+  String get label => switch (this) {
+        disconnected => '未連線',
+        connecting => '連線中…',
+        connected => '已連線',
+        failed => '連線失敗',
+      };
 }
 
+class PiRgbFrame {
+  const PiRgbFrame(this.rgb, this.width, this.height);
+  final Uint8List rgb;
+  final int width, height;
+}
+
+/// Atomic packet: JPEG, overlay and research refer to one processed frame.
+class PiProcessedFrame {
+  PiProcessedFrame(Uint8List jpeg, this.observation)
+      : _jpeg = List<int>.unmodifiable(jpeg);
+  final List<int> _jpeg;
+  Uint8List get jpeg => Uint8List.fromList(_jpeg);
+  final BodyPoseObservation observation;
+}
+
+typedef PiFrameInference = Future<BodyPoseObservation?> Function(
+    PiRgbFrame rgb, BodyFrameIdentity identity, bool Function() stillCurrent);
+
 class PiCameraSource {
+  PiCameraSource({
+    BodyPoseEngine? engine,
+    required this.ip,
+    this.port = 8765,
+    WebSocketChannel Function(Uri)? connect,
+    Future<PiRgbFrame?> Function(Uint8List)? decode,
+    PiFrameInference? infer,
+    this.minimumInterval = const Duration(milliseconds: 125),
+    this.handshakeTimeout = const Duration(seconds: 8),
+  })  : _engine = engine,
+        _connect = connect ?? WebSocketChannel.connect,
+        _decode = decode ?? ((bytes) => compute(_decodeRgb, bytes)),
+        _infer = infer {
+    if (engine == null && infer == null) {
+      throw ArgumentError('Inference source required');
+    }
+  }
   final String ip;
   final int port;
-  final BodyPoseEngine engine;
-
-  WebSocketChannel? _channel;
-  StreamSubscription? _sub;
-  bool _processing = false;
-  bool _disposed = false;
-  bool _running = false;
-  Uint8List? _latestPending;
-  Timer? _inferenceTimer;
-  DateTime? _lastInferenceStart;
-  int _generation = 0;
-  static const _inferenceInterval = Duration(milliseconds: 125);
-  final ValueNotifier<PiConnectionStatus> status = ValueNotifier(
-    PiConnectionStatus.disconnected,
-  );
-
-  void _setStatus(PiConnectionStatus value) {
-    if (_disposed) return;
-    status.value = value;
-    connected.value = value == PiConnectionStatus.connected;
-  }
-
+  final BodyPoseEngine? _engine;
+  final WebSocketChannel Function(Uri) _connect;
+  final Future<PiRgbFrame?> Function(Uint8List) _decode;
+  final PiFrameInference? _infer;
+  final Duration minimumInterval, handshakeTimeout;
   final ValueNotifier<bool> connected = ValueNotifier(false);
+  final ValueNotifier<PiConnectionStatus> connectionStatus =
+      ValueNotifier(PiConnectionStatus.disconnected);
+  ValueNotifier<PiConnectionStatus> get status => connectionStatus;
   final ValueNotifier<Uint8List?> latestJpeg = ValueNotifier(null);
-  // 🚀 新增:原始畫面實際尺寸,跟 latestJpeg 鎖同一幀
   final ValueNotifier<Size?> frameSize = ValueNotifier(null);
-
-  PiCameraSource({required this.engine, required this.ip, this.port = 8765});
+  final ValueNotifier<PiProcessedFrame?> processedFrame = ValueNotifier(null);
+  final Stopwatch _clock = Stopwatch()..start();
+  WebSocketChannel? _channel;
+  StreamSubscription<dynamic>? _sub;
+  Timer? _throttle;
+  _PendingFrame? _pending;
+  bool _disposed = false, _running = false, _processing = false;
+  int _generation = 0, _serial = 0, _lastStartedMs = -125;
+  String _sessionId = '';
+  bool _current(int generation) =>
+      !_disposed && _running && generation == _generation;
 
   Future<void> start() async {
     if (_disposed || _running) return;
     _running = true;
-    _setStatus(PiConnectionStatus.connecting);
-
-    final uri = Uri.parse('ws://$ip:$port');
+    final generation = ++_generation;
+    _sessionId = newResearchId();
+    _serial = 0;
+    connectionStatus.value = PiConnectionStatus.connecting;
     try {
-      _channel = WebSocketChannel.connect(uri);
-    } catch (e) {
-      debugPrint('PiCameraSource 連線失敗: $e');
-      _setStatus(PiConnectionStatus.failed);
-      _invalidateFrames();
-      return;
-    }
-
-    _sub = _channel!.stream.listen(
-      _onData,
-      onError: (e) {
-        debugPrint('PiCameraSource stream 錯誤: $e');
-        _running = false;
-        _invalidateFrames();
-        _setStatus(PiConnectionStatus.failed);
-      },
-      onDone: () {
-        _running = false;
-        _invalidateFrames();
-        if (!_disposed && status.value != PiConnectionStatus.failed) {
-          _setStatus(PiConnectionStatus.disconnected);
-        }
-      },
-      cancelOnError: false,
-    );
-
-    try {
-      await _channel!.ready.timeout(const Duration(seconds: 8));
-      if (_running) _setStatus(PiConnectionStatus.connected);
-    } catch (error) {
-      debugPrint('Pi WebSocket handshake failed: $error');
-      _setStatus(PiConnectionStatus.failed);
-      await _sub?.cancel().timeout(
-            const Duration(seconds: 1),
-            onTimeout: () {},
-          );
-      await _channel?.sink.close().timeout(
-            const Duration(seconds: 1),
-            onTimeout: () {},
-          );
-      _running = false;
-      _invalidateFrames();
+      final channel = _connect(Uri.parse('ws://$ip:$port'));
+      _channel = channel;
+      _sub = channel.stream.listen((data) => _onData(data, generation),
+          onError: (Object _) => _failed(generation),
+          onDone: () => _failed(generation));
+      await channel.ready.timeout(handshakeTimeout);
+      if (!_current(generation)) return;
+      connected.value = true;
+      connectionStatus.value = PiConnectionStatus.connected;
+    } catch (_) {
+      if (!_current(generation)) return;
+      await stop();
+      if (!_disposed && !_running) {
+        connectionStatus.value = PiConnectionStatus.failed;
+      }
     }
   }
 
-  void _onData(dynamic data) {
-    if (_disposed || !_running) return;
-    if (data is! Uint8List) return;
-
-    final size = _jpegSize(data);
-    if (size != null) frameSize.value = size;
-    latestJpeg.value = data;
-    _latestPending = data;
-    _scheduleInference();
+  void _failed(int generation) {
+    if (!_current(generation)) return;
+    unawaited(stop().then((_) {
+      if (!_disposed && !_running) {
+        connectionStatus.value = PiConnectionStatus.failed;
+      }
+    }));
   }
 
-  void _scheduleInference() {
+  void _onData(dynamic data, int generation) {
+    if (!_current(generation) || data is! List<int> || data.isEmpty) return;
+    _pending = _PendingFrame(
+        Uint8List.fromList(data),
+        BodyFrameIdentity(
+            frameId: _serial++,
+            streamSessionId: _sessionId,
+            receivedAtMs: _clock.elapsedMilliseconds),
+        generation);
+    _schedule();
+  }
+
+  void _schedule() {
     if (_disposed ||
         !_running ||
         _processing ||
-        _inferenceTimer != null ||
-        _latestPending == null) {
+        _pending == null ||
+        _throttle != null) {
       return;
     }
-    final elapsed = _lastInferenceStart == null
-        ? _inferenceInterval
-        : DateTime.now().difference(_lastInferenceStart!);
-    final delay = _inferenceInterval - elapsed;
-    if (delay > Duration.zero) {
-      _inferenceTimer = Timer(delay, () {
-        _inferenceTimer = null;
-        _scheduleInference();
+    final remaining = minimumInterval.inMilliseconds -
+        (_clock.elapsedMilliseconds - _lastStartedMs);
+    if (remaining > 0) {
+      _throttle = Timer(Duration(milliseconds: remaining), () {
+        _throttle = null;
+        _schedule();
       });
       return;
     }
-    final jpeg = _latestPending!;
-    _latestPending = null;
+    final frame = _pending!;
+    _pending = null;
     _processing = true;
-    _lastInferenceStart = DateTime.now();
-    final generation = _generation;
-    _decodeAndInfer(jpeg, generation).whenComplete(() {
+    _lastStartedMs = _clock.elapsedMilliseconds;
+    unawaited(_process(frame).whenComplete(() {
       _processing = false;
-      _scheduleInference();
-    });
+      _schedule();
+    }));
   }
 
-  bool _isCurrent(int generation) =>
-      !_disposed && _running && generation == _generation;
-
-  Future<void> _decodeAndInfer(Uint8List jpegBytes, int generation) async {
+  Future<void> _process(_PendingFrame frame) async {
+    bool current() => _current(frame.generation);
     try {
-      final frame = await compute(_decodeRgb, jpegBytes);
-      if (frame == null || !_isCurrent(generation)) return;
+      final rgb = await _decode(frame.jpeg);
+      if (!current() || rgb == null) return;
+      void publish(BodyPoseObservation observation) {
+        if (!current() ||
+            observation.streamSessionId != frame.identity.streamSessionId ||
+            observation.frameId != frame.identity.frameId) {
+          return;
+        }
+        frameSize.value = Size(rgb.width.toDouble(), rgb.height.toDouble());
+        latestJpeg.value = frame.jpeg;
+        processedFrame.value = PiProcessedFrame(frame.jpeg, observation);
+      }
 
-      await engine.processExternalFrame(
-        frame.rgb,
-        frame.width,
-        frame.height,
-        isMirror: false,
-        needsRotation: false, // 樹莓派畫面本身是正的,不能套用手機鏡頭的 90 度校正映射
-        shouldPublish: () => _isCurrent(generation),
-      );
-    } catch (e) {
-      debugPrint('PiCameraSource 解碼/推論錯誤: $e');
+      if (_infer != null) {
+        final observation = await _infer!(rgb, frame.identity, current);
+        if (observation != null) publish(observation);
+      } else {
+        await _engine!.processExternalFrame(rgb.rgb, rgb.width, rgb.height,
+            isMirror: false,
+            needsRotation: false,
+            identity: frame.identity,
+            shouldPublish: current,
+            onObservation: publish);
+      }
+    } catch (_) {
+      if (current()) debugPrint('Pi camera frame decode/inference unavailable');
+    }
+  }
+
+  Future<void> waitForFirstFrame(
+      {Duration timeout = const Duration(seconds: 10)}) async {
+    if (processedFrame.value != null) return;
+    final completer = Completer<void>();
+    void listener() {
+      if (processedFrame.value != null && !completer.isCompleted) {
+        completer.complete();
+      }
+    }
+
+    processedFrame.addListener(listener);
+    try {
+      await completer.future.timeout(timeout);
+    } finally {
+      if (!_disposed) processedFrame.removeListener(listener);
     }
   }
 
   Future<void> stop() async {
     _running = false;
-    _invalidateFrames();
-    _setStatus(PiConnectionStatus.disconnected);
-    await _sub?.cancel().timeout(const Duration(seconds: 1), onTimeout: () {});
-    await _channel?.sink.close().timeout(
-          const Duration(seconds: 1),
-          onTimeout: () {},
-        );
+    ++_generation;
+    _pending = null;
+    _throttle?.cancel();
+    _throttle = null;
+    final sub = _sub, channel = _channel;
     _sub = null;
     _channel = null;
-    if (!_disposed) connected.value = false;
+    if (!_disposed) {
+      connected.value = false;
+      connectionStatus.value = PiConnectionStatus.disconnected;
+      processedFrame.value = null;
+      latestJpeg.value = null;
+      frameSize.value = null;
+    }
+    try {
+      await sub?.cancel().timeout(const Duration(seconds: 1));
+    } catch (_) {}
+    try {
+      await channel?.sink.close().timeout(const Duration(seconds: 1));
+    } catch (_) {}
   }
 
   void dispose() {
     if (_disposed) return;
     _disposed = true;
-    stop();
-    status.dispose();
+    unawaited(stop());
     connected.dispose();
+    connectionStatus.dispose();
     latestJpeg.dispose();
-    frameSize.dispose(); // 🚀 新增
-  }
-
-  void _invalidateFrames() {
-    _generation++;
-    _latestPending = null;
-    _inferenceTimer?.cancel();
-    _inferenceTimer = null;
+    frameSize.dispose();
+    processedFrame.dispose();
   }
 }
 
-class _RgbFrame {
-  final Uint8List rgb;
-  final int width;
-  final int height;
-  _RgbFrame(this.rgb, this.width, this.height);
+class _PendingFrame {
+  const _PendingFrame(this.jpeg, this.identity, this.generation);
+  final Uint8List jpeg;
+  final BodyFrameIdentity identity;
+  final int generation;
 }
 
-_RgbFrame? _decodeRgb(Uint8List jpeg) {
-  final decoded = img.decodeJpg(jpeg);
-  if (decoded == null) return null;
-  final rgb = decoded.convert(numChannels: 3);
-  return _RgbFrame(rgb.toUint8List(), rgb.width, rgb.height);
-}
-
-// SOF markers contain dimensions; scanning the JPEG header avoids a UI-isolate decode.
-Size? _jpegSize(Uint8List bytes) {
-  if (bytes.length < 4 || bytes[0] != 0xff || bytes[1] != 0xd8) return null;
-  var index = 2;
-  while (index + 9 < bytes.length && bytes[index] == 0xff) {
-    final marker = bytes[index + 1];
-    if (marker == 0xda || marker == 0xd9) break;
-    final length = (bytes[index + 2] << 8) | bytes[index + 3];
-    if (length < 2 || index + 2 + length > bytes.length) break;
-    if ((marker >= 0xc0 && marker <= 0xc3) ||
-        (marker >= 0xc5 && marker <= 0xc7) ||
-        (marker >= 0xc9 && marker <= 0xcb) ||
-        (marker >= 0xcd && marker <= 0xcf)) {
-      final height = (bytes[index + 5] << 8) | bytes[index + 6];
-      final width = (bytes[index + 7] << 8) | bytes[index + 8];
-      return Size(width.toDouble(), height.toDouble());
-    }
-    index += 2 + length;
-  }
-  return null;
+PiRgbFrame? _decodeRgb(Uint8List bytes) {
+  final image = img.decodeJpg(bytes)?.convert(numChannels: 3);
+  return image == null
+      ? null
+      : PiRgbFrame(image.toUint8List(), image.width, image.height);
 }

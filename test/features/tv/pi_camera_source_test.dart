@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_body/services/body_pose_engine.dart';
 import 'package:flutter_body/services/pi_camera_source.dart';
+import 'package:flutter_body/models/body_pose_observation.dart';
 
 class FakeEngine extends BodyPoseEngine {
   final List<Uint8List> calls = [];
@@ -11,13 +12,15 @@ class FakeEngine extends BodyPoseEngine {
   final release = Completer<void>();
   bool? firstPublishAllowed;
   @override
-  Future<void> processExternalFrame(
+  Future<BodyPoseObservation?> processExternalFrame(
     Uint8List bytes,
     int width,
     int height, {
     bool isMirror = false,
     bool needsRotation = true,
     bool Function()? shouldPublish,
+    BodyFrameIdentity? identity,
+    void Function(BodyPoseObservation)? onObservation,
   }) async {
     expect(width, 8);
     expect(height, 6);
@@ -30,6 +33,18 @@ class FakeEngine extends BodyPoseEngine {
       await release.future;
       firstPublishAllowed = shouldPublish?.call();
     }
+    if (shouldPublish?.call() != true || identity == null) return null;
+    final observation = BodyPoseObservation(
+        frameId: identity.frameId,
+        streamSessionId: identity.streamSessionId,
+        receivedAtMs: identity.receivedAtMs,
+        imageWidth: width,
+        imageHeight: height,
+        source: 'tv_pi',
+        keypoints: List.filled(17, const Offset(.5, .5)),
+        scores: List.filled(17, 1.2));
+    onObservation?.call(observation);
+    return observation;
   }
 }
 
@@ -44,7 +59,7 @@ Future<void> eventually(bool Function() predicate) async {
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   test(
-    'Pi preview is immediate, inference is serial and latest-frame-wins',
+    'Pi preview and observation are same-frame; inference serial and latest-frame-wins',
     () async {
       final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
       final peer = Completer<WebSocket>();
@@ -72,19 +87,17 @@ void main() {
       final third = Uint8List.fromList([...jpeg, 3]);
       socket.add(first);
       await engine.first.future;
-      expect(
-        source.latestJpeg.value,
-        orderedEquals(first),
-        reason: 'Preview must not await RTMPose',
-      );
-      expect(source.frameSize.value?.width, 8);
-      expect(source.frameSize.value?.height, 6);
+      expect(source.latestJpeg.value, isNull,
+          reason:
+              'Do not display new JPEG with old pose while inference awaits');
       socket.add(second);
       socket.add(third);
-      await eventually(() => source.latestJpeg.value?.last == 3);
+      await Future<void>.delayed(const Duration(milliseconds: 30));
       expect(engine.calls.length, 1, reason: 'Inference must not reenter');
       engine.release.complete();
       await eventually(() => engine.calls.length == 2);
+      await eventually(() => source.latestJpeg.value?.last == 3);
+      expect(source.processedFrame.value!.jpeg.last, 3);
       expect(
         engine.calls.length,
         2,
@@ -100,7 +113,7 @@ void main() {
       );
       await socket.close();
       await eventually(
-        () => source.status.value == PiConnectionStatus.disconnected,
+        () => source.status.value == PiConnectionStatus.failed,
       );
       source.dispose();
       source.dispose();

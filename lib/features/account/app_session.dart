@@ -2,11 +2,13 @@
 // 目前的登入狀態。登入時寫入記憶體 + 本機儲存(shared_preferences),
 // 這樣下次開 App 時可以讀回來,不用每次都重新選身分、重新登入。
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:flutter/foundation.dart';
 import '../../core/platform/app_platform.dart';
 import '../call/zego_call_invitation_service.dart';
 import 'user_role.dart';
 
 class AppSession {
+  static final ValueNotifier<int> changes = ValueNotifier<int>(0);
   static UserRole? role;
   static String? userId;
   static String? name;
@@ -46,6 +48,7 @@ class AppSession {
     bindingCode = prefs.getString(_keyBindingCode);
     friendCode = prefs.getString(_keyFriendCode);
     customExerciseToken = prefs.getString(_keyCustomExerciseToken);
+    changes.value++;
     if (AppPlatform.current.supportsVideoCalls) {
       await ZegoCallInvitationService.instance.synchronizeSession(
         userId: userId,
@@ -73,6 +76,7 @@ class AppSession {
     AppSession.bindingCode = bindingCode;
     AppSession.friendCode = friendCode;
     AppSession.customExerciseToken = customExerciseToken;
+    changes.value++;
 
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_keyRole, role.name);
@@ -120,6 +124,7 @@ class AppSession {
     bindingCode = null;
     friendCode = null;
     customExerciseToken = null;
+    changes.value++;
 
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_keyRole);
