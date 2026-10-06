@@ -19,7 +19,7 @@ TV/Pi body only. No model training, Pi/network changes or production operations.
 - rehab_app has CRUD only on rehab_r2_validation. No DDL/create-schema permission.
 - Existing business schema must not be used for this round's fresh migrations.
 - User provisioned rehab_body_r3_validation; actual metadata PASS: MySQL 8.4.11, 29 tables, 253 columns/V004.
-- V005 review/resample fields await owner interactive migration; application remains CRUD only.
+- V005 was applied by owner, without replaying V001-V004. Agent read-only verification PASS: local 8.4.11, 29 tables/257 columns/34 FK; application remains CRUD only.
 - Pi camera TCP 192.168.137.186:8765 reachable; no Pi settings modified.
 - adb has one physical Android phone (RMX3371), not a TV device.
 
@@ -29,11 +29,9 @@ TV/Pi body only. No model training, Pi/network changes or production operations.
 - Read current therapist page, API and backend review/export/data contracts.
 
 ## Remaining (order)
-1. Owner applies V005 via body-round3-review-migration.ps1 (confirmed not yet executed).
-2. Run new BodyRound3MySqlIntegrationTest using a local-only secure runner; do not use laboratory/production credentials.
-3. Run isolated fake API/device E2E after explicitly configuring a non-production API.
-4. Complete actual Pi/TV and Phone/TV Release runtime acceptance when hardware is available.
-5. Update measured MySQL/Hibernate/concurrency results and final acceptance; stop before Round 4.
+1. Run isolated fake API/device E2E after explicitly configuring a non-production API.
+2. Complete actual Pi/TV and Phone/TV Release runtime acceptance when hardware is available.
+3. Update final hardware acceptance; stop before Round 4. Local MySQL gate is complete, not a laboratory or production PASS.
 
 ## Tests this round
 - Backend focused PASS 58/58; latest full mvn test PASS: 328 discovered, 298 passed, 30 skipped (including seven new MySQL tests NOT RUN). mvn package -DskipTests PASS.
@@ -48,6 +46,17 @@ TV/Pi body only. No model training, Pi/network changes or production operations.
 - Full implementation report: docs/BODY_RESEARCH_ROUND3_REPORT.md; backend exact manifest/handoff in its matching report. Local checkpoint commits only.
 - Implemented source-specific export UI, timestamp-based v3 skeleton playback, four review choices, safe nullable points/feature unavailable, resample selection and immutable linkage on both branches.
 - Round 2 historical full Flutter 524 PASS / 7 FAIL preserved.
+
+## Local MySQL continuation — 2026-10-06
+- PASS tools/body-round3-mysql-test.ps1: original seven cases passed, expanded real MySQL cases 12/12 passed, no skips.
+- PASS Hibernate validate/Spring context with 29 entities; local metadata 29 tables/257 columns/34 FK.
+- PASS v1 body/v2 hand/v3 body create/read, annotation update and patient delete, idempotency/attempt uniqueness, concurrent retry/first draft, HTTP 403/409, revision/disposition/audit, immutable resample and approved export exclusions.
+- PASS cleanup: exact SELECT COUNT(*) on all 29 tables = zero; no resets/truncates/table clears. Auto-increment allocation during tests is normal and not reset.
+- Expanded test first run had fixture duplicate grant and ZIP charset assertion failures, fixed in test helper/MIME semantic check; log retained. No backend business/schema change.
+- Latest full Maven regression 331 discovered/298 passed/33 skipped/zero failures. Body class is 10 skipped methods in ungated run, but 12 parameterized invocations actually passed in the separate MySQL run. Package PASS.
+- Full Flutter/analyze/build were not rerun: continuation modifies backend tests and documentation only. Previous seven Flutter failures remain recorded.
+- Exact evidence/matrix: backend docs/BODY_RESEARCH_ROUND3_MYSQL_VALIDATION.md; logs target/body-r3-mysql-validation.log and target/body-r3-post-v005-full-maven.log.
+- Local isolated MySQL VALIDATED (requested gate PASS); Laboratory NOT VALIDATED; Production NOT DEPLOYED. Overall Round 3 PARTIAL until hardware E2E, no Round 4 started.
 
 ## Do Not Redo
 - Keep all Round 2 tests/code and baseline migrations V001..V003.

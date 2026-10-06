@@ -1,14 +1,15 @@
 # Body Research Round 3 — Implementation and Validation
 
-Status: PARTIAL. Core implementation and automated mock/widget verification complete;
-live Hibernate/MySQL/API/concurrency gate awaits owner V005 application. Not Round 4 ready.
+Status: PARTIAL. Core implementation, mock/widget and real local isolated MySQL validation complete;
+Pi/TV device E2E and release runtime acceptance remain NOT RUN. Not Round 4 ready.
 
 ## 1. Round 2 Validation Gate
 
 Round 2 local checkpoint commits: master `3e6d013184104898596e82e2a580006145c1b05d`,
 TV `2a0b10b95e95b5e7c29ff41f2815c258bf26d84d`, backend `45c7bbb0fc3b4aa09d22a212bf7b92c764e9f36c`.
 V001–V004 local migration/metadata PASS: MySQL 8.4.11, 29 tables, 253 columns.
-Do not replay these migrations. V005 owner confirmed not yet executed; read-only recheck found 0/4 new columns.
+Do not replay these migrations. V005 was subsequently applied by owner; 2026-10-06 actual metadata and Hibernate PASS: 29 tables/257 columns/34 FK.
+Earlier V005 absence/NOT RUN checkpoint is preserved in backend continuation evidence; it is no longer the current gate.
 
 ## 2. Implementation Summary
 
@@ -41,14 +42,14 @@ show reason and review detail, and select a parent only between attempts.
 New attempt/sample IDs carry resampleOfSampleId; parent payload stays immutable; counters unchanged.
 Selection is explicit and cancellable, not automatic recording/consent. Server rechecks owner,
 same exercise/type, active current consent and nonexpired parent disposition.
-Actual MySQL linked sample lifecycle NOT RUN pending V005.
+Actual local MySQL linked sample lifecycle PASS, including immutable parent, new child and separate review.
 
 ## 6. Authorization Result
 
 Backend focused tests PASS: unauthorized/unbound 403, self-review 403 (also managers), stale revision 409,
 locked approved annotation 409. UI visibility is not authorization. Existing HMAC/grant/binding logic preserved.
 v3 upload serializes on consent row with READ_COMMITTED; edits lock sample before first annotation insert.
-Real concurrent retry/first-draft race test compiles but NOT RUN.
+Real local MySQL concurrent duplicate retry and first-draft revision race PASS.
 
 ## 7. Export Result
 
@@ -57,18 +58,19 @@ Only independent APPROVED + ACTIVE, current consent, nonexpired, valid schema/fe
 non-DEMO data accepted. Invalid JSON/validator failures skipped. unassessable excluded.
 Manifest retains schema/action/extractor/input/model/source and pseudonymous subject/session/attempt groups.
 No names/email/raw patientId/therapistId/auth token; resample parent ID omitted. Legacy exports remain separate.
-Management UI exposes v3 source selector. Actual MySQL export NOT RUN.
+Management UI exposes v3 source selector. Actual local MySQL approved source-specific export,
+RETURN/REJECT/NEEDS_RESAMPLE exclusions and consent-revoked exclusion PASS.
 
 ## 8. MySQL Migration Validation
 
 | Environment | Actual status |
 |---|---|
-| Local Windows rehab_body_r3_validation | V001–V004 metadata PASS; V005/Hibernate/CRUD/API/concurrency NOT RUN |
+| Local Windows rehab_body_r3_validation | V001–V005 metadata/Hibernate/CRUD/API/concurrency PASS (12/12 real MySQL cases) |
 | Laboratory MySQL (actual future project database) | NOT RUN / NOT VALIDATED; not connected |
 | Production / Render | NOT DEPLOYED; no settings/data changed |
 
 V005 adds nullable resample parent/reason/revision disposition and self FK ON DELETE SET NULL.
-Expected after V005: 29 tables / 257 columns / 34 FK; these are expectations, not measured results.
+Measured after owner V005: MySQL 8.4.11, 29 tables / 257 columns / 34 FK.
 V004 development-only CHECK adds REJECTED; V001–V003 unchanged.
 No data collection enabled, no actual participants/consent/policy seeded by this round.
 
@@ -82,11 +84,14 @@ Network/Hotspot/eth0/camera_server/Pi packages untouched; PiHandSource not forma
 ## 10. Fake E2E Result
 
 Layered synthetic Flutter widget/API and backend service tests PASS, not an end-to-end hardware PASS.
-Seven actual local MySQL tests prepared: metadata, duplicate/conflict/attempt uniqueness,
+Actual local MySQL tests cover metadata, duplicate/conflict/attempt uniqueness,
 v1 body/v2 hand nullable compatibility, authenticated upload->independent review->export,
 immutable resample->new lifecycle, revoked/unrelated isolation, concurrent upload/first draft.
-NOT RUN pending V005. Normal collection bean remains false; test-only primary synthetic bean permits fake fixtures.
-Six tests rollback; concurrent test commits ephemeral fixtures then cleans only exact generated IDs in finally.
+PASS 12/12 expanded cases. Authenticated controller requests use MockMvc backed by actual MySQL;
+this is not Android/Pi/TV UI or external-network E2E. Normal collection bean remains false;
+test-only primary synthetic bean permits fake fixtures. Transactional tests rollback;
+concurrent test commits ephemeral fixtures then cleans only exact generated IDs in finally.
+Post-test exact row counts: all 29 tables zero. No schema/data clear or automatic collection activation.
 
 ## 11. Phone Debug / Release Build
 
@@ -111,7 +116,11 @@ Runtime NOT RUN. No formal hand research route added.
 Focused 58/58 PASS. Latest full mvn test: 328 discovered, 298 PASS, 30 skipped,
 0 failures/errors. Skips: 22 old MySQL tests, 7 new local MySQL tests, one gated activation test.
 Maven package -DskipTests PASS. H2 chat tests are not MySQL evidence.
-Artifacts: backend target/body-r3-full-maven.log, target/body-r3-package.log and Surefire XML.
+Historical artifacts: backend target/body-r3-full-maven.log, target/body-r3-package.log and Surefire XML.
+After V005 continuation: real MySQL 12/12 PASS; latest full Maven 331 discovered/298 PASS/33 skipped/0 errors,
+package PASS. Full run omits DB_URL intentionally (10 Body test methods gated; separate MySQL run exercises 12 invocations).
+Evidence: backend docs/BODY_RESEARCH_ROUND3_MYSQL_VALIDATION.md, target/body-r3-mysql-validation.log,
+target/body-r3-post-v005-full-maven.log, target/body-r3-post-v005-package.log.
 
 ## 14. Flutter Test Result
 
@@ -134,7 +143,9 @@ No tests deleted/skipped/relaxed to hide these. Historical Round 2 524/7 retaine
 ## 16. New Regressions
 
 No new failures in executed functional tests. Release generated-plugin build failure resolved without code/config changes.
-Unexecuted MySQL and hardware gates cannot be described as regression-free.
+Expanded MySQL test first run failed duplicate-grant fixture and exact ZIP charset assertion;
+test fixture/MIME semantic check corrected and 12/12 passed. Failure evidence preserved, not a business regression.
+Unexecuted hardware gates cannot be described as regression-free.
 
 ## 17. Files Added / Modified
 
@@ -157,6 +168,8 @@ master:
 TV: equivalent five body context/contract/sample/session/settings files, body session test,
 docs/BODY_RESEARCH_ROUND3_PROGRESS.md. Existing generated desktop line-ending-only changes not part of this round.
 Backend complete manifest: backend docs/BODY_RESEARCH_ROUND3_REPORT.md and git show --stat of Round 3 checkpoint.
+V005 continuation additionally modifies backend BodyRound3MySqlIntegrationTest and adds
+backend docs/BODY_RESEARCH_ROUND3_MYSQL_VALIDATION.md; both repositories update existing progress/report documents only.
 
 Exact validation commands (run in the corresponding existing worktree):
 - master: flutter test test/features/rehab_ml/body_review_ui_test.dart test/features/rehab_ml/ml_research_cloud_test.dart test/features/rehab_ml/body_research_session_test.dart test/features/rehab_ml/body_research_foundation_test.dart test/features/rehab_ml/body_research_owner_test.dart test/features/rehab_ml/body_research_contract_test.dart test/features/rehab_ml/pi_body_observation_test.dart --no-pub
@@ -181,7 +194,7 @@ generated desktop line-ending-only files unstaged; no unrelated changes restored
 
 ## 19. Technical Debt
 
-V005 owner application required before startup. Local-only runner must first check 4/4 new columns.
+V005 owner application is complete locally. Local-only runner still requires 4/4-column preflight; never replay migrations.
 Review list capped at 500; export capped at 500 approved candidates / 20 MB (existing bounds).
 2D projected features are not clinical 3D ROM; no trained model or accuracy claim.
 ARM phone assets present; MediaPipe x86_64 JNI absent in existing dependency, not a TV hand feature.
@@ -189,10 +202,9 @@ Isolated API/device configuration and actual Pi/TV device required before hardwa
 
 ## 20. Round 4 Readiness / Continue
 
-NOT READY. Owner first executes backend tools/body-round3-review-migration.ps1 in local PowerShell,
-entering root only in MySQL prompt (no password in chat). Do not rerun setup/V001..V004.
-Then execute tools/body-round3-mysql-test.ps1: DPAPI app credential, localhost/schema/V005 preflight,
+NOT READY for overall Round 4. Owner already applied V005 locally; do not rerun setup/V001..V005.
+Local Hibernate, metadata, CRUD/API/concurrency and cleanup are now PASS. To reproduce, execute
+tools/body-round3-mysql-test.ps1: DPAPI app credential, localhost/schema/V005 preflight,
 temporary random test keys, normal RESEARCH_COLLECTION_ENABLED=false, exact fake cleanup/rollback.
-Capture actual Hibernate, metadata, CRUD/API/concurrency and cleanup results; fix only real failures.
 Complete Pi/TV isolated synthetic hardware acceptance. Laboratory requires new authorization/access;
 production remains undeployed. Do not start Round 4 or silently mark NOT RUN as PASS.
