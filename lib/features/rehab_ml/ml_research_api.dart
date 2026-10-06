@@ -148,7 +148,8 @@ abstract class MlResearchRemote {
       throw UnsupportedError('Body v3 export requires updated transport');
 }
 
-/// Authenticated, HTTPS-only transport. No account identity or raw payload in logs.
+/// Authenticated HTTPS transport, with explicit loopback-only validation opt-in.
+/// No account identity or raw payload in logs.
 class MlResearchApi implements MlResearchRemote {
   MlResearchApi({http.Client? client, String? baseUrl})
       : _client = client ?? http.Client(),
@@ -179,7 +180,7 @@ class MlResearchApi implements MlResearchRemote {
 
   Uri _uri(String path, [Map<String, String>? query]) {
     final uri = Uri.parse('$_baseUrl/api/ml-research$path');
-    if (uri.scheme != 'https') {
+    if (!ApiConfig.allowsResearchTransport(uri)) {
       throw const MlResearchException('研究資料同步需要安全連線。');
     }
     return query == null ? uri : uri.replace(queryParameters: query);

@@ -10,7 +10,9 @@ android {
     ndkVersion = "28.2.13676358"
 
     defaultConfig {
-        applicationId = "com.example.flutter_body"
+        // Optional isolated validation install; default app identity is unchanged.
+        applicationId = providers.gradleProperty("rehabValidationApplicationId")
+            .orElse("com.example.flutter_body").get()
         minSdk = 24
         targetSdk = 36
         versionCode = 1
