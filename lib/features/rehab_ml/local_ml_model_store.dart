@@ -5,6 +5,7 @@ import 'package:path_provider/path_provider.dart';
 import 'ml_action_definition.dart';
 import 'ml_quality_evaluator.dart';
 import 'onnx_ml_quality_evaluator.dart';
+import 'body_ml_contract.dart';
 
 /// Controlled local tooling only, no patient-facing approval toggle or OTA.
 /// Integrity is not a source signature. Requires a trusted app-private directory.
@@ -170,6 +171,139 @@ class LocalMlModelStore {
         entry['previous'] = null;
         _record(entry, 'rollback', previous);
         index[action.actionId] = entry;
+        await _saveIndex(dir, index);
+      });
+  // Same catalog/index and operation history, with a namespace for body v3.
+  // Never route v3 through the legacy v1/hand approval path.
+  Future<Directory> _bodyCandidate(Directory dir, String version) async =>
+      Directory('${dir.path}/${BodyMlContract.storeKey}/${_safe(version)}');
+  Future<String> registerBody(BodyMlBundle bundle) => _serial(() async {
+        // Registration validates, but never changes lifecycle or approves.
+        final manifest = bundle.validate(requireActivation: false);
+        final version = _safe(manifest.version);
+        final dir = await _directory(),
+            candidate = await _bodyCandidate(dir, version);
+        if (await candidate.exists()) {
+          throw const FormatException('模型版本已登錄，不能覆寫');
+        }
+        await candidate.create(recursive: true);
+        for (final entry in bundle.files.entries) {
+          await File('${candidate.path}/${entry.key}')
+              .writeAsBytes(entry.value, flush: true);
+        }
+        await File('${candidate.path}/checksums.json')
+            .writeAsString(jsonEncode(bundle.checksums), flush: true);
+        return version;
+      });
+  Future<BodyMlBundle?> loadBody(String version,
+      {bool candidate = false}) async {
+    try {
+      final dir = await _directory(), index = await _index(dir);
+      final entry = index[BodyMlContract.storeKey] as Map? ?? {};
+      if ((entry['disabled'] as List? ?? []).contains(version)) return null;
+      final c = await _bodyCandidate(dir, version);
+      final bundle = BodyMlBundle(
+          manifest: await File('${c.path}/manifest.json').readAsBytes(),
+          model: await File('${c.path}/model.onnx').readAsBytes(),
+          featureSchema:
+              await File('${c.path}/feature_schema.json').readAsBytes(),
+          labelMapping:
+              await File('${c.path}/label_mapping.json').readAsBytes(),
+          checksums: Map<String, String>.from(
+              jsonDecode(await File('${c.path}/checksums.json').readAsString())
+                  as Map));
+      if (!candidate) {
+        final manifest = bundle.validate();
+        final proof = Map<String, dynamic>.from(
+            jsonDecode(await File('${c.path}/approval.json').readAsString())
+                as Map);
+        if (!_approved(proof) ||
+            proof['modelSha256'] != manifest.json['modelHash'] ||
+            proof['manifestSha256'] != BodyMlBundle.hash(bundle.manifest) ||
+            proof['sourceDomain'] != manifest.domain ||
+            proof['runtimeValidated'] != true) {
+          return null;
+        }
+      }
+      return bundle;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<String?> activeBodyVersion() async {
+    try {
+      final entry =
+          (await _index(await _directory()))[BodyMlContract.storeKey] as Map?;
+      final version = entry?['active'];
+      return version is String &&
+              !(entry?['disabled'] as List? ?? []).contains(version)
+          ? _safe(version)
+          : null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<void> activateBody(String version, Map<String, dynamic> evidence,
+          {required String sourceDomain,
+          required Future<bool> Function(BodyMlBundle) runtimeCheck}) =>
+      _serial(() async {
+        final bundle = await loadBody(version, candidate: true);
+        if (bundle == null) throw const FormatException('模型不可用');
+        final manifest = bundle
+            .validate(); // synthetic/candidate/retired NEVER auto-promoted
+        if (manifest.domain != sourceDomain ||
+            !_approved(evidence) ||
+            evidence['runtimeValidated'] != true ||
+            evidence['sourceDomain'] != sourceDomain ||
+            evidence['modelSha256'] != manifest.json['modelHash'] ||
+            evidence['manifestSha256'] != BodyMlBundle.hash(bundle.manifest) ||
+            !await runtimeCheck(bundle)) {
+          throw const FormatException(
+              'Body activation evidence/runtime/domain mismatch');
+        }
+        final dir = await _directory(), index = await _index(dir);
+        final entry = Map<String, dynamic>.from(
+            index[BodyMlContract.storeKey] as Map? ?? {});
+        if ((entry['disabled'] as List? ?? []).contains(version)) {
+          throw const FormatException('模型已停用');
+        }
+        final c = await _bodyCandidate(dir, version);
+        await File('${c.path}/approval.json')
+            .writeAsString(jsonEncode(evidence), flush: true);
+        if (entry['active'] != version) entry['previous'] = entry['active'];
+        entry['active'] = version;
+        _record(entry, 'activate', version);
+        index[BodyMlContract.storeKey] = entry;
+        await _saveIndex(dir, index);
+      });
+  Future<void> disableBody() => _serial(() async {
+        final dir = await _directory(), index = await _index(dir);
+        final entry = Map<String, dynamic>.from(
+            index[BodyMlContract.storeKey] as Map? ?? {});
+        entry['disabled'] = {
+          ...List<String>.from(entry['disabled'] as List? ?? []),
+          if (entry['active'] is String) entry['active'] as String
+        }.toList();
+        _record(entry, 'disable', entry['active'] as String?);
+        entry['active'] = null;
+        index[BodyMlContract.storeKey] = entry;
+        await dir.create(recursive: true);
+        await _saveIndex(dir, index);
+      });
+  Future<void> rollbackBody() => _serial(() async {
+        final dir = await _directory(), index = await _index(dir);
+        final entry = Map<String, dynamic>.from(
+            index[BodyMlContract.storeKey] as Map? ?? {});
+        final previous = entry['previous'];
+        if (previous is! String || await loadBody(previous) == null) {
+          throw const FormatException('沒有可回滾的核准 Body 模型');
+        }
+        _record(entry, 'rollback', previous);
+        entry['active'] = previous;
+        entry['previous'] = null;
+        index[BodyMlContract.storeKey] = entry;
         await _saveIndex(dir, index);
       });
   Future<({Map<String, dynamic> manifest, Uint8List bytes})?> load(

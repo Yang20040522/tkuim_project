@@ -1,4 +1,7 @@
 import 'dart:async';
+import 'body_ml_advisory_controller.dart';
+import 'body_ml_advisory_card.dart';
+import 'body_ml_contract.dart';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -308,6 +311,7 @@ class _ResearchSampleDetailPageState extends State<ResearchSampleDetailPage>
   String? _annotatorId;
   String _reasonCode = 'LOW_QUALITY';
   late final ResearchOwnerScope _owner;
+  late final BodyMlAdvisoryController _bodyAdvisory;
   bool get _bodyAttempt => (_detail?['payload'] as Map?)?['schemaVersion'] == 3;
   int get _revision =>
       ((_detail?['annotation'] as Map?)?['revision'] as num?)?.toInt() ?? 0;
@@ -328,6 +332,7 @@ class _ResearchSampleDetailPageState extends State<ResearchSampleDetailPage>
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _owner = ResearchOwnerScope.capture();
+    _bodyAdvisory = BodyMlAdvisoryController();
     AppSession.changes.addListener(_accountChanged);
     _load();
   }
@@ -363,6 +368,16 @@ class _ResearchSampleDetailPageState extends State<ResearchSampleDetailPage>
           _annotatorId = null;
         }
       });
+      final payload = detail['payload'];
+      if (payload is Map<String, dynamic> && payload['schemaVersion'] == 3) {
+        try {
+          unawaited(_bodyAdvisory.evaluate(BodyMlInput.fromPayload(payload)));
+        } catch (_) {
+          _bodyAdvisory.reset();
+        }
+      } else {
+        _bodyAdvisory.reset();
+      }
     } catch (_) {
       if (mounted) setState(() => _error = '樣本無法載入，請確認權限或稍後重試。');
     }
@@ -494,6 +509,7 @@ class _ResearchSampleDetailPageState extends State<ResearchSampleDetailPage>
     _timer?.cancel();
     _note.dispose();
     _reviewNote.dispose();
+    unawaited(_bodyAdvisory.dispose());
     super.dispose();
   }
 
@@ -518,6 +534,11 @@ class _ResearchSampleDetailPageState extends State<ResearchSampleDetailPage>
               ? '21 點手部影像座標；z 為模型估計的相對深度，非真實世界座標；沒有逐點信心值或原始影像。無法可靠判斷時請選「無法評估」。'
               : '僅保存 17 個 2D 骨架點，無原始影像或深度；無法可靠判斷時請選「無法評估」。'),
           const SizedBox(height: 12),
+          if (_bodyAttempt)
+            ValueListenableBuilder<BodyMlPrediction?>(
+                valueListenable: _bodyAdvisory.latest,
+                builder: (_, prediction, __) => BodyMlAdvisoryCard(
+                    prediction: prediction, therapist: true)),
           AspectRatio(
               aspectRatio: 1,
               child: Card(

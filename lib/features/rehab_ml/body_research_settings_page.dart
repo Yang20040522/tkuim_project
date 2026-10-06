@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import '../account/app_session.dart';
 import 'body_research_session.dart';
 import 'ml_research_api.dart';
+import 'body_ml_advisory_card.dart';
+import 'body_ml_contract.dart';
 
 /// Minimal DPAD-friendly body research settings; not a new research backend.
 class BodyResearchSettingsPage extends StatefulWidget {
@@ -160,6 +162,10 @@ class _BodyResearchSettingsPageState extends State<BodyResearchSettingsPage> {
           const Text(
               '只保存 17 點骨架、未校準 SimCC 分數與 2D 投影特徵，不保存 JPEG。未計次、追蹤中斷的有效嘗試也會記錄。模型尚未部署。'),
           const SizedBox(height: 20),
+          ValueListenableBuilder<BodyMlPrediction?>(
+              valueListenable: widget.session.advisory.latest,
+              builder: (_, prediction, __) =>
+                  BodyMlAdvisoryCard(prediction: prediction)),
           CheckboxListTile(
               autofocus: true,
               title: const Text('同意本機 Body attempt 收集'),
