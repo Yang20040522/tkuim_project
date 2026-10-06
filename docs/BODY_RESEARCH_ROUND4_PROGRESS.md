@@ -17,8 +17,8 @@
 - Installed Python-only XGBoost 2.1.4 and onnxmltools 1.14.0 in ignored venv; all three families actually converted to ONNX.
 
 ## Remaining
-1. Save final hardened code and regenerate persisted SYNTHETIC artifact with that commit as provenance.
-2. Pilot plan / exact commands / 38-topic report, artifact inventory and final Git checks.
+1. Commit final report/README/pilot/handoff documents; verify master/main clean and preserve existing TV changes.
+2. Stop before Round 5. Real training is DATA_INSUFFICIENT until a fresh qualified approved dataset is supplied.
 
 ## Decisions
 - Labels: existing meets_requirement / insufficient_range / trunk_compensation. unassessable never trained.
@@ -39,6 +39,18 @@
 - Scoped flutter analyze lib/features/rehab_ml test/features/rehab_ml: initially 2 new test lint infos; fixed, rerun 0 issues PASS.
 - Backend full mvn -q test: 300 PASS / 33 conditional skips / 0 failures/errors. No MySQL opt-in; NOT new MySQL evidence.
 - Initial feature-stage commits: master c3fc4029d5f800fca9bf2963c3141d61ca519473; main c5f45f7622fe299fcbd801ae12a25b49996ed49e.
+- Hardened implementation: master40145b34e5179709438fcbb0459ac7e08ec967d4; main53e170fa63cafa3af4410ff027580f87dc57701d.
+- Actual CLI synthetic/build/train PASS, artifact ml/artifacts/standing_knee_raise/r4-synthetic-20261007-40145b3 (ignored).
+- Dataset a17c5a616f5f46db7f847ea3032c5cd759e9340bfa355876b829540cebd8e23f; train/validation/test artificial subjects6/3/3.
+- All16 model conversions/parity PASS; baseline rf-small selected; winner56 parity vectors max probability error1.9868214962137642e-08.
+- Windows CPU benchmark PASS: load8.6747ms, p500.0100ms, p950.01482ms, ONNX18694bytes; process working-set delta5595136bytes (not exact model allocator memory).
+- Artifact companion SHA256 checks38/38 PASS; status EXPERIMENTAL / SYNTHETIC_ENGINEERING_ONLY / deploymentApproved=false.
+- Additional body trajectory/score/CUSTOM RTMPose regression18/18 PASS; final changed-file analyze0 issues.
+- New docs: ml/BODY_V3_README.md, docs/BODY_RESEARCH_ROUND4_PILOT_PLAN.md, docs/BODY_RESEARCH_ROUND4_REPORT.md (all38 requested topics).
+
+## Gate
+- Round 4 Engineering Gate PASS. No validated real model. Full app suite FAIL with seven preserved unrelated failures.
+- Laboratory NOT VALIDATED / not accessed; Production Round4 NOT DEPLOYED / untouched. No DB operation or collection enabled.
 
 ## Existing failures retained
 - Account info x2, therapist registration, friend-code lookup: ZEGO pending timers.
