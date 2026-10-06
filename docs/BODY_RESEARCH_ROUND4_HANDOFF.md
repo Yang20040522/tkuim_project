@@ -24,4 +24,4 @@ Hardened implementation commit master40145b34e5179709438fcbb0459ac7e08ec967d4; c
 Persisted synthetic run: ml/artifacts/standing_knee_raise/r4-synthetic-20261007-40145b3; 39files/38 indexed hashes verified; baseline RF selected. Never package/activate this engineering model.
 Read ml/BODY_V3_README.md for exact repeatable commands and docs/BODY_RESEARCH_ROUND4_REPORT.md for all38 outputs. Pilot plan is document-only; no immediate hardware/data collection request.
 Round 4 Engineering Gate PASS; REAL_DATA_TRAINING=DATA_INSUFFICIENT, NO VALIDATED REAL MODEL YET.
-No remaining Round4 feature implementation. Final documentation-only commit/status check pending in this checkpoint; retrieve final HEAD from git log. Stop before Round5 unless explicitly instructed.
+No remaining Round4 implementation or validation. Final report documentation a0b028455d770f5d174de0e63ee96015f1500dc0; backend main9871f96a4f55db498ceea6895d28daf02d518eab. Both primary worktrees verified clean; TV's seven existing generated-file changes preserved. Retrieve final checkpoint-receipt HEAD from git log. Stop before Round5 unless explicitly instructed.

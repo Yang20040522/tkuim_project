@@ -17,8 +17,10 @@
 - Installed Python-only XGBoost 2.1.4 and onnxmltools 1.14.0 in ignored venv; all three families actually converted to ONNX.
 
 ## Remaining
-1. Commit final report/README/pilot/handoff documents; verify master/main clean and preserve existing TV changes.
-2. Stop before Round 5. Real training is DATA_INSUFFICIENT until a fresh qualified approved dataset is supplied.
+- No remaining Round 4 implementation or validation action.
+- Final report/README/pilot committed at a0b028455d770f5d174de0e63ee96015f1500dc0; backend documentation9871f96a4f55db498ceea6895d28daf02d518eab.
+- Both master/main working trees verified clean; seven pre-existing TV changes preserved. Final checkpoint receipt commit is available via git log.
+- Stop before Round 5. Real training is DATA_INSUFFICIENT until a fresh qualified approved dataset is supplied.
 
 ## Decisions
 - Labels: existing meets_requirement / insufficient_range / trunk_compensation. unassessable never trained.
