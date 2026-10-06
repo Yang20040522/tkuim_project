@@ -21,6 +21,7 @@ def main():
     trainer.add_argument("--output",type=Path,required=True);trainer.add_argument("--run-id",required=True)
     trainer.add_argument("--dart-parity",type=Path,required=True)
     trainer.add_argument("--fixture",type=Path,default=Path("test/fixtures/body_v3_parity.json"));trainer.add_argument("--seed",type=int,default=42)
+    trainer.add_argument("--debug-replay",action="store_true",help="Explicitly mark repeated real final evaluation NON-PRISTINE")
     bench=sub.add_parser("benchmark");bench.add_argument("--model",type=Path,required=True)
     args=cli.parse_args()
     try:
@@ -38,7 +39,7 @@ def main():
                 raise ValueError("invalid_run_id")
             receipt=parity.check(args.dart_parity,args.fixture)
             result=json.loads(args.dataset.read_text(encoding="utf-8"))
-            path=training.train(result,args.output,args.run_id,receipt,args.seed)
+            path=training.train(result,args.output,args.run_id,receipt,args.seed,args.debug_replay)
             print(json.dumps({"status":"PASS","artifact":str(path),"modelStatus":"EXPERIMENTAL","origin":result["origin"],
                               "REAL_DATA_TRAINING":"DATA_INSUFFICIENT" if args.dataset and result["origin"]=="SYNTHETIC_ENGINEERING_ONLY" else "EXECUTED_NOT_CLINICALLY_VALIDATED"}))
         else:

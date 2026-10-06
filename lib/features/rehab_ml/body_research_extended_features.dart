@@ -6,6 +6,7 @@ import 'body_research_feature_extractor.dart';
 /// Offline research ablation only. Not added to sample uploads or rep counting.
 class BodyResearchExtendedFeatures {
   static const version = 'body-aspect-extended-v1';
+  static const modelInputVersion = 'body-attempt-features-extended-v1';
   static const names = [
     ...BodyResearchFeatureExtractor.featureNames,
     'hip_range_deg',

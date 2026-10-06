@@ -60,6 +60,11 @@ def validate_sample(p):
         instant(p["capturedAt"])
     except (KeyError,ValueError,TypeError):
         raise ValueError("capture_time") from None
+    if (type(p.get("setIndex")) is not int or not 1<=p["setIndex"]<=10000 or
+        type(p.get("completedRepsBefore")) is not int or not 0<=p["completedRepsBefore"]<=100000 or
+        type(p.get("completedRepsAfter")) is not int or not p["completedRepsBefore"]<=p["completedRepsAfter"]<=100000 or
+        type(p.get("intendedRepetition")) is not int or p["intendedRepetition"]!=p["completedRepsBefore"]+1):
+        raise ValueError("attempt_context")
     frames = p.get("frames", [])
     if not isinstance(frames, list) or not 1 <= len(frames) <= 200:
         raise ValueError("frame_count")
@@ -113,7 +118,9 @@ def validate_sample(p):
                 raise ValueError("missing_is_not_zero")
         elif not f.finite(actual) or abs(actual-expected_value)>f.TOLERANCE:
             raise ValueError("feature_parity")
-    quality = p.get("trackingQuality",{}).get("validFrameRatio")
+    if not isinstance(p.get("trackingQuality"),dict) or set(p["trackingQuality"])!={"validFrameRatio"}:
+        raise ValueError("quality_contract")
+    quality = p["trackingQuality"].get("validFrameRatio")
     if not f.finite(quality) or abs(quality-result["validFrameRatio"])>f.TOLERANCE:
         raise ValueError("tracking_quality")
     return result
@@ -179,6 +186,11 @@ def build(export_path, *, checked_at=None, professional_attestation=None, engine
                     raise ValueError("demo_excluded")
                 if label["label"] not in f.LABELS or label["labelVersion"]!=f.LABEL_VERSION or label["actionDefinitionVersion"]!=f.DEFINITION or g.get("labelVersion")!=f.LABEL_VERSION:
                     raise ValueError("label_contract")
+                if (g.get("annotatorAlias")!=label.get("annotatorId") or
+                    not re.fullmatch(r"annotator_[0-9]+|synthetic-annotator",str(g.get("annotatorAlias"))) or
+                    not re.fullmatch(r"reviewer_[0-9]+|synthetic-reviewer",str(g.get("reviewerAlias"))) or
+                    type(g.get("annotationRevision")) is not int or g["annotationRevision"]<0):
+                    raise ValueError("annotation_provenance")
                 if p.get("source")!=manifest["source"] or g.get("source")!=p.get("source"):
                     raise ValueError("domain_mismatch")
                 result = validate_sample(p)
@@ -201,6 +213,8 @@ def build(export_path, *, checked_at=None, professional_attestation=None, engine
                              "extendedFeatures":f.extract(p["frames"],p["movementSide"],True)["values"],
                              "trackingQuality":result["validFrameRatio"],"featuresStatus":"available",
                              "resampleOfSampleId":p.get("resampleOfSampleId"),"contentFingerprint":fingerprint,
+                             "annotationProvenance":{"annotatorAlias":g["annotatorAlias"],"reviewerAlias":g["reviewerAlias"],
+                                  "revision":g["annotationRevision"],"reviewedAt":g["reviewedAt"],"labelVersion":g["labelVersion"]},
                              "eligibility":{"consentActive":True,"annotationStatus":"APPROVED","disposition":"ACTIVE",
                                             "independentReview":True,"expiresAt":g["expiresAt"]},
                              "payloadSha256":g["payloadSha256"]})
@@ -227,8 +241,12 @@ def build(export_path, *, checked_at=None, professional_attestation=None, engine
               "backendExclusionCounts":manifest.get("exclusionCounts",{}),
               "trackingEligibilityPolicy":"valid >=80%; max inter-observation gap <=1000ms; complete termination; engineering QC not clinical validity",
               "eligibilitySummary":"snapshot only; re-export before real training; no future withdrawal guarantee",
+              "professionalReviewAttestation":None if engineering else {
+                  k:professional_attestation[k] for k in ("exportSha256","professionallyReviewed","currentConsentRechecked","governanceReference")},
               "counts":{"samples":len(rows),"subjects":len({r["subjectId"] for r in rows}),
-                        "labels":dict(Counter(r["label"] for r in rows)),"domains":dict(Counter(r["source"] for r in rows))}}
+                        "labels":dict(Counter(r["label"] for r in rows)),"domains":dict(Counter(r["source"] for r in rows)),
+                        "subjectsPerLabel":{label:len({r["subjectId"] for r in rows if r["label"]==label}) for label in f.LABELS},
+                        "sessions":len({r["sessionId"] for r in rows}),"attempts":len({r["attemptId"] for r in rows})}}
     return output
 
 

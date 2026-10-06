@@ -56,7 +56,8 @@ def export_bytes(fixture, subjects=12, source="tv_pi", transform=None):
                      "attemptGrouping":p["attemptId"],"source":source,"platform":p["platform"],"annotationStatus":"APPROVED",
                      "disposition":"ACTIVE","consentActive":True,"consentVersion":"SYNTHETIC-NOT-CONSENT",
                      "expiresAt":"2099-01-01T00:00:00Z","independentReview":True,"synthetic":True,"deleted":False,
-                     "labelVersion":f.LABEL_VERSION,"reviewedAt":"2026-01-02T00:00:00Z"}
+                     "labelVersion":f.LABEL_VERSION,"reviewedAt":"2026-01-02T00:00:00Z",
+                     "annotatorAlias":"synthetic-annotator","reviewerAlias":"synthetic-reviewer","annotationRevision":1}
                 if transform:
                     transform(p,g)
                 body = canonical(p)

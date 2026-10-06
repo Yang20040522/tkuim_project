@@ -17,9 +17,8 @@
 - Installed Python-only XGBoost 2.1.4 and onnxmltools 1.14.0 in ignored venv; all three families actually converted to ONNX.
 
 ## Remaining
-1. Final export provenance / artifact integrity hardening and focused retest.
-2. Actual persisted synthetic run; Python legacy and Flutter research regression tests; backend full tests.
-3. Pilot plan, full report, local commits and Git status checks.
+1. Save final hardened code and regenerate persisted SYNTHETIC artifact with that commit as provenance.
+2. Pilot plan / exact commands / 38-topic report, artifact inventory and final Git checks.
 
 ## Decisions
 - Labels: existing meets_requirement / insufficient_range / trunk_compensation. unassessable never trained.
@@ -33,6 +32,20 @@
 - python -m unittest discover -s ml/tests -p test_body_round4.py -v: 46/46 PASS before final hardening.
 - mvn -q -Dtest=ResearchManagementServiceTest test: 10/10 PASS.
 - Synthetic builder: 72 attempts / 12 artificial subjects / 24 per label, tv_pi only; never real data.
+- python -m unittest discover -s ml/tests -q: 73/73 PASS (53 Round 4 + 20 existing v1/hand).
+- Actual Maven mock-only approved ZIP -> Python builder codec smoke: PASS (not database or clinical E2E).
+- Flutter research + two body analyzer test files: 137/137 PASS.
+- Full flutter test --no-pub --machine, once: 556 PASS / 7 FAIL. Same seven existing unrelated files/assertions as R3; no deletion/skip/relaxed assertions.
+- Scoped flutter analyze lib/features/rehab_ml test/features/rehab_ml: initially 2 new test lint infos; fixed, rerun 0 issues PASS.
+- Backend full mvn -q test: 300 PASS / 33 conditional skips / 0 failures/errors. No MySQL opt-in; NOT new MySQL evidence.
+- Initial feature-stage commits: master c3fc4029d5f800fca9bf2963c3141d61ca519473; main c5f45f7622fe299fcbd801ae12a25b49996ed49e.
+
+## Existing failures retained
+- Account info x2, therapist registration, friend-code lookup: ZEGO pending timers.
+- Therapist training history selected patient: fixture uses nonnumeric patient ID.
+- Patient videos: wording assertion.
+- Dual-screen setup: ambiguous IP TextField finder.
+- Full Flutter machine evidence: .dart_tool/body-r4/full_flutter.jsonl. All new parity cases passed.
 
 ## Do not redo
 - Round 3 MySQL / device verification and fixture cleanup.

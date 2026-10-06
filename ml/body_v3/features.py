@@ -85,7 +85,7 @@ def extract(frames, side, extended=False):
 def schema(extended=False):
     return {"schemaVersion": 3, "modality": "body", "actionId": ACTION,
             "actionDefinitionVersion": DEFINITION, "extractorVersion": EXTRACTOR,
-            "modelInputVersion": INPUT, "poseModelVersion": POSE,
+            "modelInputVersion": "body-attempt-features-extended-v1" if extended else INPUT, "poseModelVersion": POSE,
             "featureSchemaVersion": EXTENDED_VERSION if extended else SCHEMA,
             "extendedExtractorVersion": EXTENDED_VERSION if extended else None,
             "featureNames": list(NAMES + (EXTENDED if extended else ())),

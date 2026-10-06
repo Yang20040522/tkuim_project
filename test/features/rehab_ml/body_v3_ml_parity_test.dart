@@ -1,6 +1,5 @@
 import 'dart:convert';
 import 'dart:io';
-import 'dart:ui';
 
 import 'package:flutter_body/features/rehab_ml/body_research_extended_features.dart';
 import 'package:flutter_body/features/rehab_ml/body_research_feature_extractor.dart';
@@ -50,11 +49,14 @@ void main() {
       final extended = BodyResearchExtendedFeatures.extract(frames, 'left');
       expect(BodyResearchFeatureExtractor.version, fixture['extractorVersion']);
       expect(BodyResearchExtendedFeatures.version, fixture['extendedVersion']);
+      expect(BodyResearchExtendedFeatures.modelInputVersion,
+          'body-attempt-features-extended-v1');
       expect(result.status,
           c['name'] == 'unavailable' ? 'unavailable' : 'available');
       expect(extended.take(5), result.values);
-      if (result.status == 'unavailable')
+      if (result.status == 'unavailable') {
         expect(extended, everyElement(isNull));
+      }
       output[c['name'] as String] = {
         'values': result.values,
         'extendedValues': extended,

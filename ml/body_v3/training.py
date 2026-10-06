@@ -3,6 +3,7 @@ import csv
 import importlib.metadata
 import json
 import platform
+import re
 import subprocess
 import sys
 import time
@@ -19,6 +20,20 @@ from sklearn.model_selection import GroupKFold
 
 from . import features as f, models, split
 from .dataset import canonical, digest, instant
+
+
+def subject_bootstrap(y,pred,rows,seed=42):
+    subjects=sorted({r["subjectId"] for r in rows})
+    if len(subjects)<20 or any(len({rows[i]["subjectId"] for i in range(len(rows)) if y[i]==label})<5 for label in (0,1,2)):
+        return {"status":"DATA_INSUFFICIENT","reason":"engineering bootstrap minimum 20 held-out subjects / 5 per class; NOT a power calculation"}
+    groups={s:[i for i,r in enumerate(rows) if r["subjectId"]==s] for s in subjects}
+    rng=np.random.default_rng(seed);scores=[]
+    for _ in range(1000):
+        indices=[i for s in rng.choice(subjects,len(subjects),replace=True) for i in groups[s]]
+        scores.append(float(f1_score(y[indices],pred[indices],labels=[0,1,2],average="macro",zero_division=0)))
+    return {"status":"PASS","unit":"subject clusters, entire attempts retained","resamples":1000,"seed":seed,
+            "macroF1Percentile95":list(map(float,np.percentile(scores,[2.5,97.5]))),
+            "interpretation":"exploratory uncertainty; not clinical validation"}
 
 
 def metrics(y,pred,prob,rows):
@@ -44,9 +59,9 @@ def metrics(y,pred,prob,rows):
     return {"overall":calculate(list(range(len(rows)))),"phone":calculate([i for i,r in enumerate(rows) if r["source"]=="phone"]),
             "tv_pi":calculate([i for i,r in enumerate(rows) if r["source"]=="tv_pi"]),"classificationReport":report,
             "confusionMatrix":confusion_matrix(y,pred,labels=[0,1,2]).tolist(),"calibration":calibration,
-            "bootstrapCI":{"status":"DATA_INSUFFICIENT","reason":"pilot gate requires >=20 held-out subjects; no frame-level resampling"},
+            "bootstrapCI":subject_bootstrap(y,pred,rows),
             "rejectPolicy":"invalid features rejected before inference; no probability threshold calibrated yet",
-            "coverage":1.,"rejectionRate":0.,"errors":errors}
+            "coverage":1.,"rejectionRate":0.,"coverageDenominator":"eligible attempts only; see dataset exclusions for input-quality rejection", "errors":errors}
 
 
 def onnx_check(model,graph,vectors,dimension):
@@ -85,15 +100,26 @@ def onnx_check(model,graph,vectors,dimension):
                          "deviceAcceptance":"NOT RUN; software benchmark only"}}
 
 
-def train(dataset,root,run_id,parity_receipt,seed=42):
+def train(dataset,root,run_id,parity_receipt,seed=42,debug_replay=False):
+    if not re.fullmatch(r"[A-Za-z0-9_-]{1,80}",run_id):
+        raise ValueError("invalid_run_id")
     if parity_receipt.get("status")!="PASS":
         raise ValueError("DART_PYTHON_PARITY_REQUIRED")
     if digest({"rows":dataset["rows"],"schema":f.schema(),"labelMapping":list(f.LABELS),"exclusions":dataset["exclusions"],
                "exportSha256":dataset["exportSha256"],"builderVersion":dataset["builderVersion"]})!=dataset["datasetHash"]:
         raise ValueError("dataset_manifest_tampered")
     rows=dataset["rows"]
+    if dataset.get("origin") not in ("SYNTHETIC_ENGINEERING_ONLY","APPROVED_EXPORT_ATTESTED"):
+        raise ValueError("unrecognized_dataset_origin")
+    if any(dataset.get(k)!=v for k,v in f.schema().items()) or dataset.get("labelMappingVersion")!=f.LABEL_VERSION:
+        raise ValueError("frozen_feature_schema_required")
     if dataset["origin"]!="SYNTHETIC_ENGINEERING_ONLY":
         now=datetime.now(timezone.utc)
+        attestation=dataset.get("professionalReviewAttestation") or {}
+        if (attestation.get("exportSha256")!=dataset["exportSha256"] or attestation.get("professionallyReviewed") is not True or
+            attestation.get("currentConsentRechecked") is not True or not attestation.get("governanceReference") or
+            any(r["sampleId"].upper().startswith(("DEMO","SYNTHETIC")) or r["subjectId"].upper().startswith(("DEV-","SYNTHETIC")) for r in rows)):
+            raise ValueError("professional_governance_attestation_required")
         if abs((now-instant(dataset["eligibilityCheckedAt"])).total_seconds())>86400 or any(instant(r["eligibility"]["expiresAt"])<=now for r in rows):
             raise ValueError("fresh_export_required_before_real_training")
     parts,split_manifest=split.build(rows,seed)
@@ -113,7 +139,8 @@ def train(dataset,root,run_id,parity_receipt,seed=42):
     config={"seed":seed,"candidates":models.CANDIDATES,"domain":dataset["domain"],
             "origin":dataset["origin"],"modelStatus":"EXPERIMENTAL","deploymentApproved":False,
             "timestamp":datetime.now(timezone.utc).isoformat(),"gitCommit":dataset["gitCommit"],
-            "selection":"validation macro-F1, grouped-CV macro-F1, balanced accuracy, worst-class recall, then simpler baseline/family",
+            "selection":"validation macro-F1, grouped-CV macro-F1, balanced accuracy, worst-class recall (0.01 tie bands), then simpler baseline/family, size/latency",
+            "selectionTieTolerance":.01,
             "preprocessing":"SVM scaling inside subject-grouped sigmoid calibration folds; no imputation; no test fitting",
             "engineeringMinimum":"10 attempts and 5 subjects per label; 10 total subjects, NOT scientific sufficiency"}
     write("training_config.json",config)
@@ -154,7 +181,6 @@ def train(dataset,root,run_id,parity_receipt,seed=42):
                     graph=None
                 native_path=output/(feature_set+"-"+name+".joblib")
                 joblib.dump(model,native_path)
-                score=summary["overall"]["macroF1"]
                 result={"name":name,"family":family,"featureSet":feature_set,"hyperparameters":params,
                         "cvMacroF1":float(np.mean(cv_scores)),"cvFoldScores":cv_scores,"validation":summary,
                         "fitAndCheckSeconds":time.perf_counter()-began,"nativeBytes":native_path.stat().st_size,
@@ -166,18 +192,25 @@ def train(dataset,root,run_id,parity_receipt,seed=42):
         if not eligible:
             raise ValueError("NO_ONNX_COMPATIBLE_MODEL")
         def rank(r):
-            recalls=[r["validation"]["classificationReport"][label]["recall"] for label in f.LABELS]
-            return (r["validation"]["overall"]["macroF1"],r["cvMacroF1"],r["validation"]["overall"]["balancedAccuracy"],min(recalls),
-                    r["featureSet"]=="baseline",-next(i for i,c in enumerate(models.CANDIDATES) if c[0]==r["name"]))
+            return (r["featureSet"]=="baseline",{"RandomForest":3,"SVM":2,"XGBoost":1}[r["family"]],
+                    -r["nativeBytes"],-r["onnx"]["benchmark"]["p95Ms"],
+                    -next(i for i,c in enumerate(models.CANDIDATES) if c[0]==r["name"]))
+        for criterion in (lambda r:r["validation"]["overall"]["macroF1"],lambda r:r["cvMacroF1"],
+                          lambda r:r["validation"]["overall"]["balancedAccuracy"],
+                          lambda r:min(r["validation"]["classificationReport"][label]["recall"] for label in f.LABELS)):
+            best=max(criterion(r) for r in eligible)
+            eligible=[r for r in eligible if criterion(r)>=best-.01]
         winner=max(eligible,key=rank)
         model,graph,x,parity=candidates[(winner["featureSet"],winner["name"])]
         # This is the ONLY final holdout evaluation, after immutable candidate selection.
         write("selection.json",{"winner":winner["name"],"featureSet":winner["featureSet"],"testUsedForSelection":False})
+        pristine=reserve_holdout(dataset,root,run_id,split_manifest,debug_replay)
         record("selection frozen; final subject holdout evaluated once")
         pred=model.predict(x[test_ids]);prob=model.predict_proba(x[test_ids])
         final=metrics(y[test_ids],pred,prob,[rows[i] for i in test_ids])
         final.update(origin=dataset["origin"],modelStatus="EXPERIMENTAL",finalTestEvaluations=1,
-                     realFinalTestStatus="NOT RUN" if dataset["origin"]=="SYNTHETIC_ENGINEERING_ONLY" else "PASS")
+                     pristineRealFinalTest=pristine,
+                     realFinalTestStatus="NOT RUN" if dataset["origin"]=="SYNTHETIC_ENGINEERING_ONLY" else ("PASS" if pristine else "DEBUG_REPLAY_NONPRISTINE"))
         write("metrics.json",final)
         write("classification_report.json",final["classificationReport"])
         write("error_analysis.json",final["errors"])
@@ -195,6 +228,10 @@ def train(dataset,root,run_id,parity_receipt,seed=42):
                                                               "origin":dataset["origin"],"modelStatus":"EXPERIMENTAL","deploymentApproved":False}.items()})
         (output/"model.onnx").write_bytes(graph.SerializeToString())
         write("onnx_parity.json",parity)
+        check_vectors=np.vstack([x[train_ids],x[val_ids],np.zeros((1,x.shape[1]),dtype=np.float32),np.mean(x[train_ids],axis=0,keepdims=True)])
+        write("parity_vectors.json",{"input":check_vectors.tolist(),"nativeLabels":model.predict(check_vectors).tolist(),
+              "nativeProbabilities":model.predict_proba(check_vectors).tolist(),"classOrder":model.classes_.tolist(),
+              "missingCases":["null","NaN","Infinity"],"missingPolicy":"rejected by shared checked_input before either runtime"})
         measured=subprocess.run([sys.executable,str(Path(__file__).resolve().parents[1]/"train_body.py"),
                                 "benchmark","--model",str(output/"model.onnx")],capture_output=True,text=True,check=True)
         write("benchmark.json",json.loads(measured.stdout))
@@ -212,3 +249,20 @@ def train(dataset,root,run_id,parity_receipt,seed=42):
         write("failure.json",{"status":"FAIL","exceptionType":type(error).__name__,"stage":"training/export"})
         record("FAIL; partial artifact retained; do not reuse run ID")
         raise
+
+
+def reserve_holdout(dataset,root,run_id,manifest,debug_replay=False):
+    """Local study ledger; moving/deleting it is an explicit governance violation, not a new pristine test."""
+    if dataset["origin"]=="SYNTHETIC_ENGINEERING_ONLY":
+        return False
+    folder=Path(root)/".final_holdout_ledger";folder.mkdir(parents=True,exist_ok=True)
+    path=folder/(dataset["datasetHash"]+".json")
+    try:
+        with path.open("xb") as stream:
+            stream.write(canonical({"datasetHash":dataset["datasetHash"],"runId":run_id,"split":manifest,
+                                    "reservedAt":datetime.now(timezone.utc).isoformat()}))
+        return True
+    except FileExistsError:
+        if debug_replay:
+            return False
+        raise ValueError("FINAL_HOLDOUT_ALREADY_USED: explicitly mark debug replay non-pristine") from None

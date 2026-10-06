@@ -54,6 +54,13 @@ def build(rows, seed=42):
             folds = list(GroupKFold(n_splits=3).split(y[train],y[train],groups[train]))
             if any(set(y[train[a]])!={0,1,2} or set(y[train[b]])!={0,1,2} for a,b in folds):
                 continue
+            calibration_valid=True
+            for a,_ in folds:
+                inner=list(GroupKFold(n_splits=2).split(y[train[a]],y[train[a]],groups[train[a]]))
+                if any(set(y[train[a][c]])!={0,1,2} or set(y[train[a][d]])!={0,1,2} for c,d in inner):
+                    calibration_valid=False
+            if not calibration_valid:
+                continue
             manifest = {"splitVersion":"subject-holdout-v1","randomSeed":seed,"selectedSplitSeed":seed+offset,
                         "groupStrategy":"subject; 60/20/20 nominal, 3-fold GroupKFold on train only",
                         "finalHoldoutPolicy":"winner only, one evaluation; debug rerun is NOT a pristine new study"}

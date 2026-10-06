@@ -155,6 +155,34 @@ class DatasetTest(ExportFixture,unittest.TestCase):
         self.assertNotIn("SYNTHETIC-NOT-AN-EMAIL",json.dumps(result))
         self.assertEqual(result["counts"]["samples"],0)
 
+    def test_numeric_persisted_exercise_id_is_valid(self):
+        self.assertEqual(self.build(lambda p,g:p.update(exerciseId="99"),subjects=1)["counts"]["samples"],6)
+
+    def test_long_tracking_gap_excluded(self):
+        def mutate(p,g):
+            for frame in p["frames"][1:]: frame["timestampMs"]+=1200
+            p["duration"]+=1.2;p["features"][4]+=1.2
+        self.assertEqual(self.build(mutate,subjects=1)["counts"]["samples"],0)
+
+    def test_label_csv_unassessable_unable_and_version_excluded(self):
+        for label,version in (("unassessable",f.LABEL_VERSION),("unable_to_evaluate",f.LABEL_VERSION),(f.LABELS[0],"old-labels")):
+            self.build(subjects=1)
+            with zipfile.ZipFile(self.path) as z: entries={n:z.read(n) for n in z.namelist()}
+            entries["labels.csv"]=entries["labels.csv"].replace(f.LABELS[0].encode(),label.encode()).replace(f.LABEL_VERSION.encode(),version.encode())
+            with zipfile.ZipFile(self.path,"w") as z:
+                for n,b in entries.items(): z.writestr(n,b)
+            result=dataset.build(self.path,engineering=True)
+            self.assertGreater(result["exclusionCounts"]["label_contract"],0)
+
+    def test_features_available_but_partial_tracking_excluded(self):
+        def mutate(p,g):
+            for frame in p["frames"][6:]:
+                frame["keypoints"][13]=None;frame["scores"][13]=None;frame["validity"][13]=False;frame["angles"]=None
+            derived=f.extract(p["frames"],"left")
+            p["features"]=derived["values"];p["featuresStatus"]=derived["status"];p["trackingQuality"]["validFrameRatio"]=derived["validFrameRatio"]
+        result=self.build(mutate,subjects=1)
+        self.assertEqual(result["counts"]["samples"],0)
+
     def test_duplicate_geometry_retry_deduplicated(self):
         def mutate(p,g):
             reference=synthetic.sample(self.fixture,0,0,0)
@@ -270,6 +298,23 @@ class ModelTest(unittest.TestCase):
     def test_tampered_dataset_cannot_train(self):
         with self.assertRaisesRegex(ValueError,"tampered"):
             training.train({"rows":[],"exclusions":[],"exportSha256":"fake","builderVersion":"fake","datasetHash":"fake"},"unused","unused",{"status":"PASS"})
+
+    def test_final_holdout_cannot_be_reused_as_pristine(self):
+        with tempfile.TemporaryDirectory() as temp:
+            data={"origin":"APPROVED_EXPORT_ATTESTED","datasetHash":"fixture-only-no-real-data"}
+            self.assertTrue(training.reserve_holdout(data,temp,"a",{}))
+            with self.assertRaisesRegex(ValueError,"ALREADY_USED"):training.reserve_holdout(data,temp,"b",{})
+            self.assertFalse(training.reserve_holdout(data,temp,"b",{},debug_replay=True))
+
+    def test_synthetic_never_pristine_real_holdout(self):
+        self.assertFalse(training.reserve_holdout({"origin":"SYNTHETIC_ENGINEERING_ONLY"},"unused","unused",{}))
+
+    def test_subject_bootstrap_cluster_not_frame_unit(self):
+        rows=[{"subjectId":f"synthetic-{s}"} for s in range(20) for label in range(3)]
+        y=np.array([0,1,2]*20)
+        result=training.subject_bootstrap(y,y,rows)
+        self.assertEqual(result["status"],"PASS")
+        self.assertEqual(result["macroF1Percentile95"],[1.,1.])
 
 
 if __name__=="__main__":unittest.main()
