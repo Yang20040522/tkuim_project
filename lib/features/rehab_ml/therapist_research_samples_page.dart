@@ -6,6 +6,8 @@ import 'package:flutter/material.dart';
 import '../account/app_session.dart';
 import 'ml_research_api.dart';
 import 'ml_action_definition.dart';
+import 'research_sample_presentation.dart';
+import 'research_owner_scope.dart';
 
 class TherapistResearchSamplesPage extends StatefulWidget {
   const TherapistResearchSamplesPage({super.key, this.remote});
@@ -27,14 +29,40 @@ class _TherapistResearchSamplesPageState
   bool _canAnnotate = false;
   bool _canReview = false;
   String _reviewRequestStatus = 'NONE';
+  final Map<String, String> _filters = {};
+  int _loadVersion = 0;
+  late final ResearchOwnerScope _owner;
 
   @override
   void initState() {
     super.initState();
+    _owner = ResearchOwnerScope.capture();
+    AppSession.changes.addListener(_accountChanged);
     _load();
   }
 
+  void _accountChanged() {
+    if (mounted && !_owner.isCurrent) {
+      ++_loadVersion;
+      setState(() {
+        _samples = [];
+        _canAnnotate = false;
+        _canReview = false;
+        _loading = false;
+        _error = '登入狀態已變更，請重新開啟研究頁面。';
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    AppSession.changes.removeListener(_accountChanged);
+    super.dispose();
+  }
+
   Future<void> _load() async {
+    if (!_owner.isCurrent) return;
+    final version = ++_loadVersion;
     setState(() {
       _loading = true;
       _error = null;
@@ -44,11 +72,21 @@ class _TherapistResearchSamplesPageState
       final canAnnotate = access['canAnnotate'] == true;
       final canReview = access['canReview'] == true;
       final samples = _reviewMode && canReview
-          ? await _remote.reviewQueue()
+          ? await _remote.reviewQueuePage(0)
           : canAnnotate
               ? await _remote.listSamples()
               : <Map<String, dynamic>>[];
-      if (mounted) {
+      if (samples.length == 20) {
+        for (var page = 1; page < 25; page++) {
+          final next = _reviewMode && canReview
+              ? await _remote.reviewQueuePage(page)
+              : await _remote.listSamples(page: page);
+          if (!mounted || version != _loadVersion || !_owner.isCurrent) return;
+          samples.addAll(next);
+          if (next.length < 20) break;
+        }
+      }
+      if (mounted && version == _loadVersion && _owner.isCurrent) {
         setState(() {
           _canAnnotate = canAnnotate;
           _canReview = canReview;
@@ -58,9 +96,11 @@ class _TherapistResearchSamplesPageState
         });
       }
     } catch (_) {
-      if (mounted) setState(() => _error = '研究樣本載入失敗，請確認網路與授權。');
+      if (mounted && version == _loadVersion) {
+        setState(() => _error = '研究樣本載入失敗，請確認網路與授權。');
+      }
     } finally {
-      if (mounted) setState(() => _loading = false);
+      if (mounted && version == _loadVersion) setState(() => _loading = false);
     }
   }
 
@@ -68,9 +108,11 @@ class _TherapistResearchSamplesPageState
   Widget build(BuildContext context) {
     final visible = _samples.where((item) {
       final status = item['annotationStatus'];
-      return _filter == 'all' ||
+      final statusMatches = _filter == 'all' ||
           (_filter == 'pending' && status == 'UNLABELED') ||
           (_filter == 'labeled' && status != 'UNLABELED');
+      return statusMatches &&
+          ResearchSamplePresentation.matches(item, _filters);
     }).toList();
     return Scaffold(
       backgroundColor: const Color(0xFFF5F6FA),
@@ -128,6 +170,41 @@ class _TherapistResearchSamplesPageState
                       selected: _filter == 'labeled',
                       onSelected: (_) => setState(() => _filter = 'labeled')),
                 ]),
+              ExpansionTile(
+                title: const Text('篩選研究樣本'),
+                children: [
+                  for (final entry in const {
+                    'modality': '資料類型',
+                    'source': '來源',
+                    'patient': '匿名患者',
+                    'exercise': '動作',
+                    'session': '訓練 Session',
+                    'status': '標註狀態',
+                    'disposition': '樣本處置',
+                  }.entries)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 4),
+                      child: DropdownButtonFormField<String>(
+                        key: ValueKey('research-filter-${entry.key}'),
+                        initialValue: _filters[entry.key] ?? 'all',
+                        isExpanded: true,
+                        decoration: InputDecoration(labelText: entry.value),
+                        items: [
+                          const DropdownMenuItem(
+                              value: 'all', child: Text('全部')),
+                          for (final value in _filterOptions(entry.key))
+                            DropdownMenuItem(
+                                value: value,
+                                child: Text(value,
+                                    overflow: TextOverflow.ellipsis)),
+                        ],
+                        onChanged: (value) => setState(() {
+                          _filters[entry.key] = value ?? 'all';
+                        }),
+                      ),
+                    ),
+                ],
+              ),
               if (_loading) const Center(child: CircularProgressIndicator()),
               if (_error != null)
                 Text(_error!, style: const TextStyle(color: Colors.red)),
@@ -147,7 +224,9 @@ class _TherapistResearchSamplesPageState
                       '樣本 ${item['id']}\n匿名受試者 ${item['subjectId']} · '
                       '${item['movementSide'] == 'left' ? '左側' : '右側'} · '
                       '${item['capturedAt']}\n'
-                      '${_statusText(item['annotationStatus']?.toString())}',
+                      '${ResearchSamplePresentation.originLabel(item)} · '
+                      '${_statusText(item['annotationStatus']?.toString())} · '
+                      '${item['disposition'] ?? 'ACTIVE'}',
                     ),
                     isThreeLine: true,
                     trailing: const Icon(Icons.chevron_right),
@@ -177,6 +256,26 @@ class _TherapistResearchSamplesPageState
         'RETURNED' => '已退回',
         _ => '待標註',
       };
+
+  List<String> _filterOptions(String key) {
+    String value(Map<String, dynamic> item) => switch (key) {
+          'modality' => ResearchSamplePresentation.modality(item),
+          'source' => ResearchSamplePresentation.source(item),
+          'patient' => item['subjectId']?.toString() ?? '',
+          'exercise' =>
+            (item['exerciseId'] ?? item['actionId'])?.toString() ?? '',
+          'session' => item['sessionId']?.toString() ?? '',
+          'status' => item['annotationStatus']?.toString() ?? 'UNLABELED',
+          _ => item['disposition']?.toString() ?? 'ACTIVE',
+        };
+    final result =
+        _samples.map(value).where((v) => v.isNotEmpty).toSet().toList()..sort();
+    final selected = _filters[key];
+    if (selected != null && selected != 'all' && !result.contains(selected)) {
+      result.add(selected);
+    }
+    return result;
+  }
 }
 
 class ResearchSampleDetailPage extends StatefulWidget {
@@ -194,7 +293,8 @@ class ResearchSampleDetailPage extends StatefulWidget {
       _ResearchSampleDetailPageState();
 }
 
-class _ResearchSampleDetailPageState extends State<ResearchSampleDetailPage> {
+class _ResearchSampleDetailPageState extends State<ResearchSampleDetailPage>
+    with WidgetsBindingObserver {
   Map<String, dynamic>? _detail;
   final TextEditingController _note = TextEditingController();
   final TextEditingController _reviewNote = TextEditingController();
@@ -206,6 +306,13 @@ class _ResearchSampleDetailPageState extends State<ResearchSampleDetailPage> {
   String? _error;
   String? _status;
   String? _annotatorId;
+  String _reasonCode = 'LOW_QUALITY';
+  late final ResearchOwnerScope _owner;
+  bool get _bodyAttempt => (_detail?['payload'] as Map?)?['schemaVersion'] == 3;
+  int get _revision =>
+      ((_detail?['annotation'] as Map?)?['revision'] as num?)?.toInt() ?? 0;
+  String get _disposition =>
+      (_detail?['sample'] as Map?)?['disposition']?.toString() ?? 'ACTIVE';
 
   MlActionDefinition? get _definition {
     final payload = _detail?['payload'];
@@ -219,15 +326,32 @@ class _ResearchSampleDetailPageState extends State<ResearchSampleDetailPage> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _owner = ResearchOwnerScope.capture();
+    AppSession.changes.addListener(_accountChanged);
     _load();
   }
 
+  void _accountChanged() {
+    if (mounted && !_owner.isCurrent) {
+      _pause();
+      setState(() {
+        _detail = null;
+        _error = '登入狀態已變更，請重新開啟樣本。';
+      });
+    }
+  }
+
   Future<void> _load() async {
+    if (!_owner.isCurrent) return;
+    _timer?.cancel();
+    _playing = false;
     try {
       final detail = await widget.remote.sampleDetail(widget.sampleId);
-      if (!mounted) return;
+      if (!mounted || !_owner.isCurrent) return;
       setState(() {
         _detail = detail;
+        _frame = 0;
         final annotation = detail['annotation'];
         if (annotation is Map) {
           _label = annotation['label']?.toString();
@@ -258,13 +382,27 @@ class _ResearchSampleDetailPageState extends State<ResearchSampleDetailPage> {
     if (_frame >= _frames.length - 1) setState(() => _frame = 0);
     _timer?.cancel();
     setState(() => _playing = true);
-    _timer = Timer.periodic(const Duration(milliseconds: 100), (_) {
+    _scheduleFrame();
+  }
+
+  void _scheduleFrame() {
+    if (!_playing || _frame >= _frames.length - 1) {
+      _pause();
+      return;
+    }
+    _timer = Timer(ResearchPlaybackTimeline(_frames).intervalAfter(_frame), () {
       if (!mounted || _frame >= _frames.length - 1) {
         _pause();
       } else {
         setState(() => _frame++);
+        _scheduleFrame();
       }
     });
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state != AppLifecycleState.resumed) _pause();
   }
 
   Future<void> _save() async {
@@ -274,10 +412,18 @@ class _ResearchSampleDetailPageState extends State<ResearchSampleDetailPage> {
       _error = null;
     });
     try {
-      await widget.remote.labelSample(
-          widget.sampleId, _label!, _note.text.trim(),
-          labelVersion: _definition!.labelVersion,
-          actionDefinitionVersion: _definition!.version);
+      if (_bodyAttempt) {
+        await widget.remote.labelSampleRevision(
+            widget.sampleId, _label!, _note.text.trim(),
+            labelVersion: _definition!.labelVersion,
+            actionDefinitionVersion: _definition!.version,
+            expectedRevision: _revision);
+      } else {
+        await widget.remote.labelSample(
+            widget.sampleId, _label!, _note.text.trim(),
+            labelVersion: _definition!.labelVersion,
+            actionDefinitionVersion: _definition!.version);
+      }
       if (mounted) {
         ScaffoldMessenger.of(context)
             .showSnackBar(const SnackBar(content: Text('研究標註已儲存。')));
@@ -294,7 +440,11 @@ class _ResearchSampleDetailPageState extends State<ResearchSampleDetailPage> {
     if (_saving || _definition == null) return;
     setState(() => _saving = true);
     try {
-      await widget.remote.submitLabel(widget.sampleId);
+      if (_bodyAttempt) {
+        await widget.remote.submitLabelRevision(widget.sampleId, _revision);
+      } else {
+        await widget.remote.submitLabel(widget.sampleId);
+      }
       await _load();
       if (mounted) {
         ScaffoldMessenger.of(context)
@@ -307,16 +457,24 @@ class _ResearchSampleDetailPageState extends State<ResearchSampleDetailPage> {
     }
   }
 
-  Future<void> _review(bool approve) async {
+  Future<void> _review(String decision) async {
     if (_saving) return;
+    final approve = decision == 'APPROVE';
     if (!approve && _reviewNote.text.trim().isEmpty) {
       setState(() => _error = '退回時請填寫原因。');
       return;
     }
     setState(() => _saving = true);
     try {
-      await widget.remote
-          .reviewLabel(widget.sampleId, approve, _reviewNote.text.trim());
+      if (_bodyAttempt) {
+        await widget.remote.reviewDecision(
+            widget.sampleId, decision, _reviewNote.text.trim(),
+            expectedRevision: _revision,
+            reasonCode: approve ? null : _reasonCode);
+      } else {
+        await widget.remote
+            .reviewLabel(widget.sampleId, approve, _reviewNote.text.trim());
+      }
       await _load();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -331,6 +489,8 @@ class _ResearchSampleDetailPageState extends State<ResearchSampleDetailPage> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    AppSession.changes.removeListener(_accountChanged);
     _timer?.cancel();
     _note.dispose();
     _reviewNote.dispose();
@@ -364,9 +524,17 @@ class _ResearchSampleDetailPageState extends State<ResearchSampleDetailPage> {
                   child: CustomPaint(
                 key: const Key('research-skeleton-player'),
                 painter: ResearchSkeletonPainter(frame?['landmarks'] as List?,
-                    isHand: _definition?.isHand == true),
+                    isHand: _definition?.isHand == true,
+                    bodyPoints: frame?['keypoints'] as List?,
+                    validity: frame?['validity'] as List?,
+                    imageWidth: (frame?['imageWidth'] as num?)?.toDouble(),
+                    imageHeight: (frame?['imageHeight'] as num?)?.toDouble()),
               ))),
           if (frames.isNotEmpty) ...[
+            if (ResearchPlaybackTimeline(frames).gapAfter(_frame))
+              Text(
+                  '追蹤間隔 ${ResearchPlaybackTimeline(frames).intervalAfter(_frame).inMilliseconds} ms（不補點）',
+                  key: const Key('research-tracking-gap')),
             Text(
                 '第 ${_frame + 1} / ${frames.length} 幀 · ${frame?['timestampMs']} ms'),
             Slider(
@@ -398,6 +566,7 @@ class _ResearchSampleDetailPageState extends State<ResearchSampleDetailPage> {
                   .join(' · ')),
           ],
           const SizedBox(height: 16),
+          if (_bodyAttempt) _bodySummary(),
           if (_definition == null) const Text('此樣本的動作或資料版本尚未支援，無法標註或提交。'),
           if (_status != null) Text('標註狀態：$_status'),
           if ((_detail!['annotation'] as Map?)?['reviewNote'] != null)
@@ -414,6 +583,7 @@ class _ResearchSampleDetailPageState extends State<ResearchSampleDetailPage> {
                     ))
                 .toList(),
             onChanged: widget.reviewMode ||
+                    _disposition != 'ACTIVE' ||
                     _status == 'SUBMITTED' ||
                     _status == 'APPROVED'
                 ? null
@@ -423,6 +593,7 @@ class _ResearchSampleDetailPageState extends State<ResearchSampleDetailPage> {
           TextField(
               controller: _note,
               readOnly: widget.reviewMode ||
+                  _disposition != 'ACTIVE' ||
                   _status == 'SUBMITTED' ||
                   _status == 'APPROVED',
               maxLength: 1000,
@@ -430,6 +601,7 @@ class _ResearchSampleDetailPageState extends State<ResearchSampleDetailPage> {
               decoration: const InputDecoration(
                   labelText: '標註備註', border: OutlineInputBorder())),
           if (!widget.reviewMode &&
+              _disposition == 'ACTIVE' &&
               _status != 'SUBMITTED' &&
               _status != 'APPROVED')
             FilledButton(
@@ -438,6 +610,7 @@ class _ResearchSampleDetailPageState extends State<ResearchSampleDetailPage> {
                     : _save,
                 child: const Text('儲存草稿')),
           if (!widget.reviewMode &&
+              _disposition == 'ACTIVE' &&
               (_status == 'DRAFT' ||
                   _status == 'RETURNED' ||
                   _status == 'LABELED'))
@@ -454,28 +627,112 @@ class _ResearchSampleDetailPageState extends State<ResearchSampleDetailPage> {
               maxLength: 1000,
               decoration: const InputDecoration(labelText: '審核備註／退回原因'),
             ),
-            Row(children: [
+            if (_bodyAttempt)
+              DropdownButtonFormField<String>(
+                key: const Key('research-review-reason'),
+                initialValue: _reasonCode,
+                decoration: const InputDecoration(labelText: '退回／重採樣原因'),
+                items: const [
+                  DropdownMenuItem(value: 'LOW_QUALITY', child: Text('資料品質不足')),
+                  DropdownMenuItem(value: 'TRACKING_LOST', child: Text('追蹤遺失')),
+                  DropdownMenuItem(
+                      value: 'INCOMPLETE_MOTION', child: Text('動作資料不完整')),
+                  DropdownMenuItem(value: 'WRONG_ACTION', child: Text('動作不符')),
+                  DropdownMenuItem(value: 'OTHER', child: Text('其他')),
+                ],
+                onChanged: (value) =>
+                    setState(() => _reasonCode = value ?? 'OTHER'),
+              ),
+            Wrap(spacing: 8, children: [
               OutlinedButton(
-                onPressed: _saving ? null : () => _review(false),
+                onPressed: _saving ? null : () => _review('RETURN'),
                 child: const Text('退回'),
               ),
               const SizedBox(width: 8),
               FilledButton(
-                onPressed: _saving ? null : () => _review(true),
+                onPressed: _saving ? null : () => _review('APPROVE'),
                 child: const Text('核准'),
               ),
+              if (_bodyAttempt) ...[
+                OutlinedButton(
+                    key: const Key('research-reject'),
+                    onPressed: _saving ? null : () => _review('REJECT'),
+                    child: const Text('排除樣本')),
+                OutlinedButton(
+                    key: const Key('research-needs-resample'),
+                    onPressed: _saving ? null : () => _review('NEEDS_RESAMPLE'),
+                    child: const Text('需要重採樣')),
+              ],
             ]),
           ],
         ],
       ])),
     );
   }
+
+  Widget _bodySummary() {
+    final payload = _detail!['payload'] as Map;
+    final sample = _detail!['sample'] as Map;
+    final names = payload['featureNames'] as List? ?? const [];
+    final features = payload['features'] as List? ?? const [];
+    const units = {
+      'peak_leg_height': '軀幹長比例',
+      'minimum_hip_angle_deg': '°（2D）',
+      'minimum_knee_angle_deg': '°（2D）',
+      'peak_abs_trunk_lean_deg': '°（2D）',
+      'duration_seconds': '秒',
+    };
+    return Card(
+        child: Padding(
+            padding: const EdgeInsets.all(12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                    '${ResearchSamplePresentation.originLabel(Map<String, dynamic>.from(sample))} · 2D RTMPose'),
+                for (final key in [
+                  'modality',
+                  'source',
+                  'schemaVersion',
+                  'actionDefinitionVersion',
+                  'extractorVersion',
+                  'poseModelVersion',
+                  'timestampOrigin',
+                  'terminationReason',
+                  'featuresStatus'
+                ])
+                  Text('$key：${payload[key] ?? 'unavailable'}'),
+                Text('duration：${payload['duration']} 秒'),
+                Text(
+                    'tracking quality：${(payload['trackingQuality'] as Map?)?['validFrameRatio']}'),
+                Text(
+                    'set：${payload['setIndex']} · reps：${payload['completedRepsBefore']} → ${payload['completedRepsAfter']}'),
+                Text('disposition：$_disposition · revision：$_revision'),
+                if (sample['resampleOfSampleId'] != null)
+                  Text('重採樣來源：${sample['resampleOfSampleId']}'),
+                if (sample['reasonCode'] != null)
+                  Text('處置原因：${sample['reasonCode']}'),
+                for (var i = 0; i < names.length; i++)
+                  Text(
+                      '${names[i]}：${i < features.length && features[i] is num ? (features[i] as num).toStringAsFixed(3) : 'unavailable'} ${units[names[i]] ?? ''}',
+                      key: ValueKey('research-feature-${names[i]}')),
+                const Text('影像平面投影角度，非臨床 3D ROM。'),
+              ],
+            )));
+  }
 }
 
 /// COCO 17-point edges; drawing is presentation only, never relabeled/inferred.
 class ResearchSkeletonPainter extends CustomPainter {
-  const ResearchSkeletonPainter(this.points, {this.isHand = false});
+  const ResearchSkeletonPainter(this.points,
+      {this.isHand = false,
+      this.bodyPoints,
+      this.validity,
+      this.imageWidth,
+      this.imageHeight});
   final List? points;
+  final List? bodyPoints, validity;
+  final double? imageWidth, imageHeight;
   final bool isHand;
   static const handEdges = <(int, int)>[
     (0, 1),
@@ -517,43 +774,79 @@ class ResearchSkeletonPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    final values = points;
+    final values = bodyPoints ?? points;
     if (values == null || values.length != (isHand ? 21 : 17)) return;
-    final xy = <Offset>[];
-    for (final raw in values) {
+    final xy = <Offset?>[];
+    for (var index = 0; index < values.length; index++) {
+      final raw = values[index];
+      if (validity != null &&
+          (index >= validity!.length || validity![index] != true)) {
+        xy.add(null);
+        continue;
+      }
       if (raw is! List ||
           raw.length != (isHand ? 3 : 2) ||
           raw[0] is! num ||
           raw[1] is! num) {
-        return;
+        xy.add(null);
+        continue;
       }
       final x = (raw[0] as num).toDouble();
       final y = (raw[1] as num).toDouble();
-      if (!x.isFinite || !y.isFinite) return;
+      if (!x.isFinite || !y.isFinite) {
+        xy.add(null);
+        continue;
+      }
+      if (bodyPoints != null && (x < 0 || x > 1 || y < 0 || y > 1)) {
+        xy.add(null);
+        continue;
+      }
       xy.add(Offset(x, y));
     }
-    final minX = xy.map((p) => p.dx).reduce(math.min);
-    final maxX = xy.map((p) => p.dx).reduce(math.max);
-    final minY = xy.map((p) => p.dy).reduce(math.min);
-    final maxY = xy.map((p) => p.dy).reduce(math.max);
+    final valid = xy.whereType<Offset>().toList();
+    if (valid.isEmpty) return;
+    final minX = valid.map((p) => p.dx).reduce(math.min);
+    final maxX = valid.map((p) => p.dx).reduce(math.max);
+    final minY = valid.map((p) => p.dy).reduce(math.min);
+    final maxY = valid.map((p) => p.dy).reduce(math.max);
     final span = math.max(math.max(maxX - minX, maxY - minY), 0.01);
     final scale = math.min(size.width, size.height) * 0.8 / span;
     final centerX = (minX + maxX) / 2;
     final centerY = (minY + maxY) / 2;
-    Offset at(int i) => Offset(size.width / 2 + (xy[i].dx - centerX) * scale,
-        size.height / 2 + (xy[i].dy - centerY) * scale);
+    Offset at(int i) {
+      if (bodyPoints != null &&
+          (imageWidth ?? 0) > 0 &&
+          (imageHeight ?? 0) > 0) {
+        final s =
+            math.min(size.width / imageWidth!, size.height / imageHeight!);
+        return Offset(
+            (size.width - imageWidth! * s) / 2 + xy[i]!.dx * imageWidth! * s,
+            (size.height - imageHeight! * s) / 2 +
+                xy[i]!.dy * imageHeight! * s);
+      }
+      return Offset(size.width / 2 + (xy[i]!.dx - centerX) * scale,
+          size.height / 2 + (xy[i]!.dy - centerY) * scale);
+    }
+
     final paint = Paint()
       ..color = const Color(0xFF4A65FF)
       ..strokeWidth = 3;
     for (final (a, b) in isHand ? handEdges : edges) {
+      if (xy[a] == null || xy[b] == null) continue;
       canvas.drawLine(at(a), at(b), paint);
     }
     for (var i = 0; i < xy.length; i++) {
+      if (xy[i] == null) continue;
       canvas.drawCircle(at(i), 3, paint);
     }
   }
 
   @override
   bool shouldRepaint(covariant ResearchSkeletonPainter oldDelegate) =>
-      oldDelegate.points != points || oldDelegate.isHand != isHand;
+      oldDelegate.points != points ||
+      oldDelegate.isHand != isHand ||
+      oldDelegate.bodyPoints != bodyPoints ||
+      oldDelegate.validity != validity ||
+      oldDelegate.imageWidth != imageWidth ||
+      oldDelegate.imageHeight != imageHeight;
 }

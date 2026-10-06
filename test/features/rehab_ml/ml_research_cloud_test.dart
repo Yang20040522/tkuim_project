@@ -24,7 +24,7 @@ class _EmptyLocal extends MlSampleRepository {
   Future<List<Map<String, dynamic>>> list() async => [];
 }
 
-class _Remote implements MlResearchRemote {
+class _Remote extends MlResearchRemote {
   MlResearchConsent consent = const MlResearchConsent(
       active: false, available: true, currentVersion: 'study-v1');
   final uploaded = <String>[];

@@ -36,6 +36,7 @@ class _ResearchManagementPageState extends State<ResearchManagementPage> {
   bool _canManage = false;
   String? _error;
   String _exportAction = 'standing_knee_raise';
+  String _exportDomain = 'legacy';
 
   @override
   void initState() {
@@ -128,7 +129,9 @@ class _ResearchManagementPageState extends State<ResearchManagementPage> {
     if (_busy) return;
     setState(() => _busy = true);
     try {
-      final bytes = await _remote.exportApproved(actionId: _exportAction);
+      final bytes = _exportDomain == 'legacy'
+          ? await _remote.exportApproved(actionId: _exportAction)
+          : await _remote.exportBodyApproved(source: _exportDomain);
       final saved =
           await (widget.saveExport?.call(bytes) ?? _saveWithPicker(bytes));
       if (mounted) {
@@ -382,22 +385,44 @@ class _ResearchManagementPageState extends State<ResearchManagementPage> {
                                 fontSize: 18, fontWeight: FontWeight.bold)),
                         const Text('僅包含有效同意、已獨立核准且可用於訓練的匿名樣本；檔案請儲存在受控位置。'),
                         DropdownButtonFormField<String>(
-                            key: const Key('research-export-action'),
-                            initialValue: _exportAction,
-                            decoration:
-                                const InputDecoration(labelText: '匯出動作'),
-                            items: MlActionRegistry.production.definitions
-                                .map((a) => DropdownMenuItem(
-                                    value: a.actionId,
-                                    child: Text(a.displayName)))
-                                .toList(),
-                            onChanged: _busy
-                                ? null
-                                : (value) {
-                                    if (value != null) {
-                                      setState(() => _exportAction = value);
-                                    }
-                                  }),
+                          key: const Key('research-export-domain'),
+                          initialValue: _exportDomain,
+                          decoration:
+                              const InputDecoration(labelText: '資料版本／來源（不混合）'),
+                          items: const [
+                            DropdownMenuItem(
+                                value: 'legacy',
+                                child: Text('既有 Phone Body v1／Hand v2')),
+                            DropdownMenuItem(
+                                value: 'phone', child: Text('Phone Body v3')),
+                            DropdownMenuItem(
+                                value: 'tv_pi', child: Text('TV + Pi Body v3')),
+                          ],
+                          onChanged: _busy
+                              ? null
+                              : (value) => setState(
+                                  () => _exportDomain = value ?? 'legacy'),
+                        ),
+                        if (_exportDomain != 'legacy')
+                          const Text('僅匯出站姿抬腳 body v3；保留來源域與匿名受試者／Session 分組。'),
+                        if (_exportDomain == 'legacy')
+                          DropdownButtonFormField<String>(
+                              key: const Key('research-export-action'),
+                              initialValue: _exportAction,
+                              decoration:
+                                  const InputDecoration(labelText: '匯出動作'),
+                              items: MlActionRegistry.production.definitions
+                                  .map((a) => DropdownMenuItem(
+                                      value: a.actionId,
+                                      child: Text(a.displayName)))
+                                  .toList(),
+                              onChanged: _busy
+                                  ? null
+                                  : (value) {
+                                      if (value != null) {
+                                        setState(() => _exportAction = value);
+                                      }
+                                    }),
                         FilledButton.icon(
                           key: const Key('research-export-approved'),
                           onPressed: _busy ? null : _export,

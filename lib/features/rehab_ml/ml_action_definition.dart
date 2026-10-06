@@ -169,6 +169,7 @@ class MlActionRegistry {
       version: BodyResearchFeatureExtractor.actionDefinitionVersion,
       displayName: '站姿抬腳（Body attempt）',
       schemaVersion: 3,
+      labelVersion: 'body-attempt-label-v1',
       featureNames: BodyResearchFeatureExtractor.featureNames,
       labels: standingKneeRaise.labels,
       angleLabels: standingKneeRaise.angleLabels,

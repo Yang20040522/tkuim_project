@@ -7,6 +7,12 @@ import 'body_research_feature_extractor.dart';
 class BodyResearchContract {
   static bool accepts(Map<String, dynamic> json) {
     try {
+      final parent = json['resampleOfSampleId'];
+      if (parent != null &&
+          (parent is! String ||
+              !RegExp(r'^[A-Za-z0-9_-]{1,100}$').hasMatch(parent))) {
+        return false;
+      }
       if (json['schemaVersion'] != 3 ||
           json['modality'] != 'body' ||
           json['poseModelVersion'] != 'rtmpose-wholebody-133-v1' ||

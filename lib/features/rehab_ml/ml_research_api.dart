@@ -103,6 +103,8 @@ abstract class MlResearchRemote {
   Future<Map<String, dynamic>> authority();
   Future<Map<String, dynamic>> requestReviewAccess();
   Future<List<Map<String, dynamic>>> reviewQueue();
+  Future<List<Map<String, dynamic>>> reviewQueuePage(int page) =>
+      page == 0 ? reviewQueue() : Future.value([]);
   Future<Map<String, dynamic>> submitLabel(String id);
   Future<Map<String, dynamic>> reviewLabel(
       String id, bool approve, String note);
@@ -122,6 +124,28 @@ abstract class MlResearchRemote {
       required String approvalReference});
   Future<int> processExpiredSamples();
   Future<void> deleteMyData();
+
+  // Backward-compatible extension points for existing injected repositories.
+  Future<void> labelSampleRevision(String id, String label, String note,
+          {required String labelVersion,
+          required String actionDefinitionVersion,
+          required int expectedRevision}) =>
+      labelSample(id, label, note,
+          labelVersion: labelVersion,
+          actionDefinitionVersion: actionDefinitionVersion);
+  Future<Map<String, dynamic>> submitLabelRevision(String id, int revision) =>
+      submitLabel(id);
+  Future<Map<String, dynamic>> reviewDecision(
+      String id, String decision, String note,
+      {required int expectedRevision, String? reasonCode}) {
+    if (decision != 'APPROVE' && decision != 'RETURN') {
+      throw UnsupportedError('Review decision requires updated transport');
+    }
+    return reviewLabel(id, decision == 'APPROVE', note);
+  }
+
+  Future<Uint8List> exportBodyApproved({required String source}) =>
+      throw UnsupportedError('Body v3 export requires updated transport');
 }
 
 /// Authenticated, HTTPS-only transport. No account identity or raw payload in logs.
@@ -256,9 +280,14 @@ class MlResearchApi implements MlResearchRemote {
 
   @override
   Future<List<Map<String, dynamic>>> reviewQueue() async {
-    final data =
-        await _decode(_client.get(_uri('/review-queue'), headers: _headers()))
-            as Map<String, dynamic>;
+    return reviewQueuePage(0);
+  }
+
+  @override
+  Future<List<Map<String, dynamic>>> reviewQueuePage(int page) async {
+    final data = await _decode(_client.get(
+        _uri('/review-queue', {'page': '$page', 'size': '20'}),
+        headers: _headers())) as Map<String, dynamic>;
     return (data['content'] as List<dynamic>? ?? [])
         .map((item) => Map<String, dynamic>.from(item as Map))
         .toList();
@@ -365,5 +394,63 @@ class MlResearchApi implements MlResearchRemote {
   @override
   Future<void> deleteMyData() async {
     await _decode(_client.delete(_uri('/my-data'), headers: _headers()));
+  }
+
+  @override
+  Future<void> labelSampleRevision(String id, String label, String note,
+      {required String labelVersion,
+      required String actionDefinitionVersion,
+      required int expectedRevision}) async {
+    await _decode(_client.put(_uri('/samples/${Uri.encodeComponent(id)}/label'),
+        headers: _headers(),
+        body: jsonEncode({
+          'label': label,
+          'note': note,
+          'labelVersion': labelVersion,
+          'actionDefinitionVersion': actionDefinitionVersion,
+          'expectedRevision': expectedRevision,
+        })));
+  }
+
+  @override
+  Future<Map<String, dynamic>> submitLabelRevision(
+          String id, int revision) async =>
+      await _decode(_client.post(
+              _uri('/samples/${Uri.encodeComponent(id)}/label/submit'),
+              headers: _headers(),
+              body: jsonEncode({'expectedRevision': revision})))
+          as Map<String, dynamic>;
+
+  @override
+  Future<Map<String, dynamic>> reviewDecision(
+          String id, String decision, String note,
+          {required int expectedRevision, String? reasonCode}) async =>
+      await _decode(
+          _client.post(_uri('/samples/${Uri.encodeComponent(id)}/label/review'),
+              headers: _headers(),
+              body: jsonEncode({
+                'decision': decision,
+                'note': note,
+                'expectedRevision': expectedRevision,
+                'reasonCode': reasonCode,
+              }))) as Map<String, dynamic>;
+
+  @override
+  Future<Uint8List> exportBodyApproved({required String source}) async {
+    final response = await _client
+        .get(
+            _uri('/management/export', {
+              'actionId': 'standing_knee_raise',
+              'schemaVersion': '3',
+              'source': source,
+            }),
+            headers: _headers())
+        .timeout(const Duration(seconds: 30));
+    _owner?.check(requireToken: true);
+    if (response.statusCode != 200 ||
+        response.headers['content-type']?.contains('application/zip') != true) {
+      throw MlResearchException.fromResponse(response.statusCode);
+    }
+    return response.bodyBytes;
   }
 }
