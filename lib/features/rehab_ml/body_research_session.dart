@@ -10,6 +10,7 @@ import 'ml_sample_repository.dart';
 import 'ml_research_api.dart';
 import 'ml_research_sync.dart';
 import 'research_owner_scope.dart';
+import 'body_ml_advisory_controller.dart';
 
 /// Opt-in body research sidecar. Counts supplied by the training screen are
 /// read-only snapshots; no classifier or action rules are invoked here.
@@ -21,6 +22,7 @@ class BodyResearchSession {
       MlResearchRemote? remote})
       : repository = repository ?? MlSampleRepository(),
         owner = ResearchOwnerScope.capture() {
+    advisory = BodyMlAdvisoryController();
     collector = BodyResearchAttemptCollector(
         context: BodyResearchContext(
             ownerId: owner.userId,
@@ -38,6 +40,7 @@ class BodyResearchSession {
   static const movementHipDeg = 165.0, baselineHipDeg = 172.0;
   final MlSampleRepository repository;
   final ResearchOwnerScope owner;
+  late final BodyMlAdvisoryController advisory;
   late BodyResearchAttemptCollector collector;
   late final MlResearchSync sync;
   final ValueNotifier<String?> message = ValueNotifier(null);
@@ -135,6 +138,7 @@ class BodyResearchSession {
   void interrupt() => collector.finish(BodyAttemptTermination.interrupted);
   void userFinished() => collector.finish(BodyAttemptTermination.userFinished);
   void _save(BodyResearchSample sample) {
+    unawaited(advisory.finalized(sample));
     final cloud = cloudConsent, epoch = _consentEpoch;
     unawaited(repository.save(sample).then((_) async {
       if (_disposed || !owner.isCurrent) return;
@@ -165,6 +169,7 @@ class BodyResearchSession {
     if (_disposed) return;
     interrupt();
     _disposed = true;
+    unawaited(advisory.dispose());
     _watchdog?.cancel();
     _idle.stop();
     sync.stop();
