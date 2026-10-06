@@ -2,6 +2,7 @@
 
 ## Branch and checkpoints
 - Existing codex/android-tv-client branch only; Round 2 checkpoint 2a0b10b95e95b5e7c29ff41f2815c258bf26d84d.
+- Verified Round 3 implementation 968d8a4be92c4a9696db7944001b4d187ce33ad4; compatible mobile master 1326472811298223182d009c252645e1da5a9610 and backend main 6048bf32e6bccb6ae694297e68a57a600d41157b.
 - No new branch, whole-branch merge, push, deploy, native or Pi changes.
 - Worktree relocated to .worktrees/round2-tv; pub get refreshed stale tool paths.
 
