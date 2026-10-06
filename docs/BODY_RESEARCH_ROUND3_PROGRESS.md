@@ -4,6 +4,7 @@
 - master Round 2: 3e6d013184104898596e82e2a580006145c1b05d.
 - TV Round 2: 2a0b10b95e95b5e7c29ff41f2815c258bf26d84d.
 - Backend main Round 2: 45c7bbb0fc3b4aa09d22a212bf7b92c764e9f36c.
+- Round 3 implementation checkpoints: master 1326472811298223182d009c252645e1da5a9610; TV 968d8a4be92c4a9696db7944001b4d187ce33ad4; backend main 6048bf32e6bccb6ae694297e68a57a600d41157b.
 - No new branches, push or production deploy. TV worktree: .worktrees/round2-tv.
 - TV generated desktop files had line-ending-only status; not staged as unrelated content.
 

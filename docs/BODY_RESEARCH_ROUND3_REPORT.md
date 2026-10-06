@@ -156,7 +156,7 @@ master:
 
 TV: equivalent five body context/contract/sample/session/settings files, body session test,
 docs/BODY_RESEARCH_ROUND3_PROGRESS.md. Existing generated desktop line-ending-only changes not part of this round.
-Backend complete manifest: docs/BODY_RESEARCH_ROUND3_PROGRESS.md and git show --stat of Round 3 checkpoint.
+Backend complete manifest: backend docs/BODY_RESEARCH_ROUND3_REPORT.md and git show --stat of Round 3 checkpoint.
 
 Exact validation commands (run in the corresponding existing worktree):
 - master: flutter test test/features/rehab_ml/body_review_ui_test.dart test/features/rehab_ml/ml_research_cloud_test.dart test/features/rehab_ml/body_research_session_test.dart test/features/rehab_ml/body_research_foundation_test.dart test/features/rehab_ml/body_research_owner_test.dart test/features/rehab_ml/body_research_contract_test.dart test/features/rehab_ml/pi_body_observation_test.dart --no-pub
@@ -170,8 +170,14 @@ Exact validation commands (run in the corresponding existing worktree):
 ## 18. Git Commits
 
 Only existing master / codex/android-tv-client / main; no new branches, wholesale merge, push or deployment.
-Round 2 SHA listed above. Round 3 implementation checkpoint SHA recorded by final git rev-parse/report;
-do not mistake implementation commit for completed MySQL or hardware acceptance.
+Round 2 SHA listed above. Verified Round 3 implementation checkpoints:
+- master: 1326472811298223182d009c252645e1da5a9610 (15 files).
+- codex/android-tv-client: 968d8a4be92c4a9696db7944001b4d187ce33ad4 (7 files).
+- backend main: 6048bf32e6bccb6ae694297e68a57a600d41157b (23 files).
+Later documentation-only checkpoint records these hashes; final HEAD reported separately.
+Do not mistake implementation commits for completed MySQL or hardware acceptance.
+master/backend worktrees clean after implementation commit. TV preserves seven existing
+generated desktop line-ending-only files unstaged; no unrelated changes restored or committed.
 
 ## 19. Technical Debt
 
