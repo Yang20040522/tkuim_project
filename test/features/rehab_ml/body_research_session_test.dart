@@ -15,6 +15,27 @@ import 'body_research_owner_test.dart' show login;
 class Remote extends MlResearchApi {
   int uploads = 0, consentChanges = 0;
   bool active = false;
+  String disposition = 'NEEDS_RESAMPLE';
+  @override
+  Future<List<Map<String, dynamic>>> listSamples({int page = 0}) async => [
+        {
+          'id': '00000000-0000-4000-8000-000000000001',
+          'schemaVersion': 3,
+          'disposition': disposition,
+          'exerciseType': 'DEFAULT',
+          'exerciseId': '99',
+          'reasonCode': 'LOW_QUALITY'
+        }
+      ];
+  @override
+  Future<Map<String, dynamic>> sampleDetail(String id) async => {
+        'sample': {
+          'schemaVersion': 3,
+          'disposition': disposition,
+          'exerciseType': 'DEFAULT',
+          'exerciseId': '99'
+        }
+      };
   @override
   Future<MlResearchConsent> getConsent() async => MlResearchConsent(
       active: active, available: true, currentVersion: 'synthetic-v1');
@@ -102,6 +123,31 @@ void main() {
     expect(samples.single['terminationReason'], 'INTERRUPTED');
     expect(samples.single['completedRepsAfter'], 0);
     expect(remote.uploads, 1);
+  });
+  test('resample creates a fresh attempt link without changing counts',
+      () async {
+    session.setLocalConsent(true);
+    await session.selectResample('00000000-0000-4000-8000-000000000001');
+    begin();
+    session.userFinished();
+    await Future<void>.delayed(const Duration(milliseconds: 60));
+    final samples = await session.repository.list();
+    expect(samples.single['resampleOfSampleId'],
+        '00000000-0000-4000-8000-000000000001');
+    expect(samples.single['sampleId'],
+        isNot('00000000-0000-4000-8000-000000000001'));
+    expect(samples.single['attemptId'], samples.single['sampleId']);
+    expect(samples.single['completedRepsAfter'], 0);
+    expect(samples.single['setIndex'], 1);
+  });
+  test('active attempt cannot be retargeted and ACTIVE parent is refused',
+      () async {
+    session.setLocalConsent(true);
+    begin();
+    await expectLater(session.selectResample('parent'), throwsStateError);
+    session.userFinished();
+    remote.disposition = 'ACTIVE';
+    await expectLater(session.selectResample('parent'), throwsStateError);
   });
   test('account change disables collector and rejects old consent', () {
     session.setLocalConsent(true);

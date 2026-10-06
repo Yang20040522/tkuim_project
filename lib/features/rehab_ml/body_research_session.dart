@@ -38,10 +38,45 @@ class BodyResearchSession {
   static const movementHipDeg = 165.0, baselineHipDeg = 172.0;
   final MlSampleRepository repository;
   final ResearchOwnerScope owner;
-  late final BodyResearchAttemptCollector collector;
+  late BodyResearchAttemptCollector collector;
   late final MlResearchSync sync;
   final ValueNotifier<String?> message = ValueNotifier(null);
   final Stopwatch _idle = Stopwatch();
+  String? get resampleOfSampleId => collector.context.resampleOfSampleId;
+
+  /// Only between attempts; existing motion/counters and immutable samples
+  /// are never rewritten. Server rechecks ownership/disposition at upload.
+  Future<void> selectResample(String? parentId) async {
+    owner.check();
+    if (_disposed ||
+        collector.state == BodyCollectorState.recording ||
+        collector.state == BodyCollectorState.finalizing) {
+      throw StateError('請先結束目前嘗試，再選擇重採樣');
+    }
+    if (parentId != null) {
+      final detail = await sync.remote.sampleDetail(parentId);
+      owner.check();
+      final sample = detail['sample'] as Map;
+      if (sample['schemaVersion'] != 3 ||
+          sample['disposition'] != 'NEEDS_RESAMPLE' ||
+          sample['exerciseId']?.toString() != collector.context.exerciseId ||
+          sample['exerciseType'] != collector.context.exerciseType) {
+        throw StateError('此樣本不適用目前動作的重採樣');
+      }
+    }
+    if (_disposed ||
+        collector.state == BodyCollectorState.recording ||
+        collector.state == BodyCollectorState.finalizing) {
+      throw StateError('動作已開始，請於下一次嘗試前選擇');
+    }
+    collector = BodyResearchAttemptCollector(
+        context: collector.context.forResample(parentId),
+        onSample: _save,
+        ownerIsCurrent: () => !_disposed && owner.isCurrent)
+      ..setConsent(localConsent);
+    message.value = parentId == null ? '已取消重採樣選擇' : '下一個新嘗試將連結原樣本；不覆寫舊資料';
+  }
+
   Timer? _watchdog;
   int _lastReceiveMs = 0, _consentEpoch = 0, _lastRep = 0, _lastSet = 1;
   bool localConsent = false,

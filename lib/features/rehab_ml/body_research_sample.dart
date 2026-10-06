@@ -56,6 +56,8 @@ class BodyResearchSample implements MlResearchSample {
   @override
   Map<String, Object> toJson() => {
         'sampleId': id,
+        if (context.resampleOfSampleId != null)
+          'resampleOfSampleId': context.resampleOfSampleId!,
         'sessionId': context.sessionId,
         'attemptId': attemptId,
         'schemaVersion': 3,

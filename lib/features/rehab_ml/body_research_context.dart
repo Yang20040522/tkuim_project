@@ -13,8 +13,13 @@ class BodyResearchContext {
       this.source = 'tv_pi',
       this.platform = 'android_tv',
       this.cameraView = 'rear',
+      this.resampleOfSampleId,
       String? sessionId})
       : sessionId = sessionId ?? newResearchId() {
+    if (resampleOfSampleId != null &&
+        !RegExp(r'^[A-Za-z0-9_-]{1,100}$').hasMatch(resampleOfSampleId!)) {
+      throw const FormatException('Invalid resample identifier');
+    }
     if (ownerId.trim().isEmpty ||
         exerciseId.isEmpty ||
         !const {'DEFAULT', 'CUSTOM'}.contains(exerciseType) ||
@@ -27,8 +32,22 @@ class BodyResearchContext {
   }
   final String ownerId, exerciseId, exerciseType, source, platform;
   final String movementSide, sessionId, cameraView;
+  final String? resampleOfSampleId;
   final int accountGeneration;
   final DateTime capturedAt;
+
+  BodyResearchContext forResample(String? parentId) => BodyResearchContext(
+      ownerId: ownerId,
+      accountGeneration: accountGeneration,
+      exerciseId: exerciseId,
+      exerciseType: exerciseType,
+      movementSide: movementSide,
+      source: source,
+      platform: platform,
+      cameraView: cameraView,
+      sessionId: sessionId,
+      capturedAt: DateTime.now(),
+      resampleOfSampleId: parentId);
 }
 
 String newResearchId() {
