@@ -13,7 +13,26 @@
 //     'http://組員電腦的區網IP:8080'(在對方電腦上用 ipconfig 查詢 IPv4 位址)
 // ============================================================
 class ApiConfig {
-  static const String baseUrl = 'https://trianing-system-1.onrender.com';
+  // Isolated device validation can override at build time. Normal builds keep
+  // the existing production endpoint; no runtime account can change this.
+  static const String baseUrl = String.fromEnvironment(
+    'API_BASE_URL',
+    defaultValue: 'https://trianing-system-1.onrender.com',
+  );
+
+  // Only an explicitly built validation APK may use the adb-reversed local
+  // test service. Never allow LAN/remote cleartext research endpoints.
+  static const bool localResearchValidation =
+      bool.fromEnvironment('RESEARCH_LOCAL_VALIDATION');
+
+  static bool allowsResearchTransport(Uri uri) =>
+      uri.scheme == 'https' ||
+      (localResearchValidation &&
+          baseUrl == 'http://127.0.0.1:18083' &&
+          uri.scheme == 'http' &&
+          uri.host == '127.0.0.1' &&
+          uri.port == 18083 &&
+          uri.userInfo.isEmpty);
 
   // Public Web OAuth client ID. Supply with
   // --dart-define=GOOGLE_SERVER_CLIENT_ID=... at run/build time.
