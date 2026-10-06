@@ -24,14 +24,14 @@
 - Round 2 historical Debug PASS; do not substitute for current build.
 
 ## Environments
-- Local Windows rehab_body_r3_validation: V001-V004 actual metadata PASS (29 tables/253 columns); V005 awaiting owner.
+- Local Windows rehab_body_r3_validation: owner V005 complete; actual 29 tables/257 columns/34 FK, Hibernate and 12/12 real MySQL cases PASS on 2026-10-06. All 29 tables empty after fixture cleanup.
 - Laboratory MySQL NOT RUN/NOT VALIDATED; production NOT DEPLOYED. Do not connect either environment.
 - Pi TCP endpoint reachable; actual Pi->TV inference/collector and TV hardware NOT RUN.
 
 ## Remaining
-1. After V005 owner applies, run backend isolated MySQL/API/concurrency test runner.
-2. Real Pi/TV synthetic E2E and release runtime still require hardware and explicitly isolated API configuration.
-3. Capture measured acceptance in master docs/BODY_RESEARCH_ROUND3_REPORT.md; stop before Round 4.
+1. Real Pi/TV synthetic E2E and release runtime still require hardware and explicitly isolated API configuration.
+2. Capture hardware acceptance in master docs/BODY_RESEARCH_ROUND3_REPORT.md; stop before Round 4.
+3. Backend local validation evidence: docs/BODY_RESEARCH_ROUND3_MYSQL_VALIDATION.md. Laboratory NOT VALIDATED, production NOT DEPLOYED; do not conflate with local PASS.
 
 ## Existing changes to preserve
 Generated desktop plugin files had line-ending-only status before Round 3. Do not restore/stage unrelated artifacts.
