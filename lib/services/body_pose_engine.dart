@@ -31,6 +31,7 @@ import 'package:flutter/services.dart';
 import 'package:onnxruntime_v2/onnxruntime_v2.dart';
 import '../models/pose_data.dart';
 import '../models/body_pose_observation.dart';
+import 'pi_edge_frame.dart' show remapPiRoiPoint;
 
 import 'package:image/image.dart' as img;
 
@@ -232,6 +233,9 @@ class BodyPoseEngine {
   bool _jpegProcessing = false;
   // 🖥️ 投放開關:只有真的在投放電視時才生成 JPEG,平常訓練不生成(省效能)
   bool castEnabled = false;
+
+  /// Transient engineering timing only; never part of a research/model payload.
+  Map<String, int> lastInferenceTimingsUs = const {};
 
   bool get isReceiver => _isReceiver;
 
@@ -465,7 +469,29 @@ class BodyPoseEngine {
     bool Function()? shouldPublish,
     BodyFrameIdentity? identity,
     void Function(BodyPoseObservation)? onObservation,
+    Rect? sourceRegion,
+    int? fullImageWidth,
+    int? fullImageHeight,
   }) async {
+    if (sourceRegion != null &&
+        (needsRotation ||
+            isMirror ||
+            fullImageWidth == null ||
+            fullImageHeight == null ||
+            fullImageWidth <= 0 ||
+            fullImageHeight <= 0 ||
+            !sourceRegion.left.isFinite ||
+            !sourceRegion.top.isFinite ||
+            !sourceRegion.right.isFinite ||
+            !sourceRegion.bottom.isFinite ||
+            sourceRegion.left < 0 ||
+            sourceRegion.top < 0 ||
+            sourceRegion.right > 1 ||
+            sourceRegion.bottom > 1 ||
+            sourceRegion.width <= 0 ||
+            sourceRegion.height <= 0)) {
+      throw const FormatException('Invalid external ROI transform');
+    }
     if (_disposed || _poseSession == null || shouldPublish?.call() == false) {
       return null;
     }
@@ -523,6 +549,7 @@ class BodyPoseEngine {
     }
     BodyPoseObservation? result;
     _pendingInference = _runInference(converted,
+        normalizedRegion: sourceRegion,
         shouldPublish: shouldPublish,
         publishObservation: identity == null
             ? null
@@ -531,8 +558,8 @@ class BodyPoseEngine {
                     frameId: identity.frameId,
                     streamSessionId: identity.streamSessionId,
                     receivedAtMs: identity.receivedAtMs,
-                    imageWidth: width,
-                    imageHeight: height,
+                    imageWidth: fullImageWidth ?? width,
+                    imageHeight: fullImageHeight ?? height,
                     source: 'tv_pi',
                     keypoints: List<Offset?>.generate(points.length,
                         (i) => scores[i] >= scoreThreshold ? points[i] : null),
@@ -548,11 +575,13 @@ class BodyPoseEngine {
   // ── ONNX 推論 + 解碼 + EMA (搬自 body_test_screen,邏輯相同) ──────
   Future<void> _runInference(
     Float32List converted, {
+    Rect? normalizedRegion,
     bool Function()? shouldPublish,
     void Function(List<Offset>, List<double>)? publishObservation,
   }) async {
     OrtValueTensor? tensor;
     List<OrtValue?>? outputs;
+    final timing = Stopwatch()..start();
 
     try {
       const inputH = 256, inputW = 192;
@@ -562,6 +591,7 @@ class BodyPoseEngine {
       );
 
       outputs = await _poseSession!.runAsync(_runOpts!, {'input': tensor});
+      final onnxUs = timing.elapsedMicroseconds;
       if (_disposed || !(shouldPublish?.call() ?? true)) return;
       if (outputs == null || outputs.length < 2) return;
       if (outputs[0] == null || outputs[1] == null) return;
@@ -660,7 +690,9 @@ class BodyPoseEngine {
           point = Offset(1.0 - rawX, 1.0 - rawY);
         }
 
-        keypoints[i] = point;
+        // Restore the full-image coordinate space BEFORE EMA, overlay,
+        // counters and immutable research observation (all 133 indices).
+        keypoints[i] = remapPiRoiPoint(point, normalizedRegion);
       }
 
       // EMA 動態平滑 (參數與 body_test_screen 相同:dist*40, clamp 0.15~1.0)
@@ -704,6 +736,10 @@ class BodyPoseEngine {
 
       // 對外永遠提供固定 133 點，index 0~132 不會因缺點而位移。
       if (_disposed || !(shouldPublish?.call() ?? true)) return;
+      lastInferenceTimingsUs = {
+        'tensorAndOnnx': onnxUs,
+        'decodeRemapAndEma': timing.elapsedMicroseconds - onnxUs,
+      };
       // Pi publishes the immutable JPEG/observation packet before legacy pose
       // listeners fire, so both overlay and research consume this exact frame.
       publishObservation?.call(

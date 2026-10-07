@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
+import 'dart:ui';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_body/services/body_pose_engine.dart';
 import 'package:flutter_body/services/pi_camera_source.dart';
@@ -21,6 +22,9 @@ class FakeEngine extends BodyPoseEngine {
     bool Function()? shouldPublish,
     BodyFrameIdentity? identity,
     void Function(BodyPoseObservation)? onObservation,
+    Rect? sourceRegion,
+    int? fullImageWidth,
+    int? fullImageHeight,
   }) async {
     expect(width, 8);
     expect(height, 6);
