@@ -23,7 +23,7 @@ class BodyResearchContext {
     if (ownerId.trim().isEmpty ||
         exerciseId.isEmpty ||
         !const {'DEFAULT', 'CUSTOM'}.contains(exerciseType) ||
-        !const {'left', 'right'}.contains(movementSide) ||
+        !const {'left', 'right', 'bilateral'}.contains(movementSide) ||
         !const {'phone', 'tv_pi'}.contains(source) ||
         !const {'android_phone', 'android_tv'}.contains(platform) ||
         !const {'front', 'rear'}.contains(cameraView)) {

@@ -15,7 +15,6 @@ class BodyResearchSettingsPage extends StatefulWidget {
 }
 
 class _BodyResearchSettingsPageState extends State<BodyResearchSettingsPage> {
-  MlResearchConsent? _consent;
   String? _error;
   bool _busy = false;
   int _samples = 0, _pending = 0;
@@ -32,7 +31,6 @@ class _BodyResearchSettingsPageState extends State<BodyResearchSettingsPage> {
       setState(() {
         _samples = 0;
         _pending = 0;
-        _consent = null;
         _resamples = [];
         _error = '登入狀態已變更，請重新開啟研究頁面。';
       });
@@ -49,15 +47,16 @@ class _BodyResearchSettingsPageState extends State<BodyResearchSettingsPage> {
     if (!widget.session.owner.isCurrent) return;
     try {
       final local = await widget.session.repository.list();
-      final consent = await widget.session.sync.remote.getConsent();
+      final consent = await widget.session.gate.refresh(force: true);
       final pending = await widget.session.sync.pendingIds();
       final resamples = <Map<String, dynamic>>[];
-      if (consent.active) {
+      if (consent?.active == true) {
         for (var page = 0; page < 25; page++) {
           final rows = await widget.session.sync.remote.listSamples(page: page);
           widget.session.owner.check();
           resamples.addAll(rows.where((s) =>
-              s['schemaVersion'] == 3 &&
+              s['schemaVersion'] == widget.session.contract.schemaVersion &&
+              s['actionId'] == widget.session.contract.actionId &&
               s['disposition'] == 'NEEDS_RESAMPLE' &&
               s['exerciseType'] ==
                   widget.session.collector.context.exerciseType &&
@@ -68,8 +67,8 @@ class _BodyResearchSettingsPageState extends State<BodyResearchSettingsPage> {
       }
       if (mounted && widget.session.owner.isCurrent) {
         setState(() {
-          _samples = local.where((s) => s['schemaVersion'] == 3).length;
-          _consent = consent;
+          _samples = local.where((s) =>
+              s['actionId'] == widget.session.contract.actionId).length;
           _pending = pending.length;
           _resamples = resamples;
           _error = null;
@@ -80,29 +79,17 @@ class _BodyResearchSettingsPageState extends State<BodyResearchSettingsPage> {
     }
   }
 
-  Future<void> _cloud(bool value) async {
+  Future<void> _master(bool value) async {
     if (_busy || !widget.session.owner.isCurrent) return;
-    if (value &&
-        (!widget.session.localConsent || _consent?.available != true)) {
-      setState(() => _error = '請先同意本機收集；雲端需有效研究同意及保存政策。');
-      return;
-    }
     setState(() => _busy = true);
     try {
-      final MlResearchConsent consent;
-      if (value) {
-        consent = await widget.session.sync.remote
-            .setConsent(true, _consent?.currentVersion ?? '');
-      } else {
-        await widget.session.sync.withdraw();
-        consent = await widget.session.sync.remote.getConsent();
-      }
+      final enabled = await widget.session.gate.setEnabled(value);
       widget.session.owner.check();
-      widget.session.setCloudConsent(value && consent.active);
       if (mounted) {
         setState(() {
-          _consent = consent;
-          _error = null;
+          _error = value && !enabled
+              ? widget.session.gate.error ?? '研究資料收集目前無法開啟。'
+              : null;
         });
       }
     } catch (e) {
@@ -154,38 +141,29 @@ class _BodyResearchSettingsPageState extends State<BodyResearchSettingsPage> {
 
   @override
   Widget build(BuildContext context) => Scaffold(
-        appBar: AppBar(title: const Text('Body 研究資料')),
+        appBar: AppBar(title: Text('${widget.session.contract.displayName}研究資料')),
         body: SafeArea(
             child: ListView(padding: const EdgeInsets.all(24), children: [
           const Text('RTMPose 全身研究 · 非醫療診斷',
               style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
-          const Text(
-              '只保存 17 點骨架、未校準 SimCC 分數與 2D 投影特徵，不保存 JPEG。未計次、追蹤中斷的有效嘗試也會記錄。模型尚未部署。'),
+          Text(widget.session.contract.schemaVersion == 3
+              ? '只保存 17 點骨架與 2D 特徵，不保存 JPEG。站姿抬腳可記錄未計次嘗試。'
+              : '只保存 17 點骨架與訓練脈絡，不保存 JPEG。此動作目前僅支援研究資料審核，尚無已驗證 ML 模型。'),
+          Text('契約 ${widget.session.contract.definitionVersion} · TV + Pi'),
           const SizedBox(height: 20),
+          if (widget.session.contract.schemaVersion == 3)
           ValueListenableBuilder<BodyMlPrediction?>(
               valueListenable: widget.session.advisory.latest,
               builder: (_, prediction, __) =>
                   BodyMlAdvisoryCard(prediction: prediction)),
-          CheckboxListTile(
+          SwitchListTile(
               autofocus: true,
-              title: const Text('同意本機 Body attempt 收集'),
-              value: widget.session.localConsent,
+              title: const Text('允許匿名復健研究資料收集'),
+              subtitle: const Text('手機與 TV 共用同一份研究同意；關閉後不再建立新樣本。'),
+              value: widget.session.gate.enabled,
               onChanged: _busy || !widget.session.owner.isCurrent
                   ? null
-                  : (v) async {
-                      if (v != true && widget.session.cloudConsent) {
-                        await _cloud(false);
-                      }
-                      if (!mounted || !widget.session.owner.isCurrent) return;
-                      widget.session.setLocalConsent(v ?? false);
-                      setState(() {});
-                    }),
-          CheckboxListTile(
-              title: const Text('另行同意雲端同步'),
-              value: widget.session.cloudConsent,
-              onChanged: _busy || !widget.session.owner.isCurrent
-                  ? null
-                  : (v) => _cloud(v ?? false)),
+                  : _master),
           Text('本機 $_samples 筆 · 待同步 $_pending 筆'),
           if (widget.session.resampleOfSampleId != null) ...[
             Text('下一個新嘗試將重採樣：${widget.session.resampleOfSampleId}'),
@@ -218,7 +196,7 @@ class _BodyResearchSettingsPageState extends State<BodyResearchSettingsPage> {
                   ? null
                   : () async {
                       try {
-                        if (widget.session.cloudConsent) {
+                        if (widget.session.gate.enabled) {
                           await widget.session.sync.sync();
                         }
                         await _load();

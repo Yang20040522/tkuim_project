@@ -7,6 +7,7 @@ import '../../core/ui/app_colors.dart';
 
 import '../../services/history_service.dart';
 import '../notification/notification_settings_screen.dart';
+import '../rehab_ml/research_privacy_tile.dart';
 import 'app_session.dart';
 import 'role_select_screen.dart';
 import 'account_info_screen.dart';
@@ -486,7 +487,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
           _buildSettingsItem(
             icon: Icons.lock_outline,
             label: '隱私權限',
-            onTap: () => _comingSoon('隱私權限'),
+            onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(
+                builder: (_) => const ResearchPrivacyPage())),
           ),
           _buildDivider(),
           _buildSettingsItem(

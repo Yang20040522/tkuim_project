@@ -91,6 +91,10 @@ class LateralStepAction
   @override
   bool get legAndModeSelected =>
       _trainedLegIsLeft != null && _supportLegIsLeft != null;
+  bool? get movingLegIsLeft => _supportLegIsLeft == null
+      ? null : !_supportLegIsLeft!;
+  String? get researchMovementMode => !legAndModeSelected
+      ? null : role == TrainingLegRole.moveTrainedLeg ? 'simple' : 'hard';
 
   @override
   void selectTrainedLeg({required bool isLeft}) {

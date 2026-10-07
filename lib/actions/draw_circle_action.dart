@@ -28,6 +28,8 @@ class DrawCircleAction implements BodyRehabAction, LevelUpControllable {
   RehabJoint? _activeWrist;
   RehabJoint? _activeShoulder;
   RehabJoint? _activeThumb; // 🆕
+  bool? get activeArmIsLeft => _activeWrist == null
+      ? null : _activeWrist == RehabJoint.leftWrist;
 
   DateTime _lastVoiceTime = DateTime.now();
 

@@ -62,6 +62,8 @@ import '../../models/pose_data.dart';
 import '../rehab_ml/body_research_session.dart';
 import '../rehab_ml/body_research_assignment_client.dart';
 import '../rehab_ml/body_research_settings_page.dart';
+import '../rehab_ml/body_research_action_registry.dart';
+import '../rehab_ml/research_collection_gate.dart';
 import '../rehab_ml/ml_research_api.dart';
 import '../../models/body_frame.dart';
 import '../../models/training_action.dart';
@@ -174,21 +176,38 @@ enum _PauseChoice { resume, end }
 class _BodyTrainingScreenState extends State<BodyTrainingScreen>
     with WidgetsBindingObserver {
   BodyResearchSession? _bodyResearch;
+  bool _bodyResearchLoading = false, _bodyResearchUnavailable = false;
   bool _restartPiOnResume = false;
-  Future<void> _showBodyResearch() async {
-    if (widget.action is! StandingKneeRaiseAction || _waitingLegSelect) return;
+  Future<void> _ensureBodyResearch() async {
+    if (!AppPlatform.current.isTv || _bodyResearch != null ||
+        _bodyResearchLoading || _bodyResearchUnavailable) return;
+    final contract = BodyResearchActionRegistry.forAction(widget.action);
+    final side = contract?.side(widget.action);
+    if (contract == null || side == null) return;
+    _bodyResearchLoading = true;
     try {
-      final side = (widget.action as StandingKneeRaiseAction).movingLegIsLeft;
-      if (side == null) return;
-      if (_bodyResearch == null) {
-        final id = await assignedStandingBodyExercise();
-        if (!mounted) return;
-        if (id == null) {
-          throw const MlResearchException('需由治療師指派站姿抬腳式訓練，才能收集 Body 研究資料。');
-        }
-        _bodyResearch = BodyResearchSession(
-            exerciseId: id, movementSide: side ? 'left' : 'right');
-      }
+      final id = await assignedBodyExercise(contract.displayName);
+      if (!mounted) return;
+      if (id == null) { _bodyResearchUnavailable = true; return; }
+      _bodyResearch = BodyResearchSession(exerciseId: id,
+          movementSide: side, actionContract: contract);
+    } catch (_) {
+      _bodyResearchUnavailable = true;
+    } finally {
+      _bodyResearchLoading = false;
+    }
+  }
+
+  Future<void> _showBodyResearch() async {
+    _bodyResearchUnavailable = false;
+    await _ensureBodyResearch();
+    if (!mounted) return;
+    if (_bodyResearch == null) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('請先選擇訓練側，並確認治療師已指派此動作。')));
+      return;
+    }
+    try {
       _bodyResearch!.setForeground(false);
       await Navigator.of(context).push(MaterialPageRoute<void>(
           builder: (_) => BodyResearchSettingsPage(session: _bodyResearch!)));
@@ -210,6 +229,7 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen>
           _restartPiOnResume || _piCamera?.connected.value == true;
       unawaited(_piCamera?.stop());
     } else {
+      unawaited(ResearchCollectionGate.instance.refresh(force: true));
       _bodyResearch?.setForeground(!_isPaused);
       if (_restartPiOnResume) {
         _restartPiOnResume = false;
@@ -350,6 +370,10 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    if (AppPlatform.current.isTv) {
+      unawaited(ResearchCollectionGate.instance.refresh(force: true));
+      unawaited(_ensureBodyResearch());
+    }
     _voice = widget.voiceGate ??
         TrainingVoiceGate(
           speak: VoiceService.speak,
@@ -506,12 +530,22 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen>
 
       // 🆕 達標了 → 依照 autoLevelUp 開關決定「自動升級」還是「跳出詢問」
       final packet = _piCamera?.processedFrame.value;
+      if (AppPlatform.current.isTv && _bodyResearch == null &&
+          !_bodyResearchLoading && !_bodyResearchUnavailable) {
+        unawaited(_ensureBodyResearch());
+      }
       if (AppPlatform.current.isTv &&
           packet != null &&
           !_isPaused &&
           !_waitingLegSelect) {
         _bodyResearch?.observe(packet.observation,
-            completedReps: _repCount, setIndex: _levelToInt(_previousLevel));
+            completedReps: _repCount, setIndex: _levelToInt(_previousLevel),
+            scored: fb.scored,
+            movementSide: BodyResearchActionRegistry.forAction(widget.action)
+                ?.side(widget.action),
+            movementMode: BodyResearchActionRegistry.forAction(widget.action)
+                ?.mode?.call(widget.action),
+            difficulty: widget.action.difficultyLabel);
       }
       if (justReachedLevelUp) {
         _bodyResearch?.interrupt();
@@ -1329,7 +1363,7 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen>
                           ),
                         ),
                         const SizedBox(height: 12),
-                        if (widget.action is StandingKneeRaiseAction)
+                        if (BodyResearchActionRegistry.forAction(widget.action) != null)
                           OutlinedButton.icon(
                               key: const Key('tv-body-research'),
                               onPressed:

@@ -54,6 +54,8 @@ class ReachAction implements BodyRehabAction, LevelUpControllable {
 
   // ── 按鈕呼叫:選擇左手或右手 ────────────────────────────
   bool get handSelected => _activeWrist != null;
+  bool? get selectedHandIsLeft => _activeWrist == null
+      ? null : _activeWrist == RehabJoint.leftWrist;
 
   void selectLeftHand() {
     _activeWrist = RehabJoint.leftWrist;

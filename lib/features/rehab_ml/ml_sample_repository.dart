@@ -6,6 +6,7 @@ import 'package:path_provider/path_provider.dart';
 import 'ml_action_definition.dart';
 import 'research_owner_scope.dart';
 import 'body_research_sample.dart';
+import 'body_review_rep_collector.dart';
 
 typedef MlSampleDirectoryProvider = Future<Directory> Function();
 
@@ -67,6 +68,11 @@ class MlSampleRepository {
     final envelope =
         jsonEncode({'ownerKey': owner.storageKey, 'sample': payload});
     if (sample is BodyResearchSample &&
+        (sample.context.ownerId != owner.userId ||
+            sample.context.accountGeneration != owner.generation)) {
+      throw const FormatException('Research sample owner changed');
+    }
+    if (sample is BodyReviewSample &&
         (sample.context.ownerId != owner.userId ||
             sample.context.accountGeneration != owner.generation)) {
       throw const FormatException('Research sample owner changed');

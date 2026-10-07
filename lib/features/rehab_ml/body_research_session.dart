@@ -11,6 +11,10 @@ import 'ml_research_api.dart';
 import 'ml_research_sync.dart';
 import 'research_owner_scope.dart';
 import 'body_ml_advisory_controller.dart';
+import 'body_research_action_registry.dart';
+import 'body_review_rep_collector.dart';
+import 'research_collection_gate.dart';
+import 'ml_action_definition.dart';
 
 /// Opt-in body research sidecar. Counts supplied by the training screen are
 /// read-only snapshots; no classifier or action rules are invoked here.
@@ -18,10 +22,14 @@ class BodyResearchSession {
   BodyResearchSession(
       {required String exerciseId,
       required String movementSide,
+      BodyResearchActionContract? actionContract,
+      ResearchCollectionGate? collectionGate,
       MlSampleRepository? repository,
       MlResearchRemote? remote})
       : repository = repository ?? MlSampleRepository(),
-        owner = ResearchOwnerScope.capture() {
+        owner = ResearchOwnerScope.capture(),
+        contract = actionContract ?? BodyResearchActionRegistry.actions.first,
+        gate = collectionGate ?? ResearchCollectionGate.instance {
     advisory = BodyMlAdvisoryController();
     collector = BodyResearchAttemptCollector(
         context: BodyResearchContext(
@@ -34,12 +42,22 @@ class BodyResearchSession {
         ownerIsCurrent: () => !_disposed && owner.isCurrent);
     sync = MlResearchSync(
         remote: remote ?? MlResearchApi(), local: this.repository);
+    if (contract.schemaVersion == 4) {
+      reviewCollector = BodyReviewRepCollector(
+          context: collector.context, contract: contract, onSample: _save);
+    }
+    gate.addListener(_gateChanged);
+    gate.beginSession();
+    _gateChanged();
     AppSession.changes.addListener(_accountChanged);
   }
   // Segmentation engineering thresholds, not clinical pass/fail thresholds.
   static const movementHipDeg = 165.0, baselineHipDeg = 172.0;
   final MlSampleRepository repository;
   final ResearchOwnerScope owner;
+  final BodyResearchActionContract contract;
+  final ResearchCollectionGate gate;
+  BodyReviewRepCollector? reviewCollector;
   late final BodyMlAdvisoryController advisory;
   late BodyResearchAttemptCollector collector;
   late final MlResearchSync sync;
@@ -64,7 +82,8 @@ class BodyResearchSession {
       final detail = await sync.remote.sampleDetail(parentId);
       owner.check();
       final sample = detail['sample'] as Map;
-      if (sample['schemaVersion'] != 3 ||
+      if (sample['schemaVersion'] != contract.schemaVersion ||
+          sample['actionId'] != contract.actionId ||
           sample['disposition'] != 'NEEDS_RESAMPLE' ||
           sample['exerciseId']?.toString() != collector.context.exerciseId ||
           sample['exerciseType'] != collector.context.exerciseType) {
@@ -81,6 +100,10 @@ class BodyResearchSession {
         onSample: _save,
         ownerIsCurrent: () => !_disposed && owner.isCurrent)
       ..setConsent(localConsent);
+    reviewCollector = contract.schemaVersion == 4
+        ? BodyReviewRepCollector(context: collector.context,
+            contract: contract, onSample: _save)
+        : null;
     message.value = parentId == null ? '已取消重採樣選擇' : '下一個新嘗試將連結原樣本；不覆寫舊資料';
   }
 
@@ -95,6 +118,7 @@ class BodyResearchSession {
     _consentEpoch++;
     localConsent = value;
     collector.setConsent(value);
+    if (!value) reviewCollector?.clear();
     if (!value) cloudConsent = false;
     _watchdog?.cancel();
     _watchdog = null;
@@ -115,12 +139,21 @@ class BodyResearchSession {
 
   void setForeground(bool value) {
     foreground = value;
-    if (!value) collector.finish(BodyAttemptTermination.interrupted);
+    if (!value) interrupt();
   }
 
   void observe(BodyPoseObservation frame,
-      {required int completedReps, required int setIndex}) {
+      {required int completedReps, required int setIndex,
+      bool scored = false, String? movementSide, String? movementMode,
+      String? difficulty}) {
     if (_disposed || !foreground || !localConsent || !owner.isCurrent) return;
+    if (contract.schemaVersion == 4) {
+      reviewCollector?.observe(frame, scored: scored,
+          completedReps: completedReps, setIndex: setIndex,
+          movementSide: movementSide, movementMode: movementMode,
+          difficulty: difficulty);
+      return;
+    }
     if (completedReps < _lastRep || setIndex != _lastSet) {
       collector.finish(BodyAttemptTermination.interrupted);
     }
@@ -139,18 +172,28 @@ class BodyResearchSession {
         setIndex: setIndex);
   }
 
-  void interrupt() => collector.finish(BodyAttemptTermination.interrupted);
-  void userFinished() => collector.finish(BodyAttemptTermination.userFinished);
-  void _save(BodyResearchSample sample) {
-    unawaited(advisory.finalized(sample));
-    final cloud = cloudConsent, epoch = _consentEpoch;
-    final save = repository.save(sample).then<void>((_) async {
+  void interrupt() {
+    collector.finish(BodyAttemptTermination.interrupted);
+    reviewCollector?.clear();
+  }
+  void userFinished() {
+    collector.finish(BodyAttemptTermination.userFinished);
+    reviewCollector?.clear();
+  }
+  void _save(MlResearchSample sample) {
+    if (sample is BodyResearchSample) unawaited(advisory.finalized(sample));
+    final epoch = _consentEpoch;
+    final save = Future<void>(() async {
+      if (!await gate.canCollect(actionId: contract.actionId) ||
+          _disposed || !owner.isCurrent || epoch != _consentEpoch) return;
+      await repository.save(sample);
       if (_disposed || !owner.isCurrent) return;
-      message.value = '已保存 Body attempt（含未計次動作）';
-      if (cloud && cloudConsent && epoch == _consentEpoch) {
+      message.value = contract.schemaVersion == 3
+          ? '已保存 Body attempt（含未計次動作）' : '已保存動作審核骨架樣本';
+      if (gate.bodyEnabled(contract.actionId) && epoch == _consentEpoch) {
         await sync.enqueue(sample.id);
         await sync.sync();
-        if (!_disposed && owner.isCurrent) message.value = 'Body attempt 已同步';
+        if (!_disposed && owner.isCurrent) message.value = 'Body 研究樣本已同步';
       }
     }).catchError((Object _) {
       if (!_disposed && owner.isCurrent) message.value = '研究保存／同步失敗；復健訓練不受影響';
@@ -160,12 +203,22 @@ class BodyResearchSession {
     unawaited(_pendingPersistence);
   }
 
+  void _gateChanged() {
+    if (_disposed || !owner.isCurrent) return;
+    final allow = gate.bodyEnabled(contract.actionId);
+    if (allow != localConsent || allow != cloudConsent) {
+      setLocalConsent(allow);
+      setCloudConsent(allow);
+    }
+  }
+
   void _accountChanged() {
     if (!owner.isCurrent) {
       localConsent = false;
       cloudConsent = false;
       _consentEpoch++;
       collector.setConsent(false);
+      reviewCollector?.clear();
       _watchdog?.cancel();
       sync.stop();
       message.value = null;
@@ -180,6 +233,8 @@ class BodyResearchSession {
     _watchdog?.cancel();
     _idle.stop();
     sync.stop();
+    gate.removeListener(_gateChanged);
+    gate.endSession();
     AppSession.changes.removeListener(_accountChanged);
     message.dispose();
   }

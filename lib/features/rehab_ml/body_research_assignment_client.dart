@@ -6,6 +6,10 @@ import 'ml_research_api.dart';
 
 /// Resolves the real assigned catalog ID; never infers it from a Flutter index.
 Future<String?> assignedStandingBodyExercise({http.Client? client}) async {
+  return assignedBodyExercise('站姿抬腳式訓練', client: client);
+}
+
+Future<String?> assignedBodyExercise(String catalogName, {http.Client? client}) async {
   final owner = ResearchOwnerScope.capture();
   owner.check(requireToken: true);
   final transport = client ?? http.Client();
@@ -29,7 +33,7 @@ Future<String?> assignedStandingBodyExercise({http.Client? client}) async {
       if (item is Map &&
           item['type'] == 'DEFAULT' &&
           item['assigned'] == true &&
-          item['name'] == '站姿抬腳式訓練' &&
+          item['name'] == catalogName &&
           item['id'] != null) {
         return item['id'].toString();
       }
