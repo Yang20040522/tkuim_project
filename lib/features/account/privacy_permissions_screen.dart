@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:permission_handler/permission_handler.dart';
 
 import '../../core/ui/app_colors.dart';
+import '../rehab_ml/research_privacy_tile.dart';
 
 enum PrivacyPermissionType {
   camera,
@@ -271,6 +272,7 @@ class _PrivacyPermissionsScreenState extends State<PrivacyPermissionsScreen>
             const SizedBox(height: 24),
             const _SectionTitle(title: '資料與隱私'),
             const SizedBox(height: 10),
+            const ResearchPrivacyTile(),
             const _PrivacyDataCard(),
             const SizedBox(height: 20),
             SizedBox(

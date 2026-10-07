@@ -9,6 +9,7 @@ import 'ml_research_sync.dart';
 import 'ml_quality_evaluator.dart';
 import 'ml_action_definition.dart';
 import '../account/app_session.dart';
+import 'research_collection_gate.dart';
 
 /// Explicit research opt-in, local sample review and optional cloud sync.
 class MlSampleSheet extends StatefulWidget {
@@ -24,6 +25,7 @@ class MlSampleSheet extends StatefulWidget {
     this.qualityResult,
     this.definition = MlActionRegistry.standingKneeRaise,
     this.statusMessage,
+    this.collectionGate,
   });
 
   final MlSampleRepository repository;
@@ -36,12 +38,14 @@ class MlSampleSheet extends StatefulWidget {
   final ValueNotifier<MlQualityResult>? qualityResult;
   final MlActionDefinition definition;
   final ValueNotifier<String?>? statusMessage;
+  final ResearchCollectionGate? collectionGate;
 
   @override
   State<MlSampleSheet> createState() => _MlSampleSheetState();
 }
 
 class _MlSampleSheetState extends State<MlSampleSheet> {
+  late final ResearchCollectionGate _gate;
   late final TextEditingController _subjectController;
   late bool _consent;
   List<Map<String, dynamic>> _samples = [];
@@ -75,12 +79,15 @@ class _MlSampleSheetState extends State<MlSampleSheet> {
     _consent = widget.initialConsent;
     _cloudEnabledForCapture = widget.initialCloudConsent;
     _subjectController = TextEditingController(text: widget.initialSubjectId);
+    _gate = widget.collectionGate ?? ResearchCollectionGate.instance;
+    _gate.addListener(_gateChanged);
     _reload();
   }
 
   @override
   void dispose() {
     AppSession.changes.removeListener(_accountChanged);
+    _gate.removeListener(_gateChanged);
     _subjectController.dispose();
     super.dispose();
   }
@@ -96,15 +103,16 @@ class _MlSampleSheetState extends State<MlSampleSheet> {
       var pending = 0;
       var synced = 0;
       if (widget.cloudSync != null) {
-        cloud = await widget.cloudSync!.remote.getConsent();
-        if ((!cloud.active ||
+        cloud = await _gate.refresh(force: true);
+        _gateChanged();
+        if (cloud != null && (!cloud.active ||
                 (widget.definition.isHand && !cloud.handAvailable)) &&
             _cloudEnabledForCapture) {
           _cloudEnabledForCapture = false;
           widget.onCloudConsentChanged?.call(false);
         }
         pending = (await widget.cloudSync!.pendingIds()).length;
-        if (cloud.active && cloud.available && pending > 0) {
+        if (cloud != null && cloud.active && cloud.available && pending > 0) {
           await widget.cloudSync!.sync();
           pending = (await widget.cloudSync!.pendingIds()).length;
         }
@@ -129,63 +137,33 @@ class _MlSampleSheetState extends State<MlSampleSheet> {
   Future<void> _setConsent(bool enabled) async {
     if (!_sameAccount) return;
     if (_busy) return;
-    final id = _subjectController.text.trim();
-    if (enabled && !RegExp(r'^[A-Za-z0-9_-]{3,40}$').hasMatch(id)) {
-      setState(() => _error = '請輸入研究用匿名代碼（3–40 位英數、_ 或 -），不要填姓名或帳號。');
-      return;
-    }
-    if (!mounted) return;
+    setState(() => _busy = true);
+    final result = await _gate.setEnabled(enabled);
+    if (!mounted || !_sameAccount) return;
+    _applyGate();
     setState(() {
-      _error = null;
-      _consent = enabled;
+      _busy = false;
+      _error = enabled && !result
+          ? _gate.error ?? '研究資料收集目前無法開啟。'
+          : null;
     });
-    widget.onConsentChanged(enabled, enabled ? id : null);
-    if (!enabled && _cloudEnabledForCapture) await _setCloudConsent(false);
   }
 
-  Future<void> _setCloudConsent(bool enabled) async {
-    if (!_sameAccount) return;
-    if (_busy || widget.cloudSync == null) return;
-    if (enabled && !_consent) {
-      setState(() => _error = '請先同意本機研究樣本收集。');
-      return;
-    }
-    if (!enabled) {
-      _cloudEnabledForCapture = false;
-      widget.onCloudConsentChanged?.call(false);
-    }
-    setState(() => _busy = true);
-    try {
-      if (enabled) {
-        // Refresh before an explicit opt-in; do not reuse a stale closed/version state.
-        final state = await widget.cloudSync!.remote.getConsent();
-        _cloudConsent = state;
-        if (!state.available ||
-            (widget.definition.isHand && !state.handAvailable)) {
-          throw widget.definition.isHand && !state.handAvailable
-              ? const MlResearchException('手部研究範圍與同意版本尚未核准，仍可選擇本機收集。')
-              : MlResearchException.unavailable(state.unavailableReason);
-        }
-        _cloudConsent = await widget.cloudSync!.remote
-            .setConsent(true, state.currentVersion);
-      } else {
-        await widget.cloudSync!.withdraw();
-        _cloudConsent = await widget.cloudSync!.remote.getConsent();
-      }
-      if (mounted && _sameAccount) {
-        setState(() {
-          _cloudEnabledForCapture = enabled;
-          _error = null;
-        });
-      }
-      if (mounted && _sameAccount) widget.onCloudConsentChanged?.call(enabled);
-    } catch (error) {
-      if (mounted) {
-        setState(() => _error = MlResearchException.safeMessage(error));
-      }
-    } finally {
-      if (mounted) setState(() => _busy = false);
-    }
+  void _gateChanged() {
+    if (!mounted || !_sameAccount) return;
+    _applyGate();
+    setState(() {});
+  }
+
+  void _applyGate() {
+    final gate = _gate;
+    final scoped = widget.definition.isHand ? gate.handEnabled
+        : gate.bodyEnabled(widget.definition.actionId);
+    _consent = scoped;
+    _cloudEnabledForCapture = scoped;
+    _cloudConsent = gate.consent;
+    widget.onConsentChanged(scoped, scoped ? gate.consent?.subjectId : null);
+    widget.onCloudConsentChanged?.call(scoped);
   }
 
   Future<void> _sync() async {
@@ -274,34 +252,20 @@ class _MlSampleSheetState extends State<MlSampleSheet> {
                     : '僅在明確同意後收集 RTMPose 骨架點、信心值與角度；雲端同步另需單獨同意。不另存相機影像。現有訓練錄影設定不受此開關控制。資料僅供研究標註，並非醫療診斷。',
               ),
               const SizedBox(height: 12),
-              TextField(
-                controller: _subjectController,
-                enabled: !_consent,
-                decoration: const InputDecoration(
-                  labelText: '研究用匿名受試者代碼',
-                  helperText: '同一人跨次使用同一代碼；請勿輸入姓名、電話或帳號',
-                  border: OutlineInputBorder(),
-                ),
-              ),
               SwitchListTile(
-                key: const Key('ml-local-consent'),
-                title: const Text('同意收集後續完整動作樣本'),
-                subtitle: const Text('僅在本機收集；關閉後停止產生新樣本。'),
-                value: _consent,
+                key: const Key('ml-research-master-consent'),
+                title: const Text('允許匿名復健研究資料收集'),
+                subtitle: const Text('手機與 TV 共用同一份研究同意。'),
+                value: _gate.enabled,
                 onChanged: _busy ? null : _setConsent,
               ),
+              if (widget.definition.isHand &&
+                  _gate.enabled &&
+                  !_gate.handEnabled)
+                const Text('匿名研究資料收集已開啟，但手部研究範圍目前尚未核准。'),
               if (widget.cloudSync != null) ...[
-                SwitchListTile(
-                  key: const Key('ml-cloud-consent'),
-                  title: const Text('同意雲端同步匿名樣本'),
-                  subtitle: const Text('僅上傳啟用後新產生的有效樣本；關閉後停止上傳。'),
-                  value: _cloudEnabledForCapture,
-                  onChanged: _busy ? null : _setCloudConsent,
-                ),
                 Text('雲端研究：${_cloudConsent?.active == true ? '已同意' : '未參與'} · '
                     '待同步 $_pendingCount 筆 · 已同步 $_syncedCount 筆'),
-                if (_cloudConsent?.subjectId != null)
-                  Text('雲端匿名代碼：${_cloudConsent!.subjectId}'),
                 TextButton.icon(
                   onPressed:
                       _busy || _cloudConsent?.active != true ? null : _sync,

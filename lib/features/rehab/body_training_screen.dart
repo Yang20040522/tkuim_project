@@ -92,6 +92,7 @@ import '../../features/analysis/body/body_motion_template.dart';
 import '../../features/analysis/body/body_rep_trajectory_collector.dart';
 import '../../features/rehab_ml/ml_research_api.dart';
 import '../../features/rehab_ml/ml_research_sync.dart';
+import '../../features/rehab_ml/research_collection_gate.dart';
 import '../../features/analysis/body/body_template_analyzer.dart';
 import '../../features/analysis/body/body_template_deviation_formatter.dart';
 import '../../features/analysis/models/environment_metadata.dart';
@@ -180,7 +181,8 @@ class BodyTrainingScreen extends StatefulWidget {
 
 enum _PauseChoice { resume, end }
 
-class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
+class _BodyTrainingScreenState extends State<BodyTrainingScreen>
+    with WidgetsBindingObserver {
   final BodyPoseEngine _engine = BodyPoseEngine();
   static const double _scoreThreshold = BodyPoseEngine.scoreThreshold;
 
@@ -328,6 +330,10 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    ResearchCollectionGate.instance.addListener(_researchGateChanged);
+    ResearchCollectionGate.instance.beginSession();
+    _researchGateChanged();
 
     _isExternalCamera = widget.initialCameraSelection.usesRaspberryPi;
     _lastPiIp = widget.initialCameraSelection.raspberryPiIp;
@@ -372,6 +378,30 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
       } else if (_serverService.isClientConnected) {
         _serverService.sendMessage(startMsg);
       }
+    }
+  }
+
+  void _researchGateChanged() {
+    if (!mounted) return;
+    final gate = ResearchCollectionGate.instance;
+    final active = gate.bodyEnabled('standing_knee_raise');
+    if (_mlCollectionConsent != active ||
+        _mlAnonymousSubjectId != (active ? gate.consent?.subjectId : null)) {
+      _mlTrajectoryCollector.reset();
+      setState(() {
+        _mlCollectionConsent = active;
+        _mlCloudConsent = active;
+        _mlAnonymousSubjectId = active ? gate.consent?.subjectId : null;
+      });
+    }
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      unawaited(ResearchCollectionGate.instance.refresh(force: true));
+    } else {
+      _mlTrajectoryCollector.reset();
     }
   }
 
@@ -597,35 +627,19 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
           samples: _mlTrajectoryCollector.takeCompletedRep(),
         );
         if (sample != null) {
-          unawaited(_mlQuality.completed(sample));
-          final cloudConsentAtCapture = _mlCloudConsent;
-          unawaited(_mlSampleRepository.save(sample).then((_) async {
-            if (!cloudConsentAtCapture || !_mlCloudConsent) {
-              if (mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('已保存一筆本機匿名骨架研究樣本。')),
-                );
-              }
-              return;
-            }
+          unawaited(Future<void>(() async {
+            if (!await ResearchCollectionGate.instance
+                .canCollect(actionId: 'standing_knee_raise')) return;
+            await _mlSampleRepository.save(sample);
+            if (!ResearchCollectionGate.instance
+                .bodyEnabled('standing_knee_raise')) return;
+            unawaited(_mlQuality.completed(sample));
             await _mlCloudSync.enqueue(sample.id);
-            if (mounted) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('研究樣本已存於本機，正在嘗試同步。')),
-              );
-            }
-            // Network is deliberately outside the frame/inference callback.
-            unawaited(_mlCloudSync.sync().catchError((Object _) {
-              if (mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('雲端同步失敗，樣本仍保留於本機，可稍後重試。')),
-                );
-              }
-            }));
+            await _mlCloudSync.sync();
           }).catchError((Object _) {
             if (mounted) {
               ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('研究骨架資料儲存失敗；本次樣本未保存。')),
+                const SnackBar(content: Text('研究骨架資料儲存或同步失敗；復健訓練不受影響。')),
               );
             }
           }));
@@ -1439,6 +1453,9 @@ class _BodyTrainingScreenState extends State<BodyTrainingScreen> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    ResearchCollectionGate.instance.removeListener(_researchGateChanged);
+    ResearchCollectionGate.instance.endSession();
     unawaited(_mlQuality.dispose());
     _aiSessionClock.stop();
     _aiTrajectoryCollector.reset();

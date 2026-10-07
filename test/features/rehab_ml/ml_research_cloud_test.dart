@@ -12,6 +12,7 @@ import 'body_research_owner_test.dart' as body_fixture;
 import 'package:flutter_body/features/rehab_ml/ml_research_sync.dart';
 import 'package:flutter_body/features/rehab_ml/ml_sample_repository.dart';
 import 'package:flutter_body/features/rehab_ml/ml_sample_sheet.dart';
+import 'package:flutter_body/features/rehab_ml/research_collection_gate.dart';
 import 'package:flutter_body/features/rehab_ml/therapist_research_samples_page.dart';
 import 'package:flutter_body/features/rehab_ml/research_management_page.dart';
 import 'package:http/http.dart' as http;
@@ -26,7 +27,8 @@ class _EmptyLocal extends MlSampleRepository {
 
 class _Remote extends MlResearchRemote {
   MlResearchConsent consent = const MlResearchConsent(
-      active: false, available: true, currentVersion: 'study-v1');
+      active: false, available: true, currentVersion: 'study-v1',
+      bodyAvailableActions: ['standing_knee_raise']);
   final uploaded = <String>[];
   bool failUpload = false;
   bool deleted = false;
@@ -54,7 +56,8 @@ class _Remote extends MlResearchRemote {
         active: agree,
         available: true,
         currentVersion: version,
-        subjectId: agree ? 'server-subject' : null);
+        subjectId: agree ? 'server-subject' : null,
+        bodyAvailableActions: const ['standing_knee_raise']);
     return consent;
   }
 
@@ -244,6 +247,8 @@ void main() {
       'hand cloud scope unavailable never asks for inherited standing consent',
       (tester) async {
     final local = _EmptyLocal(), remote = _Remote();
+    final gate = ResearchCollectionGate(remote: remote);
+    addTearDown(gate.dispose);
     await tester.pumpWidget(MaterialApp(
         home: Scaffold(
             body: MlSampleSheet(
@@ -251,14 +256,16 @@ void main() {
                 definition: MlActionRegistry.turnPalm,
                 initialConsent: true,
                 initialSubjectId: 'synthetic',
+                collectionGate: gate,
                 onConsentChanged: (_, __) {},
                 cloudSync: MlResearchSync(remote: remote, local: local)))));
     await tester.pumpAndSettle();
-    await tester.ensureVisible(find.byKey(const Key('ml-cloud-consent')));
-    await tester.tap(find.byKey(const Key('ml-cloud-consent')));
+    await tester.ensureVisible(find.byKey(const Key('ml-research-master-consent')));
+    await tester.tap(find.byKey(const Key('ml-research-master-consent')));
     await tester.pumpAndSettle();
-    expect(remote.consentWrites, 0);
-    expect(find.textContaining('手部研究範圍與同意版本尚未核准'), findsOneWidget);
+    expect(remote.consentWrites, 1);
+    expect(gate.handEnabled, false);
+    expect(find.textContaining('手部研究範圍目前尚未核准'), findsOneWidget);
   });
   setUp(() {
     SharedPreferences.setMockInitialValues({});
@@ -332,6 +339,8 @@ void main() {
         directoryProvider: () async =>
             Directory.systemTemp.createTemp('ml-cloud-empty-'));
     final queue = MlResearchSync(remote: remote, local: local);
+    final gate = ResearchCollectionGate(remote: remote);
+    addTearDown(gate.dispose);
     bool collecting = false;
     bool cloudCollecting = false;
     await tester.pumpWidget(MaterialApp(
@@ -339,6 +348,7 @@ void main() {
             body: MlSampleSheet(
       repository: local,
       cloudSync: queue,
+      collectionGate: gate,
       initialConsent: false,
       initialSubjectId: null,
       onConsentChanged: (value, _) => collecting = value,
@@ -346,17 +356,12 @@ void main() {
     ))));
     await tester.pumpAndSettle();
     expect(remote.consent.active, isFalse);
-    await tester.enterText(find.byType(TextField).first, 'subject_01');
-    await tester.tap(find.byKey(const Key('ml-local-consent')));
+    await tester.tap(find.byKey(const Key('ml-research-master-consent')));
     await tester.pumpAndSettle();
     expect(collecting, isTrue);
-    expect(remote.consent.active, isFalse);
-    expect(cloudCollecting, isFalse);
-    await tester.tap(find.byKey(const Key('ml-cloud-consent')));
-    await tester.pumpAndSettle();
     expect(remote.consent.active, isTrue);
     expect(cloudCollecting, isTrue);
-    await tester.tap(find.byKey(const Key('ml-local-consent')));
+    await tester.tap(find.byKey(const Key('ml-research-master-consent')));
     await tester.pumpAndSettle();
     expect(collecting, isFalse);
     expect(cloudCollecting, isFalse);
@@ -376,6 +381,8 @@ void main() {
           available: false,
           currentVersion: 'study-v1',
           unavailableReason: 'RESEARCH_RETENTION_UNSET');
+    final gate = ResearchCollectionGate(remote: remote);
+    addTearDown(gate.dispose);
     bool localConsent = false;
     bool cloudConsent = false;
     await tester.pumpWidget(MaterialApp(
@@ -383,19 +390,18 @@ void main() {
             body: MlSampleSheet(
       repository: local,
       cloudSync: MlResearchSync(remote: remote, local: local),
+      collectionGate: gate,
       initialConsent: false,
       initialSubjectId: 'subject_01',
       onConsentChanged: (value, _) => localConsent = value,
       onCloudConsentChanged: (value) => cloudConsent = value,
     ))));
     await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const Key('ml-local-consent')));
-    await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const Key('ml-cloud-consent')));
+    await tester.tap(find.byKey(const Key('ml-research-master-consent')));
     await tester.pumpAndSettle();
     expect(find.textContaining('保存政策尚未核准或尚未生效'), findsOneWidget);
     expect(remote.consentWrites, 0);
-    expect(localConsent, isTrue);
+    expect(localConsent, isFalse);
     expect(cloudConsent, isFalse);
     expect(await tester.runAsync(() => local.list()), isEmpty);
   });
@@ -410,19 +416,22 @@ void main() {
     final remote = _Remote()
       ..consentFailure = MlResearchException.fromResponse(
           400, {'code': 'CONSENT_VERSION_MISMATCH'});
+    final gate = ResearchCollectionGate(remote: remote);
+    addTearDown(gate.dispose);
     bool cloudConsent = false;
     await tester.pumpWidget(MaterialApp(
         home: Scaffold(
             body: MlSampleSheet(
       repository: local,
       cloudSync: MlResearchSync(remote: remote, local: local),
+      collectionGate: gate,
       initialConsent: true,
       initialSubjectId: 'subject_01',
       onConsentChanged: (_, __) {},
       onCloudConsentChanged: (value) => cloudConsent = value,
     ))));
     await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const Key('ml-cloud-consent')));
+    await tester.tap(find.byKey(const Key('ml-research-master-consent')));
     await tester.pumpAndSettle();
     expect(find.textContaining('同意版本已更新'), findsOneWidget);
     expect(cloudConsent, isFalse);

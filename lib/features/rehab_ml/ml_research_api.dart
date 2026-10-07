@@ -72,6 +72,7 @@ class MlResearchConsent {
     this.subjectId,
     this.unavailableReason,
     this.handAvailable = false,
+    this.bodyAvailableActions = const [],
   });
   final bool active;
   final bool available;
@@ -79,12 +80,15 @@ class MlResearchConsent {
   final String? subjectId;
   final String? unavailableReason;
   final bool handAvailable;
+  final List<String> bodyAvailableActions;
 
   factory MlResearchConsent.fromJson(Map<String, dynamic> json) =>
       MlResearchConsent(
         active: json['active'] == true,
         available: json['available'] == true,
         handAvailable: json['handAvailable'] == true,
+        bodyAvailableActions: (json['bodyAvailableActions'] as List?)
+                ?.map((value) => value.toString()).toList() ?? const [],
         currentVersion: json['currentVersion']?.toString() ?? '',
         subjectId: json['subjectId']?.toString(),
         unavailableReason: json['unavailableReason']?.toString(),

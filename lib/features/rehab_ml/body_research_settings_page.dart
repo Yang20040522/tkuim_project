@@ -49,10 +49,10 @@ class _BodyResearchSettingsPageState extends State<BodyResearchSettingsPage> {
     if (!widget.session.owner.isCurrent) return;
     try {
       final local = await widget.session.repository.list();
-      final consent = await widget.session.sync.remote.getConsent();
+      final consent = await widget.session.gate.refresh(force: true);
       final pending = await widget.session.sync.pendingIds();
       final resamples = <Map<String, dynamic>>[];
-      if (consent.active) {
+      if (consent?.active == true) {
         for (var page = 0; page < 25; page++) {
           final rows = await widget.session.sync.remote.listSamples(page: page);
           widget.session.owner.check();
@@ -80,29 +80,18 @@ class _BodyResearchSettingsPageState extends State<BodyResearchSettingsPage> {
     }
   }
 
-  Future<void> _cloud(bool value) async {
+  Future<void> _master(bool value) async {
     if (_busy || !widget.session.owner.isCurrent) return;
-    if (value &&
-        (!widget.session.localConsent || _consent?.available != true)) {
-      setState(() => _error = '請先同意本機收集；雲端需有效研究同意及保存政策。');
-      return;
-    }
     setState(() => _busy = true);
     try {
-      final MlResearchConsent consent;
-      if (value) {
-        consent = await widget.session.sync.remote
-            .setConsent(true, _consent?.currentVersion ?? '');
-      } else {
-        await widget.session.sync.withdraw();
-        consent = await widget.session.sync.remote.getConsent();
-      }
+      final enabled = await widget.session.gate.setEnabled(value);
       widget.session.owner.check();
-      widget.session.setCloudConsent(value && consent.active);
       if (mounted) {
         setState(() {
-          _consent = consent;
-          _error = null;
+          _consent = widget.session.gate.consent;
+          _error = value && !enabled
+              ? widget.session.gate.error ?? '研究資料收集目前無法開啟。'
+              : null;
         });
       }
     } catch (e) {
@@ -166,26 +155,14 @@ class _BodyResearchSettingsPageState extends State<BodyResearchSettingsPage> {
               valueListenable: widget.session.advisory.latest,
               builder: (_, prediction, __) =>
                   BodyMlAdvisoryCard(prediction: prediction)),
-          CheckboxListTile(
+          SwitchListTile(
               autofocus: true,
-              title: const Text('同意本機 Body attempt 收集'),
-              value: widget.session.localConsent,
+              title: const Text('允許匿名復健研究資料收集'),
+              subtitle: const Text('手機與 TV 共用同一份研究同意。'),
+              value: widget.session.gate.enabled,
               onChanged: _busy || !widget.session.owner.isCurrent
                   ? null
-                  : (v) async {
-                      if (v != true && widget.session.cloudConsent) {
-                        await _cloud(false);
-                      }
-                      if (!mounted || !widget.session.owner.isCurrent) return;
-                      widget.session.setLocalConsent(v ?? false);
-                      setState(() {});
-                    }),
-          CheckboxListTile(
-              title: const Text('另行同意雲端同步'),
-              value: widget.session.cloudConsent,
-              onChanged: _busy || !widget.session.owner.isCurrent
-                  ? null
-                  : (v) => _cloud(v ?? false)),
+                  : _master),
           Text('本機 $_samples 筆 · 待同步 $_pending 筆'),
           if (widget.session.resampleOfSampleId != null) ...[
             Text('下一個新嘗試將重採樣：${widget.session.resampleOfSampleId}'),
@@ -218,7 +195,7 @@ class _BodyResearchSettingsPageState extends State<BodyResearchSettingsPage> {
                   ? null
                   : () async {
                       try {
-                        if (widget.session.cloudConsent) {
+                        if (widget.session.gate.enabled) {
                           await widget.session.sync.sync();
                         }
                         await _load();

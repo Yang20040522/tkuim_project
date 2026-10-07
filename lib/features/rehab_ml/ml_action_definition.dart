@@ -31,6 +31,17 @@ class MlActionDefinition {
 
   bool accepts(Map<String, dynamic> sample) {
     if (schemaVersion == 3) return BodyResearchContract.accepts(sample);
+    if (schemaVersion == 4) {
+      return sample['schemaVersion'] == 4 &&
+          sample['modality'] == 'body' &&
+          sample['actionId'] == actionId &&
+          sample['actionDefinitionVersion'] == version &&
+          sample['featureNames'] is List &&
+          (sample['featureNames'] as List).isEmpty &&
+          sample['features'] is List &&
+          (sample['features'] as List).isEmpty &&
+          sample['featuresStatus'] == 'not_applicable';
+    }
     final names = sample['featureNames'];
     final features = sample['features'];
     return (!isHand ||
@@ -174,7 +185,32 @@ class MlActionRegistry {
       labels: standingKneeRaise.labels,
       angleLabels: standingKneeRaise.angleLabels,
       preprocessing: 'body-attempt-aspect-2d-v2;NOT_DEPLOYED');
-  static final production = MlActionRegistry([standingKneeRaise, ...hands]);
+  static const bodyReviewLabels = {
+    'meets_requirement': '符合指定動作要求',
+    'needs_correction': '需要調整',
+    'unassessable': '無法評估',
+  };
+  static const bodyReviews = [
+    MlActionDefinition(actionId: 'draw_circle', version: 'draw-circle-body-review-v1',
+        displayName: '畫圓訓練', schemaVersion: 4, labelVersion: 'body-review-label-v1',
+        featureNames: [], labels: bodyReviewLabels),
+    MlActionDefinition(actionId: 'overhead_reach', version: 'overhead-reach-body-review-v1',
+        displayName: '伸手舉高訓練', schemaVersion: 4, labelVersion: 'body-review-label-v1',
+        featureNames: [], labels: bodyReviewLabels),
+    MlActionDefinition(actionId: 'raise_both_arms', version: 'raise-both-arms-body-review-v1',
+        displayName: '雙手抬舉式', schemaVersion: 4, labelVersion: 'body-review-label-v1',
+        featureNames: [], labels: bodyReviewLabels),
+    MlActionDefinition(actionId: 'elbow_forward', version: 'elbow-forward-body-review-v1',
+        displayName: '手肘屈伸訓練', schemaVersion: 4, labelVersion: 'body-review-label-v1',
+        featureNames: [], labels: bodyReviewLabels),
+    MlActionDefinition(actionId: 'sit_to_stand', version: 'sit-to-stand-body-review-v1',
+        displayName: '坐站訓練', schemaVersion: 4, labelVersion: 'body-review-label-v1',
+        featureNames: [], labels: bodyReviewLabels),
+    MlActionDefinition(actionId: 'lateral_step', version: 'lateral-step-body-review-v1',
+        displayName: '側跨步訓練', schemaVersion: 4, labelVersion: 'body-review-label-v1',
+        featureNames: [], labels: bodyReviewLabels),
+  ];
+  static final production = MlActionRegistry([standingKneeRaise, ...hands, ...bodyReviews]);
   Iterable<MlActionDefinition> get definitions => _definitions.values;
 
   MlActionDefinition? byId(String? id) => _definitions[id];

@@ -8,6 +8,7 @@ import 'package:flutter_body/features/rehab_ml/body_research_settings_page.dart'
 import 'package:flutter_body/features/rehab_ml/body_research_attempt_collector.dart';
 import 'package:flutter_body/features/rehab_ml/ml_research_api.dart';
 import 'package:flutter_body/features/rehab_ml/ml_sample_repository.dart';
+import 'package:flutter_body/features/rehab_ml/research_collection_gate.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'body_research_foundation_test.dart' show observation;
 import 'body_research_owner_test.dart' show login;
@@ -21,6 +22,7 @@ class Remote extends MlResearchApi {
         {
           'id': '00000000-0000-4000-8000-000000000001',
           'schemaVersion': 3,
+          'actionId': 'standing_knee_raise',
           'disposition': disposition,
           'exerciseType': 'DEFAULT',
           'exerciseId': '99',
@@ -31,6 +33,7 @@ class Remote extends MlResearchApi {
   Future<Map<String, dynamic>> sampleDetail(String id) async => {
         'sample': {
           'schemaVersion': 3,
+          'actionId': 'standing_knee_raise',
           'disposition': disposition,
           'exerciseType': 'DEFAULT',
           'exerciseId': '99'
@@ -38,7 +41,9 @@ class Remote extends MlResearchApi {
       };
   @override
   Future<MlResearchConsent> getConsent() async => MlResearchConsent(
-      active: active, available: true, currentVersion: 'synthetic-v1');
+      active: active, available: true, currentVersion: 'synthetic-v1',
+      subjectId: 'server-subject',
+      bodyAvailableActions: const ['standing_knee_raise']);
   @override
   Future<MlResearchConsent> setConsent(bool agree, String version) async {
     active = agree;
@@ -73,19 +78,23 @@ void main() {
   late Directory root;
   late BodyResearchSession session;
   late Remote remote;
+  late ResearchCollectionGate gate;
   setUp(() async {
     SharedPreferences.setMockInitialValues({});
     login('synthetic');
     root = await Directory.systemTemp.createTemp('body-session-');
     remote = Remote();
+    gate = ResearchCollectionGate(remote: remote);
     session = BodyResearchSession(
         exerciseId: '99',
         movementSide: 'left',
         repository: MlSampleRepository(directoryProvider: () async => root),
-        remote: remote);
+        remote: remote, collectionGate: gate);
+    await gate.refresh(force: true);
   });
   tearDown(() async {
     session.dispose();
+    gate.dispose();
     AppSession.userId = null;
     AppSession.changes.value++;
     await Future<void>.delayed(const Duration(milliseconds: 30));
@@ -97,24 +106,23 @@ void main() {
     }
   }
 
-  test('local consent independent of cloud; uncounted attempt persists',
+  test('no collection before server consent; uncounted attempt persists after consent',
       () async {
     begin();
     expect(session.collector.state, BodyCollectorState.disabled);
-    session.setLocalConsent(true);
+    expect(await session.repository.list(), isEmpty);
+    expect(await gate.setEnabled(true), true);
     begin();
     session.userFinished();
     await session.pendingPersistence;
     final samples = await session.repository.list();
     expect(samples, hasLength(1));
     expect(samples.single['completedRepsAfter'], 0);
-    expect(remote.uploads, 0);
+    expect(remote.uploads, 1);
   });
-  test('cloud consent queues/upload; suspension does not mutate counts',
+  test('server consent queues/upload; suspension does not mutate counts',
       () async {
-    session.setLocalConsent(true);
-    session.setCloudConsent(true);
-    remote.active = true;
+    await gate.setEnabled(true);
     begin();
     session.setForeground(false);
     session.observe(moving(400), completedReps: 7, setIndex: 2);
@@ -126,7 +134,7 @@ void main() {
   });
   test('resample creates a fresh attempt link without changing counts',
       () async {
-    session.setLocalConsent(true);
+    await gate.setEnabled(true);
     await session.selectResample('00000000-0000-4000-8000-000000000001');
     begin();
     session.userFinished();
@@ -142,7 +150,7 @@ void main() {
   });
   test('active attempt cannot be retargeted and ACTIVE parent is refused',
       () async {
-    session.setLocalConsent(true);
+    await gate.setEnabled(true);
     begin();
     await expectLater(session.selectResample('parent'), throwsStateError);
     session.userFinished();
@@ -160,7 +168,7 @@ void main() {
         throwsA(isA<MlResearchException>()));
   });
   testWidgets(
-      'settings do not auto-consent; local toggle never opts into cloud',
+      'settings reflect one server-authoritative master switch',
       (tester) async {
     await tester.pumpWidget(
         MaterialApp(home: BodyResearchSettingsPage(session: session)));
@@ -169,15 +177,12 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Body 研究資料'), findsOneWidget);
     expect(remote.consentChanges, 0);
-    await tester.tap(find.text('同意本機 Body attempt 收集'));
-    await tester.pump();
-    expect(session.localConsent, true);
-    expect(session.cloudConsent, false);
-    await tester.tap(find.text('另行同意雲端同步'));
+    await tester.tap(find.text('允許匿名復健研究資料收集'));
     await tester.pumpAndSettle();
+    expect(session.localConsent, true);
     expect(session.cloudConsent, true);
     expect(remote.consentChanges, 1);
-    await tester.tap(find.text('同意本機 Body attempt 收集'));
+    await tester.tap(find.text('允許匿名復健研究資料收集'));
     await tester.pumpAndSettle();
     expect(session.cloudConsent, false);
     expect(remote.active, false);

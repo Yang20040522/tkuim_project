@@ -11,6 +11,7 @@ import 'ml_research_api.dart';
 import 'ml_research_sync.dart';
 import 'research_owner_scope.dart';
 import 'body_ml_advisory_controller.dart';
+import 'research_collection_gate.dart';
 
 /// Opt-in body research sidecar. Counts supplied by the training screen are
 /// read-only snapshots; no classifier or action rules are invoked here.
@@ -18,10 +19,12 @@ class BodyResearchSession {
   BodyResearchSession(
       {required String exerciseId,
       required String movementSide,
+      ResearchCollectionGate? collectionGate,
       MlSampleRepository? repository,
       MlResearchRemote? remote})
       : repository = repository ?? MlSampleRepository(),
-        owner = ResearchOwnerScope.capture() {
+        owner = ResearchOwnerScope.capture(),
+        gate = collectionGate ?? ResearchCollectionGate.instance {
     advisory = BodyMlAdvisoryController();
     collector = BodyResearchAttemptCollector(
         context: BodyResearchContext(
@@ -34,12 +37,16 @@ class BodyResearchSession {
         ownerIsCurrent: () => !_disposed && owner.isCurrent);
     sync = MlResearchSync(
         remote: remote ?? MlResearchApi(), local: this.repository);
+    gate.addListener(_gateChanged);
+    gate.beginSession();
+    _gateChanged();
     AppSession.changes.addListener(_accountChanged);
   }
   // Segmentation engineering thresholds, not clinical pass/fail thresholds.
   static const movementHipDeg = 165.0, baselineHipDeg = 172.0;
   final MlSampleRepository repository;
   final ResearchOwnerScope owner;
+  final ResearchCollectionGate gate;
   late final BodyMlAdvisoryController advisory;
   late BodyResearchAttemptCollector collector;
   late final MlResearchSync sync;
@@ -145,11 +152,14 @@ class BodyResearchSession {
   void _save(BodyResearchSample sample) {
     unawaited(advisory
         .finalized(sample)); // finalized only, never the camera hot loop
-    final cloud = cloudConsent, epoch = _consentEpoch;
-    final save = repository.save(sample).then<void>((_) async {
+    final epoch = _consentEpoch;
+    final save = Future<void>(() async {
+      if (!await gate.canCollect(actionId: 'standing_knee_raise') ||
+          _disposed || !owner.isCurrent || epoch != _consentEpoch) return;
+      await repository.save(sample);
       if (_disposed || !owner.isCurrent) return;
       message.value = '已保存 Body attempt（含未計次動作）';
-      if (cloud && cloudConsent && epoch == _consentEpoch) {
+      if (gate.bodyEnabled('standing_knee_raise') && epoch == _consentEpoch) {
         await sync.enqueue(sample.id);
         await sync.sync();
         if (!_disposed && owner.isCurrent) message.value = 'Body attempt 已同步';
@@ -160,6 +170,15 @@ class BodyResearchSession {
     _pendingPersistence =
         Future.wait<void>([_pendingPersistence, save]).then((_) {});
     unawaited(_pendingPersistence);
+  }
+
+  void _gateChanged() {
+    if (_disposed || !owner.isCurrent) return;
+    final allow = gate.bodyEnabled('standing_knee_raise');
+    if (allow != localConsent || allow != cloudConsent) {
+      setLocalConsent(allow);
+      setCloudConsent(allow);
+    }
   }
 
   void _accountChanged() {
@@ -182,6 +201,8 @@ class BodyResearchSession {
     _watchdog?.cancel();
     _idle.stop();
     sync.stop();
+    gate.removeListener(_gateChanged);
+    gate.endSession();
     AppSession.changes.removeListener(_accountChanged);
     message.dispose();
   }

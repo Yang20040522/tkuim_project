@@ -17,6 +17,22 @@ Map<String, dynamic> fixture() => jsonDecode(
     as Map<String, dynamic>;
 
 class _Remote extends MlResearchRemote {
+  _Remote({bool review = false}) {
+    if (review) {
+      payload['schemaVersion'] = 4;
+      payload['actionId'] = 'sit_to_stand';
+      payload['actionDefinitionVersion'] = 'sit-to-stand-body-review-v1';
+      payload['features'] = <double>[];
+      payload['featureNames'] = <String>[];
+      payload['featuresStatus'] = 'not_applicable';
+      payload['movementSide'] = 'bilateral';
+      payload['terminationReason'] = 'SCORED_REP';
+      payload['completedRepsAfter'] = 1;
+      for (final frame in payload['frames'] as List) {
+        (frame as Map).remove('angles');
+      }
+    }
+  }
   final payload = fixture();
   String? status, decision, label, exportSource;
   int revision = 0;
@@ -25,12 +41,13 @@ class _Remote extends MlResearchRemote {
   Map<String, dynamic> get sample => {
         'id': 'sample-v3',
         'subjectId': 'synthetic',
-        'schemaVersion': 3,
+        'schemaVersion': payload['schemaVersion'],
         'modality': 'body',
         'source': 'tv_pi',
         'exerciseId': payload['exerciseId'],
         'exerciseType': 'DEFAULT',
-        'actionId': 'standing_knee_raise',
+        'actionId': payload['actionId'],
+        'movementSide': payload['movementSide'],
         'sessionId': payload['sessionId'],
         'annotationStatus': status ?? 'UNLABELED',
         'disposition': disposition
@@ -65,7 +82,8 @@ class _Remote extends MlResearchRemote {
       {required String labelVersion,
       required String actionDefinitionVersion,
       required int expectedRevision}) async {
-    expect(labelVersion, 'body-attempt-label-v1');
+    expect(labelVersion, payload['schemaVersion'] == 4
+        ? 'body-review-label-v1' : 'body-attempt-label-v1');
     expect(expectedRevision, revision);
     label = value;
     status = 'DRAFT';
@@ -136,6 +154,24 @@ void main() {
     await tester.pumpWidget(MaterialApp(home: widget));
     await tester.pumpAndSettle();
   }
+
+  testWidgets('v4 review displays action context, skeleton and review-only label',
+      (tester) async {
+    final remote = _Remote(review: true);
+    await page(tester, ResearchSampleDetailPage(remote: remote,
+        sampleId: 'sample-v3'));
+    expect(find.textContaining('坐站訓練'), findsWidgets);
+    expect(find.textContaining('不作為 ML 訓練標籤'), findsOneWidget);
+    expect(find.textContaining('雙側'), findsOneWidget);
+    expect(find.byKey(const Key('research-skeleton-player')), findsOneWidget);
+    await tester.tap(find.byKey(const Key('research-label')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('需要調整').last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('儲存草稿'));
+    await tester.pumpAndSettle();
+    expect(remote.label, 'needs_correction');
+  });
 
   test('seven filters distinguish legacy hand/body and v3 source', () {
     final body = _Remote().sample;

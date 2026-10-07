@@ -225,7 +225,7 @@ class _TherapistResearchSamplesPageState
                         '尚未支援的研究動作'),
                     subtitle: Text(
                       '樣本 ${item['id']}\n匿名受試者 ${item['subjectId']} · '
-                      '${item['movementSide'] == 'left' ? '左側' : '右側'} · '
+                      '${item['movementSide'] == 'left' ? '左側' : item['movementSide'] == 'right' ? '右側' : '雙側'} · '
                       '${item['capturedAt']}\n'
                       '${ResearchSamplePresentation.originLabel(item)} · '
                       '${_statusText(item['annotationStatus']?.toString())} · '
@@ -313,6 +313,8 @@ class _ResearchSampleDetailPageState extends State<ResearchSampleDetailPage>
   late final ResearchOwnerScope _owner;
   late final BodyMlAdvisoryController _bodyAdvisory;
   bool get _bodyAttempt => (_detail?['payload'] as Map?)?['schemaVersion'] == 3;
+  bool get _bodyReview => (_detail?['payload'] as Map?)?['schemaVersion'] == 4;
+  bool get _bodySample => _bodyAttempt || _bodyReview;
   int get _revision =>
       ((_detail?['annotation'] as Map?)?['revision'] as num?)?.toInt() ?? 0;
   String get _disposition =>
@@ -427,7 +429,7 @@ class _ResearchSampleDetailPageState extends State<ResearchSampleDetailPage>
       _error = null;
     });
     try {
-      if (_bodyAttempt) {
+      if (_bodySample) {
         await widget.remote.labelSampleRevision(
             widget.sampleId, _label!, _note.text.trim(),
             labelVersion: _definition!.labelVersion,
@@ -455,7 +457,7 @@ class _ResearchSampleDetailPageState extends State<ResearchSampleDetailPage>
     if (_saving || _definition == null) return;
     setState(() => _saving = true);
     try {
-      if (_bodyAttempt) {
+      if (_bodySample) {
         await widget.remote.submitLabelRevision(widget.sampleId, _revision);
       } else {
         await widget.remote.submitLabel(widget.sampleId);
@@ -481,7 +483,7 @@ class _ResearchSampleDetailPageState extends State<ResearchSampleDetailPage>
     }
     setState(() => _saving = true);
     try {
-      if (_bodyAttempt) {
+      if (_bodySample) {
         await widget.remote.reviewDecision(
             widget.sampleId, decision, _reviewNote.text.trim(),
             expectedRevision: _revision,
@@ -588,6 +590,7 @@ class _ResearchSampleDetailPageState extends State<ResearchSampleDetailPage>
           ],
           const SizedBox(height: 16),
           if (_bodyAttempt) _bodySummary(),
+          if (_bodyReview) _bodyReviewSummary(),
           if (_definition == null) const Text('此樣本的動作或資料版本尚未支援，無法標註或提交。'),
           if (_status != null) Text('標註狀態：$_status'),
           if ((_detail!['annotation'] as Map?)?['reviewNote'] != null)
@@ -648,7 +651,7 @@ class _ResearchSampleDetailPageState extends State<ResearchSampleDetailPage>
               maxLength: 1000,
               decoration: const InputDecoration(labelText: '審核備註／退回原因'),
             ),
-            if (_bodyAttempt)
+            if (_bodySample)
               DropdownButtonFormField<String>(
                 key: const Key('research-review-reason'),
                 initialValue: _reasonCode,
@@ -674,7 +677,7 @@ class _ResearchSampleDetailPageState extends State<ResearchSampleDetailPage>
                 onPressed: _saving ? null : () => _review('APPROVE'),
                 child: const Text('核准'),
               ),
-              if (_bodyAttempt) ...[
+              if (_bodySample) ...[
                 OutlinedButton(
                     key: const Key('research-reject'),
                     onPressed: _saving ? null : () => _review('REJECT'),
@@ -740,6 +743,28 @@ class _ResearchSampleDetailPageState extends State<ResearchSampleDetailPage>
                 const Text('影像平面投影角度，非臨床 3D ROM。'),
               ],
             )));
+  }
+
+  Widget _bodyReviewSummary() {
+    final payload = _detail!['payload'] as Map;
+    final sample = _detail!['sample'] as Map;
+    return Card(child: Padding(padding: const EdgeInsets.all(12),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        const Text('研究審核資料；目前未建立此動作的已驗證 ML 模型。此標註不作為 ML 訓練標籤。'),
+        Text('動作：${_definition?.displayName ?? payload['actionId']}'),
+        Text('來源：${ResearchSamplePresentation.originLabel(Map<String, dynamic>.from(sample))}'),
+        Text('拍攝時間：${payload['capturedAt']}'),
+        if (payload['difficulty'] != null) Text('難度：${payload['difficulty']}'),
+        Text('動作側：${payload['movementSide'] == 'bilateral' ? '雙側' : payload['movementSide'] == 'left' ? '左側' : '右側'}'),
+        if (payload['movementMode'] != null) Text('模式：${payload['movementMode']}'),
+        Text('第 ${payload['setIndex']} 組 · 次數 ${payload['completedRepsBefore']} → ${payload['completedRepsAfter']}'),
+        Text('追蹤品質：${(payload['trackingQuality'] as Map?)?['validFrameRatio']}'),
+        Text('結束原因：${payload['terminationReason']}'),
+        Text('處置：$_disposition · 標註：${_status ?? 'UNLABELED'}'),
+        if (sample['resampleOfSampleId'] != null)
+          Text('重採樣來源：${sample['resampleOfSampleId']}'),
+        if (sample['reasonCode'] != null) Text('處置原因：${sample['reasonCode']}'),
+      ])));
   }
 }
 

@@ -11,23 +11,30 @@ import 'ml_research_api.dart';
 import 'ml_research_sync.dart';
 import 'ml_sample_repository.dart';
 import 'research_owner_scope.dart';
+import 'research_collection_gate.dart';
 
 /// Auxiliary opt-in research, independent of Action rules and cloud consent.
 class HandResearchSession {
   HandResearchSession(this.action,
       {MlSampleRepository? repository,
       MlResearchRemote? remote,
+      ResearchCollectionGate? collectionGate,
       MlQualityEvaluator? evaluator})
       : repository = repository ?? MlSampleRepository(),
+        gate = collectionGate ?? ResearchCollectionGate.instance,
         collector = HandMotionCollector(action),
         quality = MlRepQualityController(
             evaluator ?? CatalogMlQualityEvaluator(action)) {
     sync = MlResearchSync(
         remote: remote ?? MlResearchApi(), local: this.repository);
+    gate.addListener(_gateChanged);
+    gate.beginSession();
+    _gateChanged();
     AppSession.changes.addListener(_accountChanged);
   }
   final MlActionDefinition action;
   final MlSampleRepository repository;
+  final ResearchCollectionGate gate;
   final HandMotionCollector collector;
   final MlRepQualityController quality;
   late final MlResearchSync sync;
@@ -45,6 +52,15 @@ class HandResearchSession {
   String cameraView = 'front';
   bool _disposed = false;
   ResearchOwnerScope? _owner;
+  void _gateChanged() {
+    if (_disposed) return;
+    final allow = gate.handEnabled;
+    if (localConsent != allow || cloudConsent != allow ||
+        subjectId != (allow ? gate.consent?.subjectId : null)) {
+      setLocalConsent(allow, allow ? gate.consent?.subjectId : null);
+      cloudConsent = allow;
+    }
+  }
   void _accountChanged() {
     if (_owner != null && !_owner!.isCurrent) {
       localConsent = false;
@@ -89,7 +105,10 @@ class HandResearchSession {
     final cloudAtCapture = cloudConsent,
         owner = AppSession.userId,
         consentEpoch = _consentEpoch;
-    unawaited(repository.save(sample).then((_) async {
+    unawaited(Future<void>(() async {
+      if (!await gate.canCollect(hand: true) ||
+          _disposed || consentEpoch != _consentEpoch) return;
+      await repository.save(sample);
       if (!_disposed &&
           localConsent &&
           cloudAtCapture &&
@@ -109,6 +128,8 @@ class HandResearchSession {
     if (_disposed) return;
     _disposed = true;
     AppSession.changes.removeListener(_accountChanged);
+    gate.removeListener(_gateChanged);
+    gate.endSession();
     sync.stop();
     collector.reset();
     message.dispose();

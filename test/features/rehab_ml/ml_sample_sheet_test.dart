@@ -3,6 +3,23 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_body/features/rehab_ml/ml_sample_repository.dart';
 import 'package:flutter_body/features/rehab_ml/ml_sample_sheet.dart';
 import 'package:flutter_body/features/rehab_ml/ml_quality_evaluator.dart';
+import 'package:flutter_body/features/rehab_ml/ml_research_api.dart';
+import 'package:flutter_body/features/rehab_ml/research_collection_gate.dart';
+import 'package:flutter_body/features/account/app_session.dart';
+
+class _ConsentRemote extends MlResearchApi {
+  bool active = false;
+  @override
+  Future<MlResearchConsent> getConsent() async => MlResearchConsent(
+      active: active, available: true, currentVersion: 'synthetic-v1',
+      subjectId: active ? 'server-subject' : null,
+      bodyAvailableActions: const ['standing_knee_raise']);
+  @override
+  Future<MlResearchConsent> setConsent(bool agree, String version) async {
+    active = agree;
+    return getConsent();
+  }
+}
 
 class _EmptySampleRepository extends MlSampleRepository {
   @override
@@ -38,8 +55,18 @@ void main() {
     result.dispose();
   });
 
-  testWidgets('research collection remains off until explicit valid consent',
+  testWidgets('research collection follows server consent without manual subject code',
       (tester) async {
+    AppSession.userId = 'patient';
+    AppSession.customExerciseToken = 'synthetic-token';
+    AppSession.changes.value++;
+    final gate = ResearchCollectionGate(remote: _ConsentRemote());
+    addTearDown(() {
+      gate.dispose();
+      AppSession.userId = null;
+      AppSession.customExerciseToken = null;
+      AppSession.changes.value++;
+    });
     bool consent = false;
     String? subject;
     await tester.pumpWidget(MaterialApp(
@@ -48,6 +75,7 @@ void main() {
           repository: _EmptySampleRepository(),
           initialConsent: false,
           initialSubjectId: null,
+          collectionGate: gate,
           onConsentChanged: (value, id) {
             consent = value;
             subject = id;
@@ -58,16 +86,12 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('模型狀態：等待物理治療師標註及驗證；不顯示 AI 分類。'), findsOneWidget);
     await tester.tap(find.byType(SwitchListTile));
-    await tester.pump();
-    expect(consent, isFalse);
-    expect(find.textContaining('請輸入研究用匿名代碼'), findsOneWidget);
-    await tester.enterText(find.byType(TextField), 'subject_01');
-    await tester.tap(find.byType(SwitchListTile));
-    await tester.pump();
+    await tester.pumpAndSettle();
     expect(consent, isTrue);
-    expect(subject, 'subject_01');
+    expect(subject, 'server-subject');
+    expect(find.byType(TextField), findsNothing);
     await tester.tap(find.byType(SwitchListTile));
-    await tester.pump();
+    await tester.pumpAndSettle();
     expect(consent, isFalse);
     expect(subject, isNull);
   });
