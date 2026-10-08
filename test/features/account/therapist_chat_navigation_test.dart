@@ -17,6 +17,10 @@ void main() {
   });
 
   testWidgets('治療師導覽點擊與滑動同步且不重複建立聊天監聽', (tester) async {
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
     final backend = _FakeChatBackend();
     await tester.pumpWidget(
       MaterialApp(

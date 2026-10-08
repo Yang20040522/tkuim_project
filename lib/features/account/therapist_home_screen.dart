@@ -19,6 +19,8 @@ import '../rehab_ml/research_management_page.dart';
 import '../../models/custom_rehab_exercise.dart';
 import 'app_session.dart';
 import 'patient_management_page.dart';
+import 'repositories/therapist_patient_repository.dart';
+import 'repositories/therapist_patient_repository_selection.dart';
 import 'role_select_screen.dart';
 
 class TherapistHomeScreen extends StatefulWidget {
@@ -26,10 +28,14 @@ class TherapistHomeScreen extends StatefulWidget {
     super.key,
     this.chatBackend,
     this.researchRemote,
+    this.patientRepository,
+    this.exerciseRepository,
   });
 
   final ChatBackend? chatBackend;
   final MlResearchRemote? researchRemote;
+  final TherapistPatientRepository? patientRepository;
+  final CustomExerciseRepository? exerciseRepository;
 
   @override
   State<TherapistHomeScreen> createState() => _TherapistHomeScreenState();
@@ -37,23 +43,53 @@ class TherapistHomeScreen extends StatefulWidget {
 
 class _TherapistHomeScreenState extends State<TherapistHomeScreen> {
   late final PageController _pageController;
-  late final List<Widget> _pages;
+  late final Widget _chatPage;
+  late final TherapistPatientRepository _patientRepository;
+  late final CustomExerciseRepository _exerciseRepository;
   int _selectedIndex = 0;
   bool _canManageResearch = false;
+  int? _patientCount;
+  int? _exerciseCount;
+  bool _loadingOverview = true;
+  bool _refreshingOverview = false;
 
   @override
   void initState() {
     super.initState();
     _pageController = PageController(keepPage: true);
-    _pages = [
-      _TherapistKeepAlivePage(
-        child: Builder(builder: _buildHomePage),
-      ),
-      _TherapistKeepAlivePage(
-        child: ChatHomeScreen(backend: widget.chatBackend),
-      ),
-    ];
+    _chatPage = _TherapistKeepAlivePage(
+      child: ChatHomeScreen(backend: widget.chatBackend),
+    );
+    _patientRepository = widget.patientRepository ?? therapistPatientRepository;
+    _exerciseRepository =
+        widget.exerciseRepository ?? therapistCustomExerciseRepository;
+    _loadOverview();
     _loadResearchAuthority();
+  }
+
+  // One read per repository on entry / explicit refresh. No polling or build I/O.
+  Future<void> _loadOverview() async {
+    if (_refreshingOverview) return;
+    _refreshingOverview = true;
+    Future<int?> count(Future<List<Object>> Function() load) async {
+      try {
+        return (await load()).length;
+      } catch (_) {
+        return null;
+      }
+    }
+
+    final counts = await Future.wait([
+      count(_patientRepository.getPatients),
+      count(_exerciseRepository.getAllExercises),
+    ]);
+    _refreshingOverview = false;
+    if (!mounted) return;
+    setState(() {
+      _patientCount = counts[0];
+      _exerciseCount = counts[1];
+      _loadingOverview = false;
+    });
   }
 
   Future<void> _loadResearchAuthority() async {
@@ -106,7 +142,7 @@ class _TherapistHomeScreenState extends State<TherapistHomeScreen> {
     Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => CustomExerciseEditorPage(
-          repository: therapistCustomExerciseRepository,
+          repository: _exerciseRepository,
         ),
       ),
     );
@@ -116,7 +152,7 @@ class _TherapistHomeScreenState extends State<TherapistHomeScreen> {
     Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => CustomExerciseListPage(
-          repository: therapistCustomExerciseRepository,
+          repository: _exerciseRepository,
           editorBuilder: _buildCustomExerciseEditor,
           assignmentBuilder: (exercise) => CustomExerciseAssignmentPage(
             exercise: exercise,
@@ -137,14 +173,18 @@ class _TherapistHomeScreenState extends State<TherapistHomeScreen> {
 
   void _openPatientManagement(BuildContext context) {
     Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => const PatientManagementPage()),
+      MaterialPageRoute(
+        builder: (_) => PatientManagementPage(repository: _patientRepository),
+      ),
     );
   }
 
   void _openRehabPlanManagement(BuildContext context) {
     Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (_) => const TherapistPlanManagementPage(),
+        builder: (_) => TherapistPlanManagementPage(
+          patientRepository: _patientRepository,
+        ),
       ),
     );
   }
@@ -179,7 +219,10 @@ class _TherapistHomeScreenState extends State<TherapistHomeScreen> {
         key: const ValueKey('therapist-tab-pages'),
         controller: _pageController,
         onPageChanged: _handlePageChanged,
-        children: _pages,
+        children: [
+          _TherapistKeepAlivePage(child: _buildHomePage(context)),
+          _chatPage,
+        ],
       ),
       bottomNavigationBar: BottomNavigationBar(
         key: const ValueKey('therapist-bottom-navigation'),
@@ -217,118 +260,195 @@ class _TherapistHomeScreenState extends State<TherapistHomeScreen> {
   }
 
   Widget _buildHomePage(BuildContext context) {
-    final therapistName = AppSession.name?.trim();
+    final name = AppSession.name?.trim();
+    final therapistName = name == null || name.isEmpty ? '治療師' : name;
+    final primaryActions = [
+      _TherapistFeatureCard(
+        key: const Key('open-custom-exercise-editor'),
+        icon: Icons.accessibility_new,
+        title: '新增自訂復健動作',
+        subtitle: '建立姿勢與訓練條件',
+        accent: AppColors.primaryBlue,
+        onTap: () => _openCustomExerciseEditor(context),
+      ),
+      _TherapistFeatureCard(
+        key: const Key('open-saved-custom-exercises'),
+        icon: Icons.folder_open_outlined,
+        title: '已儲存自訂動作',
+        subtitle: '管理雲端動作資料庫',
+        accent: const Color(0xFFAA642C),
+        onTap: () => _openSavedCustomExercises(context),
+      ),
+    ];
+    final careActions = [
+      _TherapistFeatureCard(
+        key: const Key('open-patient-management'),
+        icon: Icons.people_outline,
+        title: '患者管理',
+        subtitle: '管理綁定與訓練紀錄',
+        accent: const Color(0xFF25816D),
+        onTap: () => _openPatientManagement(context),
+      ),
+      _TherapistFeatureCard(
+        key: const Key('open-unified-exercise-assignment'),
+        icon: Icons.assignment_ind_outlined,
+        title: '指派復健動作',
+        subtitle: '選擇預設或自訂動作',
+        accent: const Color(0xFF7656B5),
+        onTap: () => _openUnifiedAssignment(context),
+      ),
+      _TherapistFeatureCard(
+        key: const Key('open-rehab-plan-management'),
+        icon: Icons.calendar_month_outlined,
+        title: '制定復健計畫',
+        subtitle: '安排每日組數與次數',
+        accent: const Color(0xFF277B9B),
+        onTap: () => _openRehabPlanManagement(context),
+      ),
+    ];
+
     return ColoredBox(
-      color: const Color(0xFFF5F6FA),
+      color: AppColors.lightSurface,
       child: SafeArea(
-        child: ListView(
-          key: const ValueKey('therapist-home-list'),
-          padding: const EdgeInsets.all(24),
-          children: [
-            const SizedBox(height: 8),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(
-                  therapistName == null || therapistName.isEmpty
-                      ? '治療師'
-                      : therapistName,
-                  key: const Key('therapist-home-name'),
-                  style: const TextStyle(
-                    color: Color(0xFF1A1D2E),
-                    fontSize: 22,
-                    fontWeight: FontWeight.w900,
+        child: RefreshIndicator(
+          onRefresh: _loadOverview,
+          child: ListView(
+            key: const ValueKey('therapist-home-list'),
+            physics: const AlwaysScrollableScrollPhysics(),
+            padding: const EdgeInsets.fromLTRB(20, 20, 20, 24),
+            children: [
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const CircleAvatar(
+                    radius: 23,
+                    backgroundColor: Color(0xFFE8ECFF),
+                    child: Icon(Icons.medical_services_outlined,
+                        color: AppColors.primaryBlue),
                   ),
-                ),
-                TextButton(
-                  onPressed: () => _logout(context),
-                  style: TextButton.styleFrom(
-                    foregroundColor: const Color(0xFFE24B4A),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text('您好，',
+                            style: TextStyle(
+                                color: AppColors.secondaryText, fontSize: 13)),
+                        Text(
+                          therapistName,
+                          key: const Key('therapist-home-name'),
+                          style: const TextStyle(
+                            color: AppColors.primaryText,
+                            fontSize: 22,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
-                  child: const Text('登出'),
-                ),
-              ],
-            ),
-            const SizedBox(height: 28),
-            const Text(
-              '復健動作管理',
-              style: TextStyle(
-                color: Color(0xFF1A1D2E),
-                fontSize: 18,
-                fontWeight: FontWeight.w800,
+                  TextButton(
+                    onPressed: () => _logout(context),
+                    style: TextButton.styleFrom(
+                      foregroundColor: const Color(0xFFE24B4A),
+                    ),
+                    child: const Text('登出'),
+                  ),
+                ],
               ),
-            ),
-            const SizedBox(height: 8),
-            const Text(
-              '建立適合患者需求的自訂復健動作',
-              style: TextStyle(color: AppColors.secondaryText, fontSize: 13),
-            ),
-            const SizedBox(height: 18),
-            _TherapistFeatureCard(
-              key: const Key('open-custom-exercise-editor'),
-              icon: Icons.accessibility_new,
-              title: '新增自訂復健動作',
-              subtitle: '設定人體姿勢、時間軸與復健判定條件',
-              onTap: () => _openCustomExerciseEditor(context),
-            ),
-            const SizedBox(height: 12),
-            _TherapistFeatureCard(
-              key: const Key('open-saved-custom-exercises'),
-              icon: Icons.folder_open_outlined,
-              title: '已儲存自訂動作',
-              subtitle: '開啟、修改或刪除雲端自訂動作',
-              onTap: () => _openSavedCustomExercises(context),
-            ),
-            const SizedBox(height: 12),
-            _TherapistFeatureCard(
-              key: const Key('open-patient-management'),
-              icon: Icons.people_outline,
-              title: '患者管理',
-              subtitle: '使用綁定碼新增患者或解除治療關係',
-              onTap: () => _openPatientManagement(context),
-            ),
-            const SizedBox(height: 12),
-            _TherapistFeatureCard(
-              key: const Key('open-unified-exercise-assignment'),
-              icon: Icons.assignment_ind_outlined,
-              title: '指派復健動作',
-              subtitle: '統一指派預設與自訂復健動作',
-              onTap: () => _openUnifiedAssignment(context),
-            ),
-            const SizedBox(height: 12),
-            _TherapistFeatureCard(
-              key: const Key('open-rehab-plan-management'),
-              icon: Icons.calendar_month_outlined,
-              title: '制定復健計畫',
-              subtitle: '選擇患者並安排每日復健動作、組數與次數',
-              onTap: () => _openRehabPlanManagement(context),
-            ),
-            const SizedBox(height: 12),
-            _TherapistFeatureCard(
-              key: const Key('open-research-samples'),
-              icon: Icons.science_outlined,
-              title: '研究資料標註',
-              subtitle: '查看已授權的匿名骨架樣本並標註',
-              onTap: () => _openResearchSamples(context),
-            ),
-            if (_canManageResearch) ...[
+              const SizedBox(height: 14),
+              const Text('一起幫助患者，讓復健更有效率',
+                  style:
+                      TextStyle(color: AppColors.secondaryText, fontSize: 13)),
+              const SizedBox(height: 24),
+              const _SectionHeading(
+                title: '照護概覽',
+                subtitle: '下拉更新患者與動作數量',
+              ),
+              const SizedBox(height: 12),
+              _DashboardGrid(columns: 3, children: [
+                _SummaryCard(
+                  key: const Key('summary-patients'),
+                  icon: Icons.people_outline,
+                  label: '綁定患者',
+                  value: _patientCount?.toString() ?? '--',
+                  loading: _loadingOverview,
+                  onTap: () => _openPatientManagement(context),
+                ),
+                _SummaryCard(
+                  key: const Key('summary-exercises'),
+                  icon: Icons.folder_open_outlined,
+                  label: '自訂動作',
+                  value: _exerciseCount?.toString() ?? '--',
+                  loading: _loadingOverview,
+                  onTap: () => _openSavedCustomExercises(context),
+                ),
+                _SummaryCard(
+                  icon: Icons.calendar_month_outlined,
+                  label: '復健計畫',
+                  value: '安排',
+                  onTap: () => _openRehabPlanManagement(context),
+                ),
+              ]),
+              if (!_loadingOverview &&
+                  (_patientCount == null || _exerciseCount == null)) ...[
+                const SizedBox(height: 8),
+                const Text('部分概覽暫時無法取得；功能入口仍可使用。',
+                    key: Key('overview-unavailable'),
+                    style: TextStyle(
+                        color: AppColors.secondaryText, fontSize: 12)),
+              ],
+              const SizedBox(height: 24),
+              const _SectionHeading(title: '快速功能', subtitle: '從動作建立到照護安排'),
+              const SizedBox(height: 12),
+              _DashboardGrid(columns: 2, children: primaryActions),
+              const SizedBox(height: 12),
+              LayoutBuilder(builder: (context, constraints) {
+                // Three care cards only when each can fit readable text.
+                final columns = constraints.maxWidth >= 560 &&
+                        MediaQuery.textScalerOf(context).scale(16) <= 20
+                    ? 3
+                    : 2;
+                return _DashboardGrid(columns: columns, children: careActions);
+              }),
+              const SizedBox(height: 24),
+              const _SectionHeading(
+                  title: '研究工作區', subtitle: '沿用既有研究授權與資料存取規則'),
               const SizedBox(height: 12),
               _TherapistFeatureCard(
-                key: const Key('open-research-management'),
-                icon: Icons.admin_panel_settings_outlined,
-                title: '研究管理',
-                subtitle: '審核授權、資料狀態與已審核資料匯出',
-                onTap: () => _openResearchManagement(context),
+                key: const Key('open-research-samples'),
+                icon: Icons.science_outlined,
+                title: '研究資料標註',
+                subtitle: '查看已授權的匿名骨架樣本並標註',
+                accent: const Color(0xFF7656B5),
+                onTap: () => _openResearchSamples(context),
+              ),
+              if (_canManageResearch) ...[
+                const SizedBox(height: 12),
+                _TherapistFeatureCard(
+                  key: const Key('open-research-management'),
+                  icon: Icons.admin_panel_settings_outlined,
+                  title: '研究管理',
+                  subtitle: '審核授權、資料狀態與已審核資料匯出',
+                  accent: const Color(0xFF277B9B),
+                  onTap: () => _openResearchManagement(context),
+                ),
+              ],
+              const SizedBox(height: 20),
+              const Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(Icons.info_outline,
+                      size: 18, color: AppColors.secondaryText),
+                  SizedBox(width: 8),
+                  Expanded(
+                    child: Text('照護小提醒：先綁定患者，再指派動作與安排復健計畫。',
+                        style: TextStyle(
+                            color: AppColors.secondaryText, fontSize: 12)),
+                  ),
+                ],
               ),
             ],
-            const SizedBox(height: 28),
-            const Text(
-              '患者綁定後即可在指派頁選擇復健動作',
-              textAlign: TextAlign.center,
-              style: TextStyle(color: AppColors.secondaryText, fontSize: 12),
-            ),
-            const SizedBox(height: 8),
-          ],
+          ),
         ),
       ),
     );
@@ -357,78 +477,181 @@ class _TherapistKeepAlivePageState extends State<_TherapistKeepAlivePage>
   }
 }
 
-class _TherapistFeatureCard extends StatelessWidget {
-  final IconData icon;
+class _SectionHeading extends StatelessWidget {
+  const _SectionHeading({required this.title, required this.subtitle});
   final String title;
   final String subtitle;
-  final VoidCallback onTap;
 
+  @override
+  Widget build(BuildContext context) => Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(title,
+              style: const TextStyle(
+                  color: AppColors.primaryText,
+                  fontSize: 18,
+                  fontWeight: FontWeight.w800)),
+          const SizedBox(height: 4),
+          Text(subtitle,
+              style: const TextStyle(
+                  color: AppColors.secondaryText, fontSize: 12)),
+        ],
+      );
+}
+
+/// Non-scrolling rows size to their tallest card, including enlarged text.
+class _DashboardGrid extends StatelessWidget {
+  const _DashboardGrid({required this.columns, required this.children});
+  final int columns;
+  final List<Widget> children;
+
+  @override
+  Widget build(BuildContext context) => Column(
+        children: [
+          for (var start = 0; start < children.length; start += columns) ...[
+            if (start > 0) const SizedBox(height: 12),
+            IntrinsicHeight(
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  for (var offset = 0; offset < columns; offset++) ...[
+                    if (offset > 0) const SizedBox(width: 12),
+                    Expanded(
+                      child: start + offset < children.length
+                          ? children[start + offset]
+                          : const SizedBox.shrink(),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ],
+        ],
+      );
+}
+
+class _SummaryCard extends StatelessWidget {
+  const _SummaryCard({
+    super.key,
+    required this.icon,
+    required this.label,
+    required this.value,
+    required this.onTap,
+    this.loading = false,
+  });
+  final IconData icon;
+  final String label;
+  final String value;
+  final VoidCallback onTap;
+  final bool loading;
+
+  @override
+  Widget build(BuildContext context) => Material(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(16),
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(icon, color: AppColors.primaryBlue, size: 21),
+                const SizedBox(height: 10),
+                Text(value,
+                    style: const TextStyle(
+                        color: AppColors.primaryText,
+                        fontSize: 23,
+                        fontWeight: FontWeight.w800)),
+                const SizedBox(height: 4),
+                Text(label,
+                    style: const TextStyle(
+                        color: AppColors.secondaryText, fontSize: 12)),
+                if (loading)
+                  const Padding(
+                    padding: EdgeInsets.only(top: 6),
+                    child: LinearProgressIndicator(minHeight: 2),
+                  ),
+              ],
+            ),
+          ),
+        ),
+      );
+}
+
+class _TherapistFeatureCard extends StatelessWidget {
   const _TherapistFeatureCard({
     super.key,
     required this.icon,
     required this.title,
     required this.subtitle,
+    required this.accent,
     required this.onTap,
   });
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final Color accent;
+  final VoidCallback onTap;
 
   @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: Colors.white,
-      borderRadius: BorderRadius.circular(18),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(18),
-        child: Container(
-          padding: const EdgeInsets.all(18),
-          decoration: BoxDecoration(
+  Widget build(BuildContext context) => Container(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(18),
+          boxShadow: const [
+            BoxShadow(
+              color: Color(0x060F2040),
+              blurRadius: 12,
+              offset: Offset(0, 4),
+            ),
+          ],
+        ),
+        child: Material(
+          color: Colors.white,
+          shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(18),
-            border: Border.all(color: const Color(0xFFDDE0F0)),
+            side: const BorderSide(color: Color(0xFFE7EAF2)),
           ),
-          child: Row(
-            children: [
-              Container(
-                width: 52,
-                height: 52,
-                decoration: const BoxDecoration(
-                  color: Color(0xFFEFF1FF),
-                  shape: BoxShape.circle,
-                ),
-                child: Icon(icon, color: const Color(0xFF4A65FF), size: 27),
-              ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      title,
-                      style: const TextStyle(
-                        color: Color(0xFF1A1D2E),
-                        fontSize: 16,
-                        fontWeight: FontWeight.w800,
+          clipBehavior: Clip.antiAlias,
+          child: InkWell(
+            onTap: onTap,
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: accent.withValues(alpha: 0.09),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Icon(icon, color: accent, size: 24),
                       ),
-                    ),
-                    const SizedBox(height: 5),
-                    Text(
-                      subtitle,
+                      const Spacer(),
+                      const Icon(Icons.chevron_right,
+                          color: AppColors.secondaryText, size: 20),
+                    ],
+                  ),
+                  const SizedBox(height: 14),
+                  Text(title,
                       style: const TextStyle(
-                        color: AppColors.secondaryText,
-                        fontSize: 12,
-                      ),
-                    ),
-                  ],
-                ),
+                          color: AppColors.primaryText,
+                          fontSize: 15,
+                          fontWeight: FontWeight.w800)),
+                  const SizedBox(height: 6),
+                  Text(subtitle,
+                      style: const TextStyle(
+                          color: AppColors.secondaryText,
+                          fontSize: 12,
+                          height: 1.5)),
+                ],
               ),
-              const Icon(
-                Icons.arrow_forward_ios,
-                color: AppColors.secondaryText,
-                size: 15,
-              ),
-            ],
+            ),
           ),
         ),
-      ),
-    );
-  }
+      );
 }
